@@ -1,5 +1,5 @@
-// Küçük EXIF okuyucu: JPEG içinden çekim saati ve GPS konumu.
-// Foto cihazdan çıkmadan önce burada okunur; analiz isteğine metadata gitmez.
+// Small EXIF reader: capture time and GPS position from a JPEG.
+// The photo is read here before it leaves the device; no metadata goes into the analysis request.
 
 const TAG_EXIF_IFD = 0x8769;
 const TAG_GPS_IFD = 0x8825;
@@ -49,7 +49,7 @@ function rationals(view, tiff, ent, le) {
 }
 
 function parseDate(s) {
-  // "YYYY:MM:DD HH:MM:SS" — yerel saat olarak yorumlanır
+  // "YYYY:MM:DD HH:MM:SS", read as local time
   const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(s);
   if (!m) return null;
   const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
@@ -99,13 +99,13 @@ export function parseExif(buf) {
       }
       return res;
     }
-    if (marker === 0xda) break; // görüntü verisi başladı
+    if (marker === 0xda) break; // image data starts here
     p += 2 + size;
   }
   return {};
 }
 
-// Dosyanın yalnızca başını okur (EXIF ilk bloklarda durur).
+// Reads only the start of the file (EXIF sits in the first blocks).
 export async function readMeta(file) {
   try {
     const buf = await file.slice(0, 262144).arrayBuffer();
@@ -124,11 +124,11 @@ export function distanceM(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Konumu kayıtlı yerlerle cihazda eşleştirir; modele yalnızca tek kelimelik etiket gider.
+// Matches the position to saved places on the device; the model only gets a one-word label.
 export function placeLabel(lat, lon, places) {
   if (lat == null || lon == null) return null;
   for (const pl of places || []) {
     if (distanceM(lat, lon, pl.lat, pl.lon) < 150) return pl.name;
   }
-  return 'dışarı';
+  return 'out';
 }

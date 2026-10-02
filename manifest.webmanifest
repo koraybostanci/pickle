@@ -1,8 +1,8 @@
 {
   "name": "Kantar",
   "short_name": "Kantar",
-  "description": "86 kg'dan 78 kg'a: plan, foto/metin akışı ve günlük takip. Veriler bu cihazda durur.",
-  "lang": "tr",
+  "description": "From 86 kg to 78 kg: a nutrition plan, a photo and text log, and daily tracking. Data stays on this device.",
+  "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

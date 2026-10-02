@@ -1,8 +1,8 @@
-// Uygulama kabuğunu önbelleğe alır; çevrimdışı açılır.
-// Her yayında VERSION ve js/app.js içindeki APP_VERSION birlikte artırılır.
-// Dosyalar yalnızca sürümlü önbellekten sunulur: bir sürümün dosyaları birbirine karışmaz,
-// yeni sürüm ancak yeni service worker kurulunca gelir.
-const VERSION = 'kantar-v5';
+// Caches the app shell so the app opens offline.
+// Bump VERSION here and APP_VERSION in js/app.js together on every release.
+// Files are served only from the versioned cache: files of two releases never mix,
+// and a new release arrives only once the new service worker is installed.
+const VERSION = 'kantar-v6';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js',
@@ -10,7 +10,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  // cache: 'reload' tarayıcının HTTP önbelleğini atlar; eski dosya yeni sürüme sızmaz
+  // cache: 'reload' bypasses the browser's HTTP cache, so a stale file cannot leak into the new release
   e.waitUntil(
     caches.open(VERSION)
       .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
@@ -26,7 +26,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // API çağrılarına dokunma
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // leave API calls alone
   e.respondWith(
     caches.open(VERSION)
       .then((c) => c.match(e.request, { ignoreSearch: true }))
