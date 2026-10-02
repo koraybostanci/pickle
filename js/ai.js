@@ -1,23 +1,23 @@
-// Model çağrısı. İki yol: Claude (Anthropic Messages API) ya da OpenAI uyumlu bir uç
-// (OpenCode Zen/Go, Gemini, OpenRouter…). Token verimliliği için: küçük görsel,
-// kısa sabit talimat, kısa JSON çıktı.
+// Model calls. Two routes: Claude (Anthropic Messages API) or any OpenAI-compatible endpoint
+// (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
+// instruction, short JSON output.
 import { planDigest } from './plan.js';
 
 export const MODELS = {
-  'claude-haiku-4-5-20251001': { ad: 'Haiku 4.5 (hızlı, ucuz)', inp: 1, out: 5 },
-  'claude-sonnet-5-5': { ad: 'Sonnet 5.5 (daha dikkatli)', inp: 2, out: 10 },
+  'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
+  'claude-sonnet-5-5': { name: 'Sonnet 5.5 (more careful)', inp: 2, out: 10 },
 };
 export const STRONG_MODEL = 'claude-sonnet-5-5';
-const IMG_EDGE = 768; // uzun kenar; 768×576 ≈ 590 görsel token
+const IMG_EDGE = 768; // long edge; 768×576 is about 590 image tokens
 
-const SYSTEM = `You log food for one person on a weight-loss plan. Reply with JSON only. Write food names, title and q in Turkish.
-Input: photo(s) and/or a short text, plus local time and place.
+const SYSTEM = `You log food for one person on a weight-loss plan. Reply with JSON only. Write food names, title and q in English.
+Input: photo(s) and/or a short text in any language, plus local time and place.
 kind: "meal" (food or drink), "weight" (scale reading, set kg), "steps" (step count, set steps), "none" (nothing to log).
-For meals: list each item with grams estimated from visual cues (dinner plate ≈ 26 cm, cutlery, hands), include visible oil, sauces and drinks, and when unsure pick the larger plausible portion. Restaurant food ("dışarı") usually carries more fat. kcal, p, c, f, fib are totals for the whole entry.
+For meals: list each item with grams estimated from visual cues (dinner plate ≈ 26 cm, cutlery, hands), include visible oil, sauces and drinks, and when unsure pick the larger plausible portion. Food eaten "out" usually carries more fat. kcal, p, c, f, fib are totals for the whole entry.
 If the meal clearly matches a plan meal below, set plan to its id and use its numbers; otherwise plan is "".
-slot: sabah, ogle, ara1, ara2, aksam, gece, or ant (pre/post-workout banana or skyr) — choose by time and content.
-tier: "plan" = fits the plan's foods; "esnek" = weekly-budget items (beer, a small dessert, a restaurant dinner); "yok" = sugary drinks, fried food, chips, salted nuts, pastries (simit, börek, poğaça, kruvasan, bretzel), white bread or toast.
-flags: add "alkol" for any alcohol.
+slot: morning, lunch, snack1, snack2, dinner, late, or workout (pre/post-workout banana or skyr). Choose by time and content.
+tier: "plan" = fits the plan's foods; "flex" = weekly-budget items (beer, a small dessert, a restaurant dinner); "off" = sugary drinks, fried food, crisps, salted nuts, pastries (simit, börek, poğaça, croissant, pretzel), white bread or toast.
+flags: add "alcohol" for any alcohol.
 conf: 0–1 confidence in the kcal total. q: one short question only if its answer would change kcal by more than 25%, else "".
 Plan meals:
 ${planDigest()}`;
@@ -29,7 +29,7 @@ const SCHEMA = {
   properties: {
     kind: { type: 'string', enum: ['meal', 'weight', 'steps', 'none'] },
     title: { type: 'string' },
-    slot: { type: 'string', enum: ['sabah', 'ogle', 'ara1', 'ara2', 'aksam', 'gece', 'ant'] },
+    slot: { type: 'string', enum: ['morning', 'lunch', 'snack1', 'snack2', 'dinner', 'late', 'workout'] },
     plan: { type: 'string' },
     items: {
       type: 'array',
@@ -45,7 +45,7 @@ const SCHEMA = {
     c: { type: 'number' },
     f: { type: 'number' },
     fib: { type: 'number' },
-    tier: { type: 'string', enum: ['plan', 'esnek', 'yok'] },
+    tier: { type: 'string', enum: ['plan', 'flex', 'off'] },
     flags: { type: 'array', items: { type: 'string' } },
     conf: { type: 'number' },
     q: { type: 'string' },
@@ -54,7 +54,7 @@ const SCHEMA = {
   },
 };
 
-// Fotoğrafı cihazda küçültür; hem saklanan hem gönderilen kopya budur.
+// Shrinks the photo on the device; this copy is both stored and sent.
 export async function shrink(file) {
   let bmp;
   try {
@@ -64,7 +64,7 @@ export async function shrink(file) {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => { URL.revokeObjectURL(url); res(img); };
-      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Görsel açılamadı')); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Could not open the image')); };
       img.src = url;
     });
   }
@@ -79,7 +79,7 @@ export async function shrink(file) {
   cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
   if (bmp.close) bmp.close();
   const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.8));
-  if (!blob) throw new Error('Görsel küçültülemedi');
+  if (!blob) throw new Error('Could not shrink the image');
   return { blob, w, h };
 }
 
@@ -92,11 +92,11 @@ const toB64 = (blob) => new Promise((res, rej) => {
 
 function parseLoose(text) {
   const t = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-  try { return JSON.parse(t); } catch { /* aşağıda dene */ }
+  try { return JSON.parse(t); } catch { /* try below */ }
   const a = t.indexOf('{');
   const b = t.lastIndexOf('}');
   if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
-  throw new AiError('empty', 'Yanıt JSON değil');
+  throw new AiError('empty', 'Reply is not JSON');
 }
 
 export class AiError extends Error {
@@ -106,20 +106,20 @@ export class AiError extends Error {
   }
 }
 
-// OpenAI uyumlu sağlayıcılar için hazır ayarlar. Model adı sağlayıcının kendi kimliğidir.
+// Presets for OpenAI-compatible providers. The model name is the provider's own id.
 export const PRESETS = [
-  { id: 'opencode-zen', ad: 'OpenCode Zen (ücretsiz modeller)', base: 'https://opencode.ai/zen/v1', model: '' },
-  { id: 'opencode-go', ad: 'OpenCode Go', base: 'https://opencode.ai/zen/go/v1', model: '' },
-  { id: 'gemini', ad: 'Google Gemini (ücretsiz katman)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.5-flash', alt: ['gemini-3.5-flash-lite', 'gemini-3.8-flash'] },
-  { id: 'openrouter', ad: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: '' },
+  { id: 'gemini', name: 'Google Gemini (free tier)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.5-flash', alt: ['gemini-3.5-flash-lite', 'gemini-3.8-flash'] },
+  { id: 'opencode-zen', name: 'OpenCode Zen (free models)', base: 'https://opencode.ai/zen/v1', model: '' },
+  { id: 'opencode-go', name: 'OpenCode Go', base: 'https://opencode.ai/zen/go/v1', model: '' },
+  { id: 'openrouter', name: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: '' },
 ];
-// /models listesi alınamazsa denenecek ücretsiz OpenCode Zen kimlikleri
+// Free OpenCode Zen ids to try when the /models list cannot be fetched
 export const ZEN_FREE = [
   'mimo-v2.5-free', 'mimo-v2.6-flash-free', 'muse-spark-1.3-contributor-free', 'big-pickle', 'space-bunny-free',
   'longcat-2.5-preview-free', 'nemotron-3-ultra-free', 'nemotron-3.5-lightning-free', 'ling-3.0-flash-fin-free', 'jev-1.13-free',
 ];
 
-const SHAPE = '\nReturn exactly one JSON object with all of these keys: {"kind":"meal|weight|steps|none","title":"","slot":"sabah|ogle|ara1|ara2|aksam|gece|ant","plan":"","items":[{"n":"","g":0,"kcal":0,"p":0}],"kcal":0,"p":0,"c":0,"f":0,"fib":0,"tier":"plan|esnek|yok","flags":[],"conf":0,"q":"","kg":0,"steps":0}';
+const SHAPE = '\nReturn exactly one JSON object with all of these keys: {"kind":"meal|weight|steps|none","title":"","slot":"morning|lunch|snack1|snack2|dinner|late|workout","plan":"","items":[{"n":"","g":0,"kcal":0,"p":0}],"kcal":0,"p":0,"c":0,"f":0,"fib":0,"tier":"plan|flex|off","flags":[],"conf":0,"q":"","kg":0,"steps":0}';
 
 function classify(status, msg) {
   if (/credit balance|insufficient (credit|balance|quota|funds)|billing|payment required/i.test(msg) || status === 402) return 'no_credit';
@@ -132,7 +132,7 @@ function classify(status, msg) {
   return 'http';
 }
 
-// Sağlayıcı meşgulken (503 ve benzeri) kısa aralıklarla yeniden denenir; bekleme süreleri ms
+// When the provider is busy (503 and the like) the request is retried after short waits (ms)
 const RETRY_MS = [1200, 3000];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -141,10 +141,10 @@ async function postOnce(url, headers, payload) {
   try {
     res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload) });
   } catch {
-    throw new AiError(navigator.onLine === false ? 'offline' : 'net', 'Bağlantı kurulamadı');
+    throw new AiError(navigator.onLine === false ? 'offline' : 'net', 'Could not connect');
   }
   let json = null;
-  try { json = await res.json(); } catch { /* gövde yok */ }
+  try { json = await res.json(); } catch { /* no body */ }
   if (!res.ok) {
     const er = (Array.isArray(json) ? json[0] : json) || {};
     const e = er.error;
@@ -168,22 +168,22 @@ async function post(url, headers, payload, opts = {}) {
 }
 
 /**
- * Tek çağrı. cfg: {provider:'anthropic'|'openai', key, model, base?}
+ * One call. cfg: {provider:'anthropic'|'openai', key, model, base?}
  * @returns {Promise<{text:string, usage:{in:number,out:number}}>}
  */
 export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600, retry = true, onRetry = null }) {
-  const ropts = { retry, onRetry };
-  if (!cfg || !cfg.key) throw new AiError('no_key', 'API anahtarı girilmemiş');
+  const retryOpts = { retry, onRetry };
+  if (!cfg || !cfg.key) throw new AiError('no_key', 'No API key set');
   const imgs = [];
   for (const b of blobs.slice(0, 3)) imgs.push(await toB64(b));
 
   if (cfg.provider === 'openai') {
-    if (!cfg.base || !cfg.model) throw new AiError('no_key', 'Adres ya da model girilmemiş');
+    if (!cfg.base || !cfg.model) throw new AiError('no_key', 'No address or model set');
     const content = imgs.map((d) => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${d}` } }));
     content.push({ type: 'text', text });
     const body = {
       model: cfg.model,
-      max_tokens: Math.max(maxTokens, 1500), // düşünen modeller payın bir kısmını düşünmeye harcar
+      max_tokens: Math.max(maxTokens, 1500), // thinking models spend part of the budget on reasoning
       messages: [{ role: 'system', content: system }, { role: 'user', content: imgs.length ? content : text }],
     };
     if (json) body.response_format = { type: 'json_object' };
@@ -191,17 +191,17 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
     const headers = { authorization: `Bearer ${cfg.key}` };
     let out;
     try {
-      out = await post(url, headers, body, ropts);
+      out = await post(url, headers, body, retryOpts);
     } catch (e) {
       if (json && e.code === 'bad_request' && /response_format|json/i.test(e.message)) {
         const { response_format, ...rest } = body;
-        out = await post(url, headers, rest, ropts);
+        out = await post(url, headers, rest, retryOpts);
       } else throw e;
     }
     const msg = out.choices && out.choices[0] && out.choices[0].message;
     let txt = msg ? msg.content : '';
     if (Array.isArray(txt)) txt = txt.filter((c) => c.type === 'text' || typeof c.text === 'string').map((c) => c.text).join('');
-    if (!txt) throw new AiError('empty', 'Model yanıt vermedi');
+    if (!txt) throw new AiError('empty', 'The model returned nothing');
     const u = out.usage || {};
     return { text: String(txt), usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 } };
   }
@@ -214,28 +214,28 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
   const url = 'https://api.anthropic.com/v1/messages';
   let out;
   try {
-    out = await post(url, headers, body, ropts);
+    out = await post(url, headers, body, retryOpts);
   } catch (e) {
-    // Şemalı çıktı reddedilirse aynı isteği şemasız bir kez dene.
+    // If schema output is rejected, retry the same request once without the schema.
     if (schema && e.code === 'bad_request' && /output_config|schema|format/i.test(e.message)) {
       const { output_config, ...rest } = body;
-      out = await post(url, headers, rest, ropts);
+      out = await post(url, headers, rest, retryOpts);
     } else throw e;
   }
   const txt = (out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
-  if (out.stop_reason === 'refusal' || !txt) throw new AiError('empty', 'Model yanıt vermedi');
+  if (out.stop_reason === 'refusal' || !txt) throw new AiError('empty', 'The model returned nothing');
   return { text: txt, usage: { in: (out.usage && out.usage.input_tokens) || 0, out: (out.usage && out.usage.output_tokens) || 0 } };
 }
 
 /**
- * @param {{cfg:object, blobs?:Blob[], text?:string, when:Date, place?:string|null, hint?:string}} o
+ * @param {{cfg:object, blobs?:Blob[], text?:string, when:Date, place?:string|null, hint?:string, onRetry?:Function}} o
  * @returns {Promise<{data:object, usage:{in:number,out:number}, model:string}>}
  */
 export async function analyze(o) {
   const hh = String(o.when.getHours()).padStart(2, '0');
   const mm = String(o.when.getMinutes()).padStart(2, '0');
-  const lines = [`Saat ${hh}:${mm}` + (o.place ? `, yer: ${o.place}` : '')];
-  if (o.text) lines.push(`Not: ${o.text}`);
+  const lines = [`Time ${hh}:${mm}` + (o.place ? `, place: ${o.place}` : '')];
+  if (o.text) lines.push(`Note: ${o.text}`);
   if (o.hint) lines.push(o.hint);
   const openai = o.cfg && o.cfg.provider === 'openai';
   const req = { system: openai ? SYSTEM + SHAPE : SYSTEM, text: lines.join('\n'), blobs: o.blobs || [], schema: openai ? null : SCHEMA, json: true };
@@ -244,7 +244,7 @@ export async function analyze(o) {
     return { data: parseLoose(r.text), usage: r.usage, model: o.cfg.model };
   } catch (e) {
     if (e.code !== 'server') throw e;
-    // Model hâlâ meşgul: aynı sağlayıcının yedek modellerini birer kez dene
+    // Still busy: try the same provider's fallback models once each
     const preset = openai ? PRESETS.find((p) => p.base === o.cfg.base) : null;
     for (const model of ((preset && preset.alt) || []).filter((m) => m !== o.cfg.model)) {
       if (o.onRetry) o.onRetry(0, 0, model);
@@ -259,7 +259,7 @@ export async function analyze(o) {
   }
 }
 
-// Modelin fotoğrafı gerçekten görüp görmediğini sınar: rastgele bir sayıyı resimden okutur.
+// Checks that the model really sees photos: it has to read a random number from an image.
 export async function probeVision(cfg) {
   const n = String(1000 + Math.floor(Math.random() * 9000));
   const cv = document.createElement('canvas');
@@ -278,7 +278,7 @@ export async function probeVision(cfg) {
   return { ok: r.text.replace(/\D/g, '').includes(n), usage: r.usage };
 }
 
-// OpenAI uyumlu uçta model listesini dener; olmazsa boş döner.
+// Fetches the model list from an OpenAI-compatible endpoint; returns [] on any failure.
 export async function listModels(cfg) {
   try {
     const res = await fetch(cfg.base.replace(/\/+$/, '') + '/models', { headers: { authorization: `Bearer ${cfg.key}` } });
@@ -295,17 +295,17 @@ export function costUSD(model, usage) {
   return m ? (usage.in * m.inp + usage.out * m.out) / 1e6 : 0;
 }
 
-export const AI_ERR_TR = {
-  no_key: 'API anahtarı yok. Ayarlar’dan ekle; kayıt bekliyor.',
-  bad_key: 'API anahtarı kabul edilmedi. Ayarlar’dan kontrol et.',
-  offline: 'İnternet yok. Kayıt bekliyor; bağlanınca “Analiz et”e dokun.',
-  net: 'Sunucuya ulaşılamadı; kayıt bekliyor. İnternet varsa bu sağlayıcı tarayıcıdan çağrıya izin vermiyor olabilir.',
-  rate: 'Çok sık istek ya da günlük kota doldu; kayıt bekliyor. Biraz sonra “Analiz et”e dokun.',
-  no_credit: 'Hesapta kredi yok; kayıt bekliyor. Kredi al ya da Ayarlar’dan başka bir sağlayıcı seç.',
-  no_vision: 'Bu model fotoğraf kabul etmiyor. Ayarlar’dan görsel destekleyen bir model seç.',
-  bad_model: 'Model bulunamadı. Ayarlar’da model adını kontrol et.',
-  server: 'Sağlayıcı şu an meşgul; kayıt bekliyor. Biraz sonra “Analiz et”e dokun.',
-  bad_request: 'İstek reddedildi.',
-  empty: 'Model bu girdiyi yorumlayamadı. Kısa bir not ekleyip tekrar dene.',
-  http: 'İstek başarısız oldu.',
+export const AI_ERRORS = {
+  no_key: 'No API key. Add one in Settings; the entry is waiting.',
+  bad_key: 'The API key was rejected. Check it in Settings.',
+  offline: 'No internet. The entry is waiting; tap “Analyse” once you are back online.',
+  net: 'Could not reach the server; the entry is waiting. If you are online, this provider may not allow calls from a browser.',
+  rate: 'Too many requests or the daily quota is used up; the entry is waiting. Tap “Analyse” a little later.',
+  no_credit: 'The account has no credit; the entry is waiting. Buy credit or pick another provider in Settings.',
+  no_vision: 'This model does not accept photos. Pick a model with image support in Settings.',
+  bad_model: 'Model not found. Check the model name in Settings.',
+  server: 'The provider is busy right now; the entry is waiting. Tap “Analyse” a little later.',
+  bad_request: 'The request was rejected.',
+  empty: 'The model could not interpret this input. Add a short note and try again.',
+  http: 'The request failed.',
 };

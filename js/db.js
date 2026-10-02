@@ -1,4 +1,4 @@
-// Yerel veri katmanı: her şey bu cihazdaki IndexedDB'de durur.
+// Local data layer: everything lives in IndexedDB on this device.
 const NAME = 'kantar';
 const VER = 1;
 let dbp;

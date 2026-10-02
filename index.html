@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'">
 <title>Kantar</title>
-<meta name="description" content="86 kg'dan 78 kg'a: plan, foto/metin akışı ve günlük takip. Veriler bu cihazda durur.">
+<meta name="description" content="From 86 kg to 78 kg: a nutrition plan, a photo and text log, and daily tracking. Data stays on this device.">
 <meta name="theme-color" content="#F3F5F0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151911" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -22,42 +22,42 @@
 <div id="app">
   <main id="view" tabindex="-1"></main>
 
-  <form id="yaz" class="yaz" autocomplete="off" hidden>
-    <div class="ipucu" aria-label="Yazabileceklerin">
-      <span class="ipucu-l">Örnekler</span>
-      <button type="button" class="chip" data-act="hint" data-fill="85,4">Tartı: 85,4</button>
-      <button type="button" class="chip" data-act="hint" data-fill="8200 adım">8200 adım</button>
-      <button type="button" class="chip" data-act="hint" data-fill="su 2 bardak">Su 2 bardak</button>
-      <button type="button" class="chip" data-act="hint" data-fill="antrenman">Antrenman</button>
-      <button type="button" class="chip" data-act="hint" data-fill="2 dilim pizza ve 1 bira">2 dilim pizza ve 1 bira</button>
+  <form id="composer" class="composer" autocomplete="off" hidden>
+    <div class="hints" aria-label="Things you can type">
+      <span class="hints-label">Examples</span>
+      <button type="button" class="chip" data-act="hint" data-fill="85.4">Weight: 85.4</button>
+      <button type="button" class="chip" data-act="hint" data-fill="8200 steps">8200 steps</button>
+      <button type="button" class="chip" data-act="hint" data-fill="water 2 glasses">Water 2 glasses</button>
+      <button type="button" class="chip" data-act="hint" data-fill="workout">Workout</button>
+      <button type="button" class="chip" data-act="hint" data-fill="2 slices of pizza and a beer">2 slices of pizza and a beer</button>
     </div>
-    <div id="favrow" class="favrow" hidden></div>
-    <div class="yaz-row">
-      <button type="button" class="ib ib-cam" id="btn-cam" aria-label="Fotoğraf çek">
+    <div id="favorites" class="favorites" hidden></div>
+    <div class="composer-row">
+      <button type="button" class="icon-btn camera-btn" id="btn-cam" aria-label="Take a photo">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.4" r="3.4"/></svg>
       </button>
-      <button type="button" class="ib" id="btn-lib" aria-label="Fotoğraflardan seç">
+      <button type="button" class="icon-btn" id="btn-lib" aria-label="Choose from library">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m4 16 4.6-4.6a1.5 1.5 0 0 1 2.1 0L15 15.7"/><path d="m13.5 14.2 1.6-1.6a1.5 1.5 0 0 1 2.1 0L20.5 16"/><circle cx="15.5" cy="9.2" r="1.3"/></svg>
       </button>
-      <label class="sr" for="yaz-in">Ne yedin ya da tartın kaç</label>
-      <input id="yaz-in" type="text" inputmode="text" enterkeyhint="send" placeholder="Ne yedin?">
-      <button type="submit" class="ib ib-go" aria-label="Gönder">
+      <label class="sr-only" for="composer-input">What you ate, or your weight</label>
+      <input id="composer-input" type="text" inputmode="text" enterkeyhint="send" placeholder="What did you eat?">
+      <button type="submit" class="icon-btn send-btn" aria-label="Send">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>
       </button>
     </div>
-    <input id="f-cam" class="f-hid" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
-    <input id="f-lib" class="f-hid" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
+    <input id="f-cam" class="file-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+    <input id="f-lib" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
   </form>
 
-  <nav class="tabs" aria-label="Bölümler">
-    <button type="button" data-tab="bugun" aria-current="page">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg><span>Bugün</span>
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-tab="today" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg><span>Today</span>
     </button>
-    <button type="button" data-tab="akis">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14M5 12h14M5 17.5h9"/></svg><span>Akış</span>
+    <button type="button" data-tab="log">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14M5 12h14M5 17.5h9"/></svg><span>Log</span>
     </button>
-    <button type="button" data-tab="ilerleme">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9.5 12l3.5-2.5L20 17"/><path d="M20 12.5V17h-4.5"/></svg><span>İlerleme</span>
+    <button type="button" data-tab="progress">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9.5 12l3.5-2.5L20 17"/><path d="M20 12.5V17h-4.5"/></svg><span>Progress</span>
     </button>
     <button type="button" data-tab="plan">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2.5"/><path d="M9 9h6M9 12.5h6M9 16h3.5"/></svg><span>Plan</span>

@@ -1,44 +1,51 @@
 import * as db from './db.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, shrink, costUSD, probeVision, listModels, AI_ERR_TR, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
-  MEALS, MEAL_BY_ID, SLOTS, SLOT_AD, FLEX, DEFAULTS,
+  MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
-import { renderBugun, renderAkis, renderIlerleme, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-// ——— Durum ———
+export const APP_VERSION = '6'; // bump together with VERSION in sw.js
+const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
+
+// ——— State ———
 export const S = {
-  tab: 'bugun',
-  set: { ...DEFAULTS, apiKey: '', provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', useLocation: false, places: [], favs: [], hideStart: false, usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0 },
+  tab: 'today',
+  settings: {
+    ...DEFAULTS, schema: SCHEMA_VERSION,
+    provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
+    useLocation: false, places: [], favorites: [], hideStart: false,
+    usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
+  },
   entries: [],
   days: {},
   viewDay: dayKey(new Date()),
   busy: new Set(),
-  retry: new Map(), // analiz sırasında gösterilecek durum notu
+  retry: new Map(), // status note shown while an analysis is retrying
   urls: new Map(),
   persisted: null,
   storage: null,
   calPick: null,
-  sheet: null, // açık alt sayfa: {type:'settings'|'entry'|'num', ...}
-  openSlots: new Set(), // Bugün'de açık bırakılan öğün seçenekleri
-  setOpen: '', // Ayarlar'da açık bölüm
+  sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num', ...}
+  openSlots: new Set(), // meal options left expanded on Today
+  openSetting: '', // expanded section in Settings
 };
 
 const $ = (s, r = document) => r.querySelector(s);
 
-// Seçili sağlayıcının çağrı ayarı
+// Call configuration for the selected provider
 export function aiCfg() {
-  const s = S.set;
+  const s = S.settings;
   return s.provider === 'openai'
     ? { provider: 'openai', key: s.oaKey, model: s.oaModel, base: s.oaBase }
     : { provider: 'anthropic', key: s.apiKey, model: s.model };
 }
 export const hasKey = () => { const c = aiCfg(); return !!c.key && (c.provider !== 'openai' || (!!c.base && !!c.model)); };
 export const today = () => dayKey(new Date());
-export const APP_VERSION = '5'; // sw.js içindeki VERSION ile birlikte artır
 
-// ——— Hesaplar ———
+// ——— Calculations ———
 export const eff = (e) => {
   const m = e.mult || 1;
   return { kcal: (e.kcal || 0) * m, p: (e.p || 0) * m, c: (e.c || 0) * m, f: (e.f || 0) * m, fib: (e.fib || 0) * m };
@@ -52,17 +59,18 @@ export function dayTotals(day) {
   }
   return t;
 }
-export const dayTarget = (day) => ((S.days[day] && S.days[day].train) ? S.set.kcalTrain : S.set.kcalRest);
+export const dayTarget = (day) => ((S.days[day] && S.days[day].train) ? S.settings.kcalTrain : S.settings.kcalRest);
 
+// 'on' = on target, 'near' = close, 'over' = above, 'partial' = too little logged, 'none' = nothing logged
 export function dayStatus(day) {
   const t = dayTotals(day);
-  if (!t.n) return 'yok';
-  const tg = dayTarget(day);
-  const hasYok = mealsOf(day).some((e) => e.tier === 'yok');
-  if (t.kcal < tg * 0.6) return 'eksik';
-  if (t.kcal <= tg * 1.07 && t.kcal >= tg * 0.75 && t.p >= S.set.proteinMin && !hasYok) return 'hedefte';
-  if (t.kcal <= tg * 1.15) return 'yakin';
-  return 'ustunde';
+  if (!t.n) return 'none';
+  const target = dayTarget(day);
+  const hasOff = mealsOf(day).some((e) => e.tier === 'off');
+  if (t.kcal < target * 0.6) return 'partial';
+  if (t.kcal <= target * 1.07 && t.kcal >= target * 0.75 && t.p >= S.settings.proteinMin && !hasOff) return 'on';
+  if (t.kcal <= target * 1.15) return 'near';
+  return 'over';
 }
 
 export function avg7(day) {
@@ -79,7 +87,7 @@ export function weightSeries() {
   return Object.values(S.days).filter((d) => d.kg).sort((a, b) => (a.day < b.day ? -1 : 1));
 }
 
-// Son 14 günün eğimi (kg/gün) ve hedefe tahmini varış
+// Slope over the last 14 days (kg/day) and the projected arrival at the target
 export function projection() {
   const w = weightSeries().filter((d) => diffDays(d.day, today()) <= 14);
   if (w.length < 4 || diffDays(w[0].day, w[w.length - 1].day) < 6) return null;
@@ -95,7 +103,7 @@ export function projection() {
   if (!cur) return null;
   const out = { slope, perWeek: slope * 7 };
   if (slope < -0.005) {
-    const daysLeft = Math.ceil((cur.kg - S.set.targetKg) / -slope);
+    const daysLeft = Math.ceil((cur.kg - S.settings.targetKg) / -slope);
     out.eta = daysLeft > 0 && daysLeft < 730 ? addDays(today(), daysLeft) : null;
     if (daysLeft <= 0) out.eta = today();
   }
@@ -109,13 +117,13 @@ export function weekStart(day) {
 export function weekFlex(day) {
   const ws = weekStart(day);
   const we = addDays(ws, 6);
-  const r = { kucuk: 0, ogun: 0, yok: 0 };
+  const r = { small: 0, meal: 0, off: 0 };
   for (const e of S.entries) {
     if (e.kind !== 'meal' || e.status !== 'ok' || e.day < ws || e.day > we) continue;
-    if (e.tier === 'yok') r.yok += 1;
-    else if (e.tier === 'esnek') {
-      if ((e.flags || []).includes('alkol') || eff(e).kcal <= 250) r.kucuk += 1;
-      else r.ogun += 1;
+    if (e.tier === 'off') r.off += 1;
+    else if (e.tier === 'flex') {
+      if ((e.flags || []).includes('alcohol') || eff(e).kcal <= 250) r.small += 1;
+      else r.meal += 1;
     }
   }
   return r;
@@ -124,11 +132,11 @@ export function weekFlex(day) {
 export function streak() {
   let n = 0;
   let d = today();
-  const st0 = dayStatus(d);
-  if (st0 !== 'hedefte' && st0 !== 'yakin') d = addDays(d, -1); // bugün henüz bitmedi
+  const first = dayStatus(d);
+  if (first !== 'on' && first !== 'near') d = addDays(d, -1); // today is not over yet
   for (let i = 0; i < 400; i++) {
     const st = dayStatus(d);
-    if (st === 'hedefte' || st === 'yakin') { n += 1; d = addDays(d, -1); } else break;
+    if (st === 'on' || st === 'near') { n += 1; d = addDays(d, -1); } else break;
   }
   return n;
 }
@@ -136,25 +144,29 @@ export function streak() {
 export function suggest(day) {
   const tot = dayTotals(day);
   const rem = dayTarget(day) - tot.kcal;
-  const remP = S.set.protein - tot.p;
+  const remP = S.settings.protein - tot.p;
   const logged = new Set(mealsOf(day).map((e) => e.slot));
-  const open = SLOTS.filter((s) => s.id !== 'gece' && !logged.has(s.id));
+  const open = SLOTS.filter((s) => s.id !== 'late' && !logged.has(s.id));
   if (!open.length) {
     if (remP > 12 && rem >= 90) return { rem, remP, meal: MEAL_BY_ID['N-A'], slot: SLOTS[4], extra: true };
     return { rem, remP, meal: null };
   }
   const next = open[0];
-  const minK = (id) => Math.min(...MEALS.filter((m) => m.slot === id).map((m) => m.kcal));
-  const reserve = open.slice(1).reduce((a, s) => a + minK(s.id), 0);
-  const opts = MEALS.filter((m) => m.slot === next.id);
-  const fit = opts.filter((m) => m.kcal <= rem - reserve + 40);
-  const pool = fit.length ? fit : opts.slice().sort((a, b) => a.kcal - b.kcal).slice(0, 1);
+  const minKcal = (id) => Math.min(...MEALS.filter((m) => m.slot === id).map((m) => m.kcal));
+  const reserve = open.slice(1).reduce((a, s) => a + minKcal(s.id), 0);
+  const options = MEALS.filter((m) => m.slot === next.id);
+  const fit = options.filter((m) => m.kcal <= rem - reserve + 40);
+  const pool = fit.length ? fit : options.slice().sort((a, b) => a.kcal - b.kcal).slice(0, 1);
   const meal = pool.slice().sort((a, b) => b.p - a.p)[0];
   return { rem, remP, meal, slot: next, tight: !fit.length };
 }
 
-// ——— Kayıt ———
-async function saveSet() { await db.kvSet('settings', S.set); }
+// ——— Formatting ———
+export const fmtKg = (kg) => kg.toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+export const fmtInt = (n) => Math.round(n).toLocaleString(LOCALE);
+
+// ——— Storage ———
+async function saveSettings() { await db.kvSet('settings', S.settings); }
 async function saveDay(day, patch) {
   const d = { ...(S.days[day] || { day }), ...patch };
   S.days[day] = d;
@@ -166,7 +178,7 @@ async function saveEntry(e) {
   await db.put('entries', e);
 }
 
-let toastT;
+let toastTimer;
 export function toast(msg, action) {
   const el = $('#toast');
   el.innerHTML = '';
@@ -181,25 +193,25 @@ export function toast(msg, action) {
     el.append(b);
   }
   el.hidden = false;
-  clearTimeout(toastT);
-  toastT = setTimeout(() => { el.hidden = true; }, action ? 6000 : 3200);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, action ? 6000 : 3200);
 }
 
-function tsFor(day, slotId) {
+function timestampFor(day, slotId) {
   if (day === today()) return Date.now();
   const sl = SLOTS.find((s) => s.id === slotId);
-  const [h, m] = (sl ? sl.saat : '12:00').split(':').map(Number);
+  const [h, m] = (sl ? sl.time : '12:00').split(':').map(Number);
   const d = parseDay(day);
   d.setHours(h, m, 0, 0);
   return d.getTime();
 }
 
 async function logMeal(tpl, src, day = S.viewDay) {
-  const ts = tsFor(day, tpl.slot);
+  const ts = timestampFor(day, tpl.slot);
   const e = {
     id: db.uid(), ts, day, createdAt: Date.now(), kind: 'meal', status: 'ok', src,
     slot: tpl.slot && tpl.slot !== 'any' ? tpl.slot : slotByTime(new Date(ts)),
-    planId: src === 'plan' ? tpl.id : '', title: tpl.ad,
+    planId: src === 'plan' ? tpl.id : '', title: tpl.name,
     items: (tpl.items || []).map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
     kcal: tpl.kcal, p: tpl.p, c: tpl.c, f: tpl.f, fib: tpl.fib,
     tier: tpl.tier || 'plan', flags: tpl.flags || [], conf: 1, q: '', mult: 1,
@@ -207,7 +219,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
   };
   await saveEntry(e);
   render();
-  toast(`${tpl.ad} kaydedildi`, { label: 'Geri al', fn: () => removeEntry(e.id, true) });
+  toast(`${tpl.name} logged`, { label: 'Undo', fn: () => removeEntry(e.id, true) });
 }
 
 async function removeEntry(id, silent) {
@@ -224,7 +236,7 @@ async function removeEntry(id, silent) {
   if (e.kind === 'weight' && S.days[e.day] && S.days[e.day].kg === e.kg) await saveDay(e.day, { kg: null });
   if (e.kind === 'steps' && S.days[e.day] && S.days[e.day].steps === e.steps) await saveDay(e.day, { steps: null });
   render();
-  if (!silent) toast('Kayıt silindi');
+  if (!silent) toast('Entry deleted');
 }
 
 async function noteEntry(kind, title, extra, day = today()) {
@@ -233,64 +245,65 @@ async function noteEntry(kind, title, extra, day = today()) {
   return e;
 }
 
-const fmtKg = (kg) => kg.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const weightTitle = (kg) => `Weight ${fmtKg(kg)} kg`;
+const stepsTitle = (steps) => `${fmtInt(steps)} steps`;
 
-async function setWeight(kg, day = today(), viaStream = true) {
+async function setWeight(kg, day = today(), viaLog = true) {
   await saveDay(day, { kg });
-  if (viaStream) await noteEntry('weight', `Tartı ${fmtKg(kg)} kg`, { kg }, day);
+  if (viaLog) await noteEntry('weight', weightTitle(kg), { kg }, day);
   render();
-  toast(`Tartı ${fmtKg(kg)} kg kaydedildi`);
+  toast(`${weightTitle(kg)} saved`);
 }
-async function setSteps(steps, day = today(), viaStream = true) {
+async function setSteps(steps, day = today(), viaLog = true) {
   await saveDay(day, { steps });
-  if (viaStream) await noteEntry('steps', `${steps.toLocaleString('tr-TR')} adım`, { steps }, day);
+  if (viaLog) await noteEntry('steps', stepsTitle(steps), { steps }, day);
   render();
-  toast(`${steps.toLocaleString('tr-TR')} adım kaydedildi`);
+  toast(`${stepsTitle(steps)} saved`);
 }
 
-// Token harcamadan çözülebilen metinler
-const norm = (s) => s.toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+// Text that can be resolved on the device, without spending tokens
+const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 export function parseLocal(text) {
   const t = norm(text);
-  let m = /^(?:tartı|kilo|kg)?\s*(\d{2,3}(?:[.,]\d{1,2})?)\s*(?:kg|kilo)?$/.exec(t);
+  let m = /^(?:weight|kg)?\s*(\d{2,3}(?:[.,]\d{1,2})?)\s*(?:kg)?$/.exec(t);
   if (m) {
     const kg = parseFloat(m[1].replace(',', '.'));
     if (kg >= 50 && kg <= 160) return { type: 'weight', kg: Math.round(kg * 10) / 10 };
   }
-  m = /^(\d{1,2}[.\s]?\d{3}|\d{3,5})\s*adım$/.exec(t);
-  if (m) return { type: 'steps', steps: parseInt(m[1].replace(/[.\s]/g, ''), 10) };
-  m = /^su\s*(\d+(?:[.,]\d+)?)\s*(ml|l|lt|litre|bardak)?$/.exec(t);
+  m = /^(\d{1,2}[.,\s]?\d{3}|\d{3,5})\s*steps?$/.exec(t);
+  if (m) return { type: 'steps', steps: parseInt(m[1].replace(/[.,\s]/g, ''), 10) };
+  m = /^water\s*(\d+(?:[.,]\d+)?)\s*(ml|l|litres?|liters?|glass(?:es)?)?$/.exec(t);
   if (m) {
     const v = parseFloat(m[1].replace(',', '.'));
-    const u = m[2] || (v <= 10 ? 'bardak' : 'ml');
-    const ml = u === 'ml' ? v : u === 'bardak' ? v * 250 : v * 1000;
+    const unit = m[2] || (v <= 10 ? 'glass' : 'ml');
+    const ml = unit === 'ml' ? v : unit.startsWith('glass') ? v * 250 : v * 1000;
     return { type: 'water', ml: Math.round(ml) };
   }
-  if (/^(antrenman|spinning|kettlebell|spor)( yaptım| günü)?$/.test(t)) return { type: 'train' };
-  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.ad) === t);
+  if (/^(workout|training|spinning|kettlebell|gym)( day| done)?$/.test(t)) return { type: 'train' };
+  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.name) === t);
   if (meal) return { type: 'plan', meal };
-  const flex = FLEX.find((x) => norm(x.ad) === t);
+  const flex = FLEX.find((x) => norm(x.name) === t);
   if (flex) return { type: 'flex', flex };
-  const fav = (S.set.favs || []).find((x) => norm(x.ad) === t);
-  if (fav) return { type: 'fav', fav };
+  const favorite = (S.settings.favorites || []).find((x) => norm(x.name) === t);
+  if (favorite) return { type: 'favorite', favorite };
   return null;
 }
 
 async function submitText(text) {
-  const loc = parseLocal(text);
-  if (loc) {
-    if (loc.type === 'weight') return setWeight(loc.kg);
-    if (loc.type === 'steps') return setSteps(loc.steps);
-    if (loc.type === 'water') {
+  const local = parseLocal(text);
+  if (local) {
+    if (local.type === 'weight') return setWeight(local.kg);
+    if (local.type === 'steps') return setSteps(local.steps);
+    if (local.type === 'water') {
       const cur = (S.days[today()] && S.days[today()].water) || 0;
-      await saveDay(today(), { water: cur + loc.ml });
+      await saveDay(today(), { water: cur + local.ml });
       render();
-      return toast(`${loc.ml} ml su eklendi`);
+      return toast(`${local.ml} ml of water added`);
     }
-    if (loc.type === 'train') { await saveDay(today(), { train: true }); render(); return toast('Bugün antrenman günü: hedef ' + S.set.kcalTrain.toLocaleString('tr-TR') + ' kcal'); }
-    if (loc.type === 'plan') return logMeal(loc.meal, 'plan', today());
-    if (loc.type === 'flex') return logMeal({ ...loc.flex, slot: 'any', tier: 'esnek' }, 'flex', today());
-    if (loc.type === 'fav') return logMeal({ ...loc.fav, slot: 'any' }, 'fav', today());
+    if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(`Today is a workout day: target ${fmtInt(S.settings.kcalTrain)} kcal`); }
+    if (local.type === 'plan') return logMeal(local.meal, 'plan', today());
+    if (local.type === 'flex') return logMeal({ ...local.flex, slot: 'any', tier: 'flex' }, 'flex', today());
+    if (local.type === 'favorite') return logMeal({ ...local.favorite, slot: 'any' }, 'favorite', today());
   }
   const now = new Date();
   const e = {
@@ -299,13 +312,13 @@ async function submitText(text) {
     tier: 'plan', flags: [], conf: 0, q: '', mult: 1, photoIds: [], timeSrc: 'now', place: null,
   };
   await saveEntry(e);
-  go('akis');
+  go('log');
   queueAnalyze(e.id);
 }
 
 let posCache = null;
 function getPos() {
-  if (!S.set.useLocation || !navigator.geolocation) return Promise.resolve(null);
+  if (!S.settings.useLocation || !navigator.geolocation) return Promise.resolve(null);
   if (posCache && Date.now() - posCache.at < 300000) return Promise.resolve(posCache);
   return new Promise((res) => {
     const t = setTimeout(() => res(null), 6000);
@@ -320,8 +333,8 @@ function getPos() {
 async function submitPhotos(files, note) {
   const list = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
   if (!list.length) return;
-  go('akis');
-  toast(list.length > 1 ? `${list.length} fotoğraf hazırlanıyor` : 'Fotoğraf hazırlanıyor');
+  go('log');
+  toast(list.length > 1 ? `Preparing ${list.length} photos` : 'Preparing photo');
   const prepared = [];
   for (const f of list) {
     try {
@@ -336,12 +349,12 @@ async function submitPhotos(files, note) {
       if (ts > Date.now() + 60000) { ts = Date.now(); timeSrc = 'now'; }
       prepared.push({ small, ts, timeSrc, lat: meta.lat, lon: meta.lon });
     } catch (err) {
-      toast('Bir fotoğraf açılamadı: ' + f.name);
+      toast(`Could not open a photo: ${f.name}`);
     }
   }
   if (!prepared.length) return;
   prepared.sort((a, b) => a.ts - b.ts);
-  // Aynı öğünün art arda çekilmiş kareleri (3 dk içinde, saati fotodan okunmuş) tek kayıt olur.
+  // Frames of the same meal (within 3 minutes, time read from the photo) become one entry.
   const groups = [];
   for (const p of prepared) {
     const g = groups[groups.length - 1];
@@ -352,11 +365,11 @@ async function submitPhotos(files, note) {
     const first = g[0];
     let place = null;
     const withGps = g.find((p) => p.lat != null);
-    if (S.set.useLocation) {
-      if (withGps) place = placeLabel(withGps.lat, withGps.lon, S.set.places);
+    if (S.settings.useLocation) {
+      if (withGps) place = placeLabel(withGps.lat, withGps.lon, S.settings.places);
       else if (first.timeSrc === 'now') {
         const pos = await getPos();
-        if (pos) place = placeLabel(pos.lat, pos.lon, S.set.places);
+        if (pos) place = placeLabel(pos.lat, pos.lon, S.settings.places);
       }
     }
     const photoIds = [];
@@ -368,7 +381,7 @@ async function submitPhotos(files, note) {
     const when = new Date(first.ts);
     const e = {
       id: db.uid(), ts: first.ts, day: dayKey(when), createdAt: Date.now(), kind: 'meal', status: 'pending',
-      src: 'photo', text: note || '', title: 'Fotoğraf', slot: slotByTime(when), items: [], kcal: 0, p: 0, c: 0, f: 0, fib: 0,
+      src: 'photo', text: note || '', title: 'Photo', slot: slotByTime(when), items: [], kcal: 0, p: 0, c: 0, f: 0, fib: 0,
       tier: 'plan', flags: [], conf: 0, q: '', mult: 1, photoIds, timeSrc: first.timeSrc, place,
     };
     await saveEntry(e);
@@ -377,7 +390,7 @@ async function submitPhotos(files, note) {
   render();
 }
 
-// ——— Analiz kuyruğu (istekler sırayla gider) ———
+// ——— Analysis queue (requests go one at a time) ———
 let chain = Promise.resolve();
 function queueAnalyze(id, opts) {
   S.busy.add(id);
@@ -392,62 +405,62 @@ async function photoBlob(pid) {
 }
 
 async function analyzeEntry(id, opts = {}) {
-  const e0 = S.entries.find((x) => x.id === id);
-  if (!e0) { S.busy.delete(id); return; }
-  const e = { ...e0 };
+  const original = S.entries.find((x) => x.id === id);
+  if (!original) { S.busy.delete(id); return; }
+  const e = { ...original };
   try {
     const blobs = [];
     for (const pid of e.photoIds || []) { const b = await photoBlob(pid); if (b) blobs.push(b); }
     const cfg = aiCfg();
     if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
-    const model = cfg.model;
     const { data, usage, model: usedModel } = await analyze({
       cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
-      onRetry: (n, of, alt) => { S.retry.set(id, alt ? `Model meşgul, ${alt} deneniyor` : `Sağlayıcı meşgul, yeniden deneniyor (${n}/${of})`); render(); },
+      onRetry: (n, of, alt) => { S.retry.set(id, alt ? `Model busy, trying ${alt}` : `Provider busy, retrying (${n}/${of})`); render(); },
     });
-    const u = S.set.usage;
+    const u = S.settings.usage;
     u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(usedModel, usage);
-    await saveSet();
+    await saveSettings();
     e.model = usedModel;
     e.err = '';
     if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
       const kg = Math.round(data.kg * 10) / 10;
-      Object.assign(e, { kind: 'weight', status: 'ok', kg, title: `Tartı ${fmtKg(kg)} kg` });
+      Object.assign(e, { kind: 'weight', status: 'ok', kg, title: weightTitle(kg) });
       await saveDay(e.day, { kg });
     } else if (data.kind === 'steps' && data.steps > 0) {
       const steps = Math.round(data.steps);
-      Object.assign(e, { kind: 'steps', status: 'ok', steps, title: `${steps.toLocaleString('tr-TR')} adım` });
+      Object.assign(e, { kind: 'steps', status: 'ok', steps, title: stepsTitle(steps) });
       await saveDay(e.day, { steps });
     } else if (data.kind === 'meal') {
       const plan = MEAL_BY_ID[data.plan];
       if (plan) {
         Object.assign(e, {
-          planId: plan.id, title: plan.ad, items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
+          planId: plan.id, title: plan.name, items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
           kcal: plan.kcal, p: plan.p, c: plan.c, f: plan.f, fib: plan.fib, tier: 'plan',
         });
       } else {
         const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String(i.n || ''), g: +i.g || 0, kcal: +i.kcal || 0, p: +i.p || 0 })) : [];
-        const sumK = items.reduce((a, i) => a + i.kcal, 0);
+        const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
         Object.assign(e, {
-          planId: '', title: String(data.title || e.text || 'Öğün').slice(0, 80), items,
-          kcal: Math.round(+data.kcal || sumK), p: +data.p || items.reduce((a, i) => a + i.p, 0),
+          planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items,
+          kcal: Math.round(+data.kcal || sumKcal), p: +data.p || items.reduce((a, i) => a + i.p, 0),
           c: +data.c || 0, f: +data.f || 0, fib: +data.fib || 0,
-          tier: ['plan', 'esnek', 'yok'].includes(data.tier) ? data.tier : 'plan',
+          tier: ['plan', 'flex', 'off'].includes(data.tier) ? data.tier : 'plan',
         });
       }
       Object.assign(e, {
         kind: 'meal', status: 'ok',
-        slot: SLOT_AD[data.slot] ? data.slot : e.slot,
+        slot: SLOT_NAME[data.slot] ? data.slot : e.slot,
         flags: Array.isArray(data.flags) ? data.flags.map(String).slice(0, 4) : [],
         conf: Math.max(0, Math.min(1, +data.conf || 0)), q: String(data.q || '').slice(0, 160),
       });
     } else {
-      Object.assign(e, { status: 'error', err: 'Kaydedilecek bir yiyecek, tartı ya da adım bulunamadı.' });
+      Object.assign(e, { status: 'error', err: 'Nothing to log was found: no food, weight or step count.' });
     }
   } catch (err) {
     const code = err && err.code;
     const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
-    Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERR_TR[code] || 'Analiz başarısız oldu.') + (['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '') });
+    const detail = ['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '';
+    Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + detail });
   }
   S.busy.delete(id);
   S.retry.delete(id);
@@ -455,7 +468,43 @@ async function analyzeEntry(id, opts = {}) {
   render();
 }
 
-// ——— Yedek ———
+// ——— Migration from the original Turkish ids (schema 1) ———
+const V1_SLOT = { sabah: 'morning', ogle: 'lunch', ara1: 'snack1', ara2: 'snack2', aksam: 'dinner', gece: 'late', ant: 'workout' };
+const V1_TIER = { esnek: 'flex', yok: 'off' };
+const V1_PLACE = { Ev: 'Home', Ofis: 'Office', 'dışarı': 'out' };
+const V1_FLEX = { 'Bira 0,33 l': 'Beer 0.33 l', 'Bira 0,5 l': 'Beer 0.5 l' };
+
+function migrateEntry(e) {
+  const out = { ...e };
+  if (V1_SLOT[out.slot]) out.slot = V1_SLOT[out.slot];
+  if (V1_TIER[out.tier]) out.tier = V1_TIER[out.tier];
+  if (V1_PLACE[out.place]) out.place = V1_PLACE[out.place];
+  if (Array.isArray(out.flags)) out.flags = out.flags.map((f) => (f === 'alkol' ? 'alcohol' : f));
+  if (out.src === 'fav') out.src = 'favorite';
+  const plan = out.planId && MEAL_BY_ID[out.planId];
+  if (plan) { out.title = plan.name; out.items = plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })); }
+  if (V1_FLEX[out.title]) out.title = V1_FLEX[out.title];
+  if (out.kind === 'weight' && out.kg) out.title = weightTitle(out.kg);
+  if (out.kind === 'steps' && out.steps) out.title = stepsTitle(out.steps);
+  if (out.title === 'Fotoğraf') out.title = 'Photo';
+  if (out.status !== 'ok' && out.err) out.err = ''; // stale message in the old language
+  return out;
+}
+function migrateSettings(st) {
+  const out = { ...st };
+  if (Array.isArray(out.favs)) {
+    out.favorites = out.favs.map((f) => {
+      const { ad, ...rest } = f;
+      return { ...rest, name: V1_FLEX[f.name || ad] || f.name || ad, tier: V1_TIER[f.tier] || f.tier, flags: (f.flags || []).map((x) => (x === 'alkol' ? 'alcohol' : x)) };
+    });
+    delete out.favs;
+  }
+  if (Array.isArray(out.places)) out.places = out.places.map((p) => ({ ...p, name: V1_PLACE[p.name] || p.name }));
+  out.schema = SCHEMA_VERSION;
+  return out;
+}
+
+// ——— Backup ———
 const b64FromBuf = (buf) => {
   const u8 = new Uint8Array(buf);
   let s = '';
@@ -465,10 +514,10 @@ const b64FromBuf = (buf) => {
 const bufFromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
 
 async function exportBackup(withPhotos) {
-  const { apiKey, oaKey, ...setNoKey } = S.set;
-  const data = { app: 'kantar', v: 1, at: new Date().toISOString(), settings: setNoKey, entries: S.entries, days: Object.values(S.days) };
+  const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
+  const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days) };
   if (withPhotos) data.photos = (await db.all('photos')).map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, b64: b64FromBuf(p.buf) }));
-  const name = `kantar-yedek-${today()}.json`;
+  const name = `kantar-backup-${today()}.json`;
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   let shared = false;
   try {
@@ -489,33 +538,41 @@ async function exportBackup(withPhotos) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   }
-  S.set.lastBackup = Date.now();
-  await saveSet();
+  S.settings.lastBackup = Date.now();
+  await saveSettings();
   render();
-  toast('Yedek hazırlandı');
+  toast('Backup ready');
 }
 
 async function importBackup(file) {
   let data;
-  try { data = JSON.parse(await file.text()); } catch { return toast('Dosya okunamadı'); }
-  if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('Bu bir Kantar yedeği değil');
-  await db.putMany('entries', data.entries);
+  try { data = JSON.parse(await file.text()); } catch { return toast('Could not read the file'); }
+  if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('This is not a Kantar backup');
+  await db.putMany('entries', data.entries.map(migrateEntry));
   await db.putMany('days', data.days || []);
   if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, buf: bufFromB64(p.b64) })));
-  if (data.settings) { S.set = { ...S.set, ...data.settings, apiKey: S.set.apiKey, oaKey: S.set.oaKey }; await saveSet(); }
+  if (data.settings) { S.settings = { ...S.settings, ...migrateSettings(data.settings), apiKey: S.settings.apiKey, oaKey: S.settings.oaKey }; await saveSettings(); }
   await load();
   render();
-  toast(`${data.entries.length} kayıt geri yüklendi`);
+  toast(`${data.entries.length} entries restored`);
 }
 
-// ——— Yükleme ve çizim ———
+// ——— Loading and rendering ———
 async function load() {
-  const st = await db.kvGet('settings', null);
-  if (st) {
-    S.set = { ...S.set, ...st, usage: { ...S.set.usage, ...(st.usage || {}) } };
-    if (!st.provider) S.set.provider = st.apiKey ? 'anthropic' : 'openai'; // sağlayıcı seçimi olmayan eski kayıt
-  }
+  const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
+  // Entries without stored settings can only come from a release that had not saved any yet, so they are checked too
+  const needsMigration = stored ? (stored.schema || 1) < SCHEMA_VERSION : S.entries.length > 0;
+  if (stored) {
+    const st = needsMigration ? migrateSettings(stored) : stored;
+    S.settings = { ...S.settings, ...st, usage: { ...S.settings.usage, ...(st.usage || {}) } };
+    if (!stored.provider) S.settings.provider = stored.apiKey ? 'anthropic' : 'openai'; // settings saved before provider choice existed
+  }
+  if (needsMigration) {
+    S.entries = S.entries.map(migrateEntry);
+    await db.putMany('entries', S.entries);
+    await saveSettings();
+  }
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
 }
 
@@ -523,32 +580,32 @@ async function refreshStorage() {
   try {
     if (navigator.storage && navigator.storage.persisted) S.persisted = await navigator.storage.persisted();
     if (navigator.storage && navigator.storage.estimate) S.storage = await navigator.storage.estimate();
-  } catch { /* desteklenmiyor */ }
+  } catch { /* not supported */ }
 }
 
 export function go(tab) {
   S.tab = tab;
   render();
-  $('#view').scrollTop = 0;
   window.scrollTo(0, 0);
 }
 
 function render() {
   const v = $('#view');
   const y = window.scrollY;
-  const fn = { bugun: renderBugun, akis: renderAkis, ilerleme: renderIlerleme, plan: renderPlan }[S.tab];
+  const fn = { today: renderToday, log: renderLog, progress: renderProgress, plan: renderPlan }[S.tab];
   const focusId = document.activeElement && v.contains(document.activeElement) ? document.activeElement.id : '';
   v.innerHTML = fn();
   v.dataset.view = S.tab;
   document.querySelectorAll('.tabs button').forEach((b) => {
     if (b.dataset.tab === S.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  const showYaz = S.tab === 'akis' || (S.tab === 'bugun' && S.viewDay === today()); // yazılanlar hep bugüne düşer
-  $('#yaz').hidden = !showYaz;
-  document.body.classList.toggle('has-yaz', showYaz);
-  renderFavRow();
+  // Whatever is typed is always logged to today, so the composer hides on past days
+  const showComposer = S.tab === 'log' || (S.tab === 'today' && S.viewDay === today());
+  $('#composer').hidden = !showComposer;
+  document.body.classList.toggle('has-composer', showComposer);
+  renderFavorites();
   hydratePhotos();
-  if (S.tab === 'ilerleme') attachChart(v);
+  if (S.tab === 'progress') attachChart(v);
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
   if (S.sheet && S.sheet.type === 'entry') {
@@ -557,24 +614,24 @@ function render() {
   }
 }
 
-function renderFavRow() {
-  const row = $('#favrow');
-  const favs = S.set.favs || [];
-  const show = S.tab === 'akis' && favs.length > 0;
+function renderFavorites() {
+  const row = $('#favorites');
+  const favorites = S.settings.favorites || [];
+  const show = S.tab === 'log' && favorites.length > 0;
   row.hidden = !show;
   row.innerHTML = '';
   if (!show) return;
-  const lab = document.createElement('span');
-  lab.className = 'favrow-l';
-  lab.textContent = 'Sık yenenler';
-  row.append(lab);
-  for (const f of favs) {
+  const label = document.createElement('span');
+  label.className = 'favorites-label';
+  label.textContent = 'Favourites';
+  row.append(label);
+  for (const f of favorites) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip';
-    b.dataset.act = 'log-fav';
+    b.dataset.act = 'log-favorite';
     b.dataset.id = f.id;
-    b.append(f.ad + ' ');
+    b.append(f.name + ' ');
     const sp = document.createElement('span');
     sp.textContent = String(Math.round(f.kcal));
     b.append(sp);
@@ -621,14 +678,14 @@ function closeSheet() {
   if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
   sheetOpener = null;
 }
-async function openSettings(sec) {
-  if (sec) S.setOpen = sec;
+async function openSettings(section) {
+  if (section) S.openSetting = section;
   await refreshStorage();
   const wasOpen = !!(S.sheet && S.sheet.type === 'settings');
   openSheet(renderSettings(), { type: 'settings' }, null, wasOpen);
 }
 
-// ——— Olaylar ———
+// ——— Actions ———
 const ACT = {
   'tab': (el) => go(el.dataset.tab),
   'settings': (el) => openSettings(el && el.dataset.sec),
@@ -637,8 +694,8 @@ const ACT = {
   'day-next': () => { if (S.viewDay < today()) { S.viewDay = addDays(S.viewDay, 1); render(); } },
   'day-today': () => { S.viewDay = today(); render(); },
   'log-plan': (el) => logMeal(MEAL_BY_ID[el.dataset.id], 'plan'),
-  'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'esnek' }, 'flex', today()); },
-  'log-fav': (el) => { const f = (S.set.favs || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'fav', today()); },
+  'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'flex' }, 'flex', today()); },
+  'log-favorite': (el) => { const f = (S.settings.favorites || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'favorite', today()); },
   'open-entry': (el) => {
     const html = renderEntrySheet(el.dataset.id);
     if (html) openSheet(html, { type: 'entry', id: el.dataset.id });
@@ -651,13 +708,13 @@ const ACT = {
     await saveDay(el.dataset.day, el.dataset.kind === 'kg' ? { kg: null } : { steps: null });
     closeSheet();
     render();
-    toast(el.dataset.kind === 'kg' ? 'Tartı silindi' : 'Adım silindi');
+    toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
-  'hide-start': async () => { S.set.hideStart = true; await saveSet(); render(); },
-  'cam': () => $('#f-cam').click(),
-  'lib': () => $('#f-lib').click(),
+  'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
+  'camera': () => $('#f-cam').click(),
+  'library': () => $('#f-lib').click(),
   'hint': (el) => {
-    const inp = $('#yaz-in');
+    const inp = $('#composer-input');
     inp.value = el.dataset.fill;
     inp.focus();
     inp.setSelectionRange(inp.value.length, inp.value.length);
@@ -672,68 +729,68 @@ const ACT = {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) { await saveEntry({ ...e, mult: Number(el.dataset.v) }); render(); }
   },
-  'del': (el) => removeEntry(el.dataset.id),
+  'delete': (el) => removeEntry(el.dataset.id),
   'analyze': (el) => queueAnalyze(el.dataset.id),
   'analyze-all': () => { S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id)); },
   'reanalyze': (el) => queueAnalyze(el.dataset.id, { strong: true }),
   'answer': (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
-    const inp = document.getElementById('ans-' + el.dataset.id);
+    const inp = document.getElementById('answer-' + el.dataset.id);
     if (!e || !inp || !inp.value.trim()) return;
-    queueAnalyze(e.id, { hint: `Önceki soru: ${e.q}\nYanıt: ${inp.value.trim()}` });
+    queueAnalyze(e.id, { hint: `Earlier question: ${e.q}\nAnswer: ${inp.value.trim()}` });
   },
-  'fav': async (el) => {
+  'favorite': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return;
-    const favs = S.set.favs || [];
-    if (favs.some((f) => f.ad === e.title)) return toast('Zaten sık yenenlerde');
+    const favorites = S.settings.favorites || [];
+    if (favorites.some((f) => f.name === e.title)) return toast('Already in favourites');
     const v = eff(e);
-    favs.push({ id: db.uid(), ad: e.title, slot: 'any', kcal: Math.round(v.kcal), p: v.p, c: v.c, f: v.f, fib: v.fib, tier: e.tier, flags: e.flags || [], items: e.items || [] });
-    S.set.favs = favs;
-    await saveSet();
+    favorites.push({ id: db.uid(), name: e.title, slot: 'any', kcal: Math.round(v.kcal), p: v.p, c: v.c, f: v.f, fib: v.fib, tier: e.tier, flags: e.flags || [], items: e.items || [] });
+    S.settings.favorites = favorites;
+    await saveSettings();
     render();
-    toast('Sık yenenlere eklendi. Bir dahaki sefere tek dokunuş.');
+    toast('Added to favourites. One tap next time.');
   },
-  'fav-del': async (el) => {
-    S.set.favs = (S.set.favs || []).filter((f) => f.id !== el.dataset.id);
-    await saveSet();
+  'favorite-remove': async (el) => {
+    S.settings.favorites = (S.settings.favorites || []).filter((f) => f.id !== el.dataset.id);
+    await saveSettings();
     openSettings();
   },
   'save-edit': async (el) => {
     const id = el.dataset.id;
     const e = S.entries.find((x) => x.id === id);
     if (!e) return;
-    const g = (k) => document.getElementById(`${k}-${id}`);
-    const kcal = parseFloat(g('ek').value.replace(',', '.'));
-    const p = parseFloat(g('ep').value.replace(',', '.'));
-    const slot = g('es').value;
-    const tm = g('et').value;
-    const ne = { ...e, slot };
-    if (kcal >= 0) { ne.kcal = Math.round(kcal / (e.mult || 1)); ne.conf = 1; ne.planId = ''; }
-    if (p >= 0) ne.p = Math.round((p / (e.mult || 1)) * 10) / 10;
-    if (/^\d{2}:\d{2}$/.test(tm)) {
+    const field = (k) => document.getElementById(`${k}-${id}`);
+    const kcal = parseFloat(field('edit-kcal').value.replace(',', '.'));
+    const p = parseFloat(field('edit-protein').value.replace(',', '.'));
+    const slot = field('edit-slot').value;
+    const time = field('edit-time').value;
+    const next = { ...e, slot };
+    if (kcal >= 0) { next.kcal = Math.round(kcal / (e.mult || 1)); next.conf = 1; next.planId = ''; }
+    if (p >= 0) next.p = Math.round((p / (e.mult || 1)) * 10) / 10;
+    if (/^\d{2}:\d{2}$/.test(time)) {
       const d = new Date(e.ts);
-      d.setHours(+tm.slice(0, 2), +tm.slice(3, 5), 0, 0);
-      if (d.getTime() !== e.ts) { ne.ts = d.getTime(); ne.timeSrc = 'manual'; }
+      d.setHours(+time.slice(0, 2), +time.slice(3, 5), 0, 0);
+      if (d.getTime() !== e.ts) { next.ts = d.getTime(); next.timeSrc = 'manual'; }
     }
-    await saveEntry(ne);
+    await saveEntry(next);
     render();
-    toast('Kayıt güncellendi');
+    toast('Entry updated');
   },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
-  'goto-day': (el) => { S.viewDay = el.dataset.day; go('bugun'); },
-  // Ayarlar
+  'goto-day': (el) => { S.viewDay = el.dataset.day; go('today'); },
+  // Settings
   'save-key': async () => {
-    if (S.set.provider === 'openai') {
-      S.set.oaBase = $('#set-base').value.trim().replace(/\/+$/, '');
-      S.set.oaModel = $('#set-oamodel').value.trim();
-      S.set.oaKey = $('#set-oakey').value.trim();
+    if (S.settings.provider === 'openai') {
+      S.settings.oaBase = $('#set-base').value.trim().replace(/\/+$/, '');
+      S.settings.oaModel = $('#set-oamodel').value.trim();
+      S.settings.oaKey = $('#set-oakey').value.trim();
     } else {
-      S.set.apiKey = $('#set-key').value.trim();
-      S.set.model = $('#set-model').value;
+      S.settings.apiKey = $('#set-key').value.trim();
+      S.settings.model = $('#set-model').value;
     }
-    await saveSet();
-    toast(aiCfg().key ? 'Ayar bu cihaza kaydedildi' : 'Anahtar silindi');
+    await saveSettings();
+    toast(aiCfg().key ? 'Saved on this device' : 'Key removed');
     render();
     await openSettings();
     if (hasKey()) ACT['analyze-all']();
@@ -741,62 +798,62 @@ const ACT = {
   'test-key': async () => {
     await ACT['save-key']();
     const out = $('#key-test');
-    if (!hasKey()) { out.textContent = S.set.provider === 'openai' ? 'Adres, model ve anahtar gerekli.' : 'Anahtar gerekli.'; return; }
+    if (!hasKey()) { out.textContent = S.settings.provider === 'openai' ? 'Address, model and key are all required.' : 'A key is required.'; return; }
     const cfg = aiCfg();
-    const add = async (u) => { S.set.usage.in += u.in; S.set.usage.out += u.out; S.set.usage.calls += 1; S.set.usage.usd += costUSD(cfg.model, u); await saveSet(); };
-    const why = (err) => (err.code === 'no_credit' ? 'Hesapta kredi yok; anahtar ve bağlantı doğru.' : (AI_ERR_TR[err.code] || 'Başarısız.').replace('; kayıt bekliyor', '') + ' ' + String(err.message || '').slice(0, 140));
-    out.textContent = 'Metin deneniyor…';
-    let line1;
+    const add = async (u) => { S.settings.usage.in += u.in; S.settings.usage.out += u.out; S.settings.usage.calls += 1; S.settings.usage.usd += costUSD(cfg.model, u); await saveSettings(); };
+    const why = (err) => (err.code === 'no_credit' ? 'The account has no credit; the key and the connection are fine.' : (AI_ERRORS[err.code] || 'Failed.').replace('; the entry is waiting', '') + ' ' + String(err.message || '').slice(0, 140));
+    out.textContent = 'Testing text…';
+    let textLine;
     try {
-      const r = await analyze({ cfg, text: '1 orta boy elma', when: new Date() });
+      const r = await analyze({ cfg, text: '1 medium apple', when: new Date() });
       await add(r.usage);
-      line1 = `Metin çalışıyor: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal (${r.usage.in} giriş, ${r.usage.out} çıkış token).`;
+      textLine = `Text works: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal (${r.usage.in} input and ${r.usage.out} output tokens).`;
     } catch (err) {
-      out.textContent = 'Metin: ' + why(err);
+      out.textContent = 'Text: ' + why(err);
       return;
     }
-    out.textContent = line1 + ' Fotoğraf deneniyor…';
+    out.textContent = textLine + ' Testing photo…';
     try {
       const v = await probeVision(cfg);
       await add(v.usage);
-      out.textContent = line1 + (v.ok ? ' Fotoğraf çalışıyor: model resimdeki sayıyı okudu.' : ' Fotoğraf çalışmıyor: model resmi okuyamadı. Görsel destekleyen başka bir model seç.');
+      out.textContent = textLine + (v.ok ? ' Photos work: the model read the number in the test image.' : ' Photos do not work: the model could not read the test image. Pick a model with image support.');
     } catch (err) {
-      out.textContent = line1 + ' Fotoğraf: ' + why(err);
+      out.textContent = textLine + ' Photo: ' + why(err);
     }
   },
   'find-vision': async () => {
     await ACT['save-key']();
     const out = $('#key-test');
-    if (!S.set.oaBase || !S.set.oaKey) { out.textContent = 'Önce adres ve anahtarı gir.'; return; }
-    const base = { provider: 'openai', key: S.set.oaKey, base: S.set.oaBase };
-    out.textContent = 'Model listesi alınıyor…';
+    if (!S.settings.oaBase || !S.settings.oaKey) { out.textContent = 'Enter the address and key first.'; return; }
+    const base = { provider: 'openai', key: S.settings.oaKey, base: S.settings.oaBase };
+    out.textContent = 'Fetching the model list…';
     let ids = await listModels(base);
-    const zen = /opencode\.ai\/zen\/v1$/.test(S.set.oaBase);
+    const zen = /opencode\.ai\/zen\/v1$/.test(S.settings.oaBase);
     if (zen) ids = ids.filter((id) => /free|big-pickle/i.test(id));
     if (!ids.length && zen) ids = ZEN_FREE.slice();
-    if (S.set.oaModel && !ids.includes(S.set.oaModel)) ids.unshift(S.set.oaModel);
+    if (S.settings.oaModel && !ids.includes(S.settings.oaModel)) ids.unshift(S.settings.oaModel);
     ids = ids.slice(0, 16);
-    if (!ids.length) { out.textContent = 'Model listesi alınamadı. Model adını elle yazıp “Kaydet ve dene”ye bas.'; return; }
+    if (!ids.length) { out.textContent = 'Could not fetch the model list. Type a model name and tap “Save and test”.'; return; }
     const lines = [];
     let found = '';
     for (const id of ids) {
-      out.textContent = lines.concat(`${id}: deneniyor…`).join('\n');
+      out.textContent = lines.concat(`${id}: testing…`).join('\n');
       try {
         const v = await probeVision({ ...base, model: id });
-        lines.push(`${id}: ${v.ok ? 'fotoğrafı okudu' : 'fotoğrafı okuyamadı'}`);
+        lines.push(`${id}: ${v.ok ? 'read the photo' : 'could not read the photo'}`);
         if (v.ok && !found) found = id;
       } catch (err) {
-        lines.push(`${id}: ${(AI_ERR_TR[err.code] || 'hata').split('.')[0].toLocaleLowerCase('tr-TR')}`);
+        lines.push(`${id}: ${(AI_ERRORS[err.code] || 'error').split('.')[0].toLowerCase()}`);
         if (err.code === 'net' || err.code === 'offline' || err.code === 'bad_key') break;
       }
     }
     if (found) {
-      S.set.oaModel = found;
-      await saveSet();
+      S.settings.oaModel = found;
+      await saveSettings();
       const inp = $('#set-oamodel');
       if (inp) inp.value = found;
-      lines.push(`Seçilen model: ${found}. Şimdi “Kaydet ve dene”ye bas.`);
-    } else lines.push('Fotoğraf okuyan model bulunamadı.');
+      lines.push(`Selected model: ${found}. Now tap “Save and test”.`);
+    } else lines.push('No model that reads photos was found.');
     out.textContent = lines.join('\n');
     render();
   },
@@ -808,46 +865,46 @@ const ACT = {
       kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), protein: Math.round(num('#set-prot')),
     };
     if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= 1200) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
-      return toast('Değerleri kontrol et: bitiş başlangıçtan sonra, hedef kilo başlangıçtan düşük, kalori en az 1.200 olmalı');
+      return toast('Check the values: the end must be after the start, the target weight below the start weight, and calories at least 1,200');
     }
-    S.set = { ...S.set, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
-    await saveSet();
+    S.settings = { ...S.settings, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
+    await saveSettings();
     render();
-    toast('Hedefler kaydedildi');
+    toast('Targets saved');
   },
-  'loc-toggle': async (el) => { S.set.useLocation = el.checked; await saveSet(); openSettings(); },
+  'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'loc-save': async (el) => {
     const out = $('#loc-out');
-    out.textContent = 'Konum alınıyor…';
+    out.textContent = 'Getting your location…';
     posCache = null;
-    const was = S.set.useLocation;
-    S.set.useLocation = true;
+    const was = S.settings.useLocation;
+    S.settings.useLocation = true;
     const pos = await getPos();
-    S.set.useLocation = was;
-    if (!pos) { out.textContent = 'Konum alınamadı. Tarayıcıya konum izni verildiğini kontrol et.'; return; }
+    S.settings.useLocation = was;
+    if (!pos) { out.textContent = 'Could not get a location. Check that the browser has location permission.'; return; }
     const name = el.dataset.name;
-    S.set.places = (S.set.places || []).filter((p) => p.name !== name).concat([{ name, lat: pos.lat, lon: pos.lon }]);
-    await saveSet();
+    S.settings.places = (S.settings.places || []).filter((p) => p.name !== name).concat([{ name, lat: pos.lat, lon: pos.lon }]);
+    await saveSettings();
     openSettings();
-    toast(`Bulunduğun yer “${name}” olarak kaydedildi`);
+    toast(`This spot is saved as “${name}”`);
   },
   'export': () => exportBackup(false),
   'export-photos': () => exportBackup(true),
   'import': () => $('#set-import').click(),
   'persist': async () => {
-    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* yok */ }
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* not supported */ }
     openSettings();
   },
   'check-update': async () => {
-    const out = $('#upd-out');
-    if (!swReg) { out.textContent = 'Bu tarayıcıda çevrimdışı önbellek kapalı; sayfayı yenilemek yeterli.'; return; }
-    out.textContent = 'Denetleniyor…';
+    const out = $('#update-out');
+    if (!swReg) { out.textContent = 'Offline caching is off in this browser; reloading the page is enough.'; return; }
+    out.textContent = 'Checking…';
     try {
       await swReg.update();
-      // Yeni sürüm varsa kurulur ve sayfa kendiliğinden yenilenir
-      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? 'Yeni sürüm kuruluyor…' : 'Güncel: en son sürüm bu.'; }, 1500);
+      // A new version installs itself and the page reloads on its own
+      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? 'Installing the new version…' : 'Up to date: this is the latest version.'; }, 1500);
     } catch {
-      out.textContent = 'Denetlenemedi. İnternet bağlantını kontrol et.';
+      out.textContent = 'Could not check. Check your internet connection.';
     }
   },
   'hard-reload': async () => {
@@ -856,23 +913,23 @@ const ACT = {
       await Promise.all(keys.map((k) => caches.delete(k)));
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map((r) => r.unregister()));
-    } catch { /* yok */ }
+    } catch { /* not supported */ }
     location.reload();
   },
   'wipe': async () => {
-    if (!window.confirm('Bu cihazdaki tüm kayıtlar, fotoğraflar ve tartılar silinecek. Yedeğin var mı? Devam edilsin mi?')) return;
+    if (!window.confirm('All entries, photos and weigh-ins on this device will be deleted. Do you have a backup? Continue?')) return;
     await db.clear('entries'); await db.clear('photos'); await db.clear('days');
     S.entries = []; S.days = {};
     closeSheet();
     render();
-    toast('Tüm kayıtlar silindi');
+    toast('All entries deleted');
   },
 };
 
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-act],.tabs [data-tab],[data-close-sheet]');
   if (!el) return;
-  if (el.matches('input[type=checkbox]')) return; // change olayında işlenir
+  if (el.matches('input[type=checkbox]')) return; // handled on change
   if (el.dataset.closeSheet !== undefined) return closeSheet();
   const act = el.dataset.act || (el.dataset.tab ? 'tab' : '');
   if (ACT[act]) { ev.preventDefault(); ACT[act](el); }
@@ -882,22 +939,21 @@ document.addEventListener('change', async (ev) => {
   const el = ev.target;
   if (el.id === 'f-cam' || el.id === 'f-lib') {
     const files = Array.from(el.files || []);
-    const note = $('#yaz-in').value.trim();
+    const note = $('#composer-input').value.trim();
     el.value = '';
-    if (files.length) { $('#yaz-in').value = ''; submitPhotos(files, note); }
+    if (files.length) { $('#composer-input').value = ''; submitPhotos(files, note); }
     return;
   }
   if (el.id === 'set-import') { if (el.files[0]) importBackup(el.files[0]); el.value = ''; return; }
   if (el.dataset.act === 'loc-toggle') return ACT['loc-toggle'](el);
-  if (el.dataset.chg === 'prov') { S.set.provider = el.value; await saveSet(); render(); return openSettings(); }
+  if (el.dataset.chg === 'provider') { S.settings.provider = el.value; await saveSettings(); render(); return openSettings(); }
   if (el.dataset.chg === 'preset') {
     const p = PRESETS.find((x) => x.id === el.value);
     if (p) { $('#set-base').value = p.base; $('#set-oamodel').value = p.model; }
-    return;
   }
 });
 
-// Sayı sayfası: tartı ya da adım kaydı
+// Number sheet: saves a weigh-in or a step count
 document.addEventListener('submit', (ev) => {
   const f = ev.target;
   if (f.id !== 'num-form') return;
@@ -907,38 +963,38 @@ document.addEventListener('submit', (ev) => {
   const day = f.dataset.day;
   if (f.dataset.kind === 'kg') {
     const kg = parseFloat(raw.replace(',', '.'));
-    if (!(kg >= 50 && kg <= 160)) { err.textContent = '50 ile 160 kg arasında bir değer gir. Örnek: 85,4'; err.hidden = false; return; }
+    if (!(kg >= 50 && kg <= 160)) { err.textContent = 'Enter a value between 50 and 160 kg. Example: 85.4'; err.hidden = false; return; }
     closeSheet();
     setWeight(Math.round(kg * 10) / 10, day, false);
   } else {
-    const st = parseInt(raw.replace(/\D/g, ''), 10);
-    if (!(st >= 0 && st <= 100000)) { err.textContent = 'Adım sayısını rakamla gir. Örnek: 8200'; err.hidden = false; return; }
+    const steps = parseInt(raw.replace(/\D/g, ''), 10);
+    if (!(steps >= 0 && steps <= 100000)) { err.textContent = 'Enter the step count in digits. Example: 8200'; err.hidden = false; return; }
     closeSheet();
-    setSteps(st, day, false);
+    setSteps(steps, day, false);
   }
 });
 
-// Açılır bölümlerin durumu yeniden çizimde korunur (toggle olayı kabarcıklanmaz: yakalama aşaması)
+// Expanded sections survive re-renders (toggle does not bubble, so listen in the capture phase)
 document.addEventListener('toggle', (ev) => {
   const d = ev.target;
   if (!d.matches) return;
-  if (d.matches('details.slot-d')) { if (d.open) S.openSlots.add(d.dataset.slot); else S.openSlots.delete(d.dataset.slot); }
-  if (d.matches('details.ayar')) {
+  if (d.matches('details.slot-options')) { if (d.open) S.openSlots.add(d.dataset.slot); else S.openSlots.delete(d.dataset.slot); }
+  if (d.matches('details.setting')) {
     if (d.open) {
-      S.setOpen = d.dataset.sec;
-      document.querySelectorAll('details.ayar[open]').forEach((o) => { if (o !== d) o.open = false; });
-    } else if (S.setOpen === d.dataset.sec) S.setOpen = '';
+      S.openSetting = d.dataset.sec;
+      document.querySelectorAll('details.setting[open]').forEach((o) => { if (o !== d) o.open = false; });
+    } else if (S.openSetting === d.dataset.sec) S.openSetting = '';
   }
 }, true);
 
-// Örnek çiplerine dokununca yazma kutusu odağı kaybetmesin
+// Tapping an example chip must not take focus away from the composer input
 document.addEventListener('pointerdown', (ev) => { if (ev.target.closest('[data-act="hint"]')) ev.preventDefault(); });
 
 $('#btn-cam').addEventListener('click', () => $('#f-cam').click());
 $('#btn-lib').addEventListener('click', () => $('#f-lib').click());
-$('#yaz').addEventListener('submit', (ev) => {
+$('#composer').addEventListener('submit', (ev) => {
   ev.preventDefault();
-  const inp = $('#yaz-in');
+  const inp = $('#composer-input');
   const t = inp.value.trim();
   if (!t) return;
   inp.value = '';
@@ -946,62 +1002,61 @@ $('#yaz').addEventListener('submit', (ev) => {
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
 
-// Gün değişince (uygulama açık kalmışsa) bugüne geç
+// If the app stayed open past midnight, move on to the new day
+let lastToday = today();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    const t = today();
-    if (S._lastToday && S._lastToday !== t && S.viewDay === S._lastToday) S.viewDay = t;
-    S._lastToday = t;
-    render();
-  }
+  if (document.visibilityState !== 'visible') return;
+  const t = today();
+  if (lastToday !== t && S.viewDay === lastToday) S.viewDay = t;
+  lastToday = t;
+  render();
 });
 
-(async function start() {
-  try {
-    await load();
-  } catch (err) {
-    $('#view').innerHTML = '<div class="bos"><h1>Veritabanı açılamadı</h1><p>Tarayıcının gizli modunda yerel depolama kapalı olabilir. Normal pencerede ya da ana ekrana ekleyerek aç.</p></div>';
-    return;
-  }
-  S._lastToday = today();
-  render();
-  refreshStorage();
-  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { S.persisted = p; }); } catch { /* yok */ }
-  setupUpdates();
-  // Yarım kalan analizler: anahtar varsa ve çevrimiçiyse sürdür
-  if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
-})();
-
-// ——— Güncelleme ———
-// Yeni service worker denetimi devraldığında sayfa eski dosyalarla çalışıyordur: yeniden yüklenir.
+// ——— Updates ———
+// When a new service worker takes control the page is still running old files, so it reloads.
 let swReg = null;
 function safeToReload() {
-  return $('#sheet').hidden && !$('#yaz-in').value && !S.busy.size && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
+  return $('#sheet').hidden && !$('#composer-input').value && !S.busy.size && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
 }
 function setupUpdates() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
   const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloading) return; // ilk kurulumda yeniden yüklemeye gerek yok
-    if (safeToReload()) { reloading = true; location.reload(); } else toast('Yeni sürüm hazır', { label: 'Yenile', fn: () => location.reload() });
+    if (!hadController || reloading) return; // no reload needed on first install
+    if (safeToReload()) { reloading = true; location.reload(); } else toast('A new version is ready', { label: 'Reload', fn: () => location.reload() });
   });
   navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => { swReg = reg; }).catch(() => {});
-  // Ana ekrandaki uygulama arka planda bekleyip öne geldiğinde de güncelleme aransın
+  // A Home Screen app that was waiting in the background also checks when it comes forward
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && swReg) swReg.update().catch(() => {}); });
 }
 
-// Test ve hata ayıklama için
-if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos };
+(async function start() {
+  try {
+    await load();
+  } catch (err) {
+    $('#view').innerHTML = '<div class="empty"><h1>Could not open the database</h1><p>Local storage may be off in private browsing. Open the app in a normal window or add it to the Home Screen.</p></div>';
+    return;
+  }
+  render();
+  refreshStorage();
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { S.persisted = p; }); } catch { /* not supported */ }
+  setupUpdates();
+  // Unfinished analyses resume when there is a key and a connection
+  if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
+})();
 
-// Klavye açılınca yazma alanını klavyenin üstünde tut
+// For tests and debugging
+if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings };
+
+// Keep the composer above the on-screen keyboard
 if (window.visualViewport) {
   const vv = window.visualViewport;
-  const onVV = () => {
+  const onViewport = () => {
     const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
     document.documentElement.style.setProperty('--kb', kb + 'px');
     document.body.classList.toggle('kb-open', kb > 120);
   };
-  vv.addEventListener('resize', onVV);
-  vv.addEventListener('scroll', onVV);
+  vv.addEventListener('resize', onViewport);
+  vv.addEventListener('scroll', onViewport);
 }

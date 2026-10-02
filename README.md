@@ -1,43 +1,53 @@
 # Kantar
 
-86 kg'dan 78 kg'a (5 Ekim – 31 Aralık 2026) beslenme planı ve günlük takip.
-Tek kullanıcılı, kurulumu "Ana Ekrana Ekle" olan bir web uygulaması (PWA).
-Kayıtlar, fotoğraflar ve API anahtarı yalnızca telefonda durur.
+A nutrition plan and daily tracker for going from 86 kg to 78 kg (5 October to 31 December 2026).
+It is a single-user web app (PWA) that installs with "Add to Home Screen".
+Entries, photos and the API key stay on the phone.
 
-## Kurulum
+"Kantar" is Turkish for a weighing scale.
 
-1. Bu klasördeki dosyaları bir GitHub reposuna yükle (kodda gizli bilgi yok, repo herkese açık olabilir).
-2. Repo → Settings → Pages → "Deploy from a branch", `main` / `(root)`. Birkaç dakika sonra
-   `https://<kullanıcı>.github.io/<repo>/` adresi açılır. Cloudflare Pages de olur; HTTPS şart.
-3. iPhone'da adresi Chrome ya da Safari'de aç → Paylaş → Ana Ekrana Ekle.
-4. Uygulamada sağ üstteki ayar düğmesi → "Fotoğraf ve metin analizi" → sağlayıcıyı seç:
-   - **OpenAI uyumlu** (OpenCode Zen/Go, Gemini ücretsiz katman, OpenRouter): hazır ayarı seç,
-     anahtarı gir, "Fotoğraf okuyan modeli bul"a bas, sonra "Kaydet ve dene".
-   - **Claude:** anahtar https://platform.claude.com → API Keys; ön ödemeli kredi ister.
-   Plan öğünleri, tartı, adım ve su hiçbir sağlayıcı olmadan çalışır.
-5. İstersen Ayarlar → Konum: evdeyken "Buradayım: Ev", ofisteyken "Buradayım: Ofis".
+## Setup
 
-## Kullanım
+1. Push the files in this folder to a GitHub repository. There are no secrets in the code, so the
+   repository can be public.
+2. Repository → Settings → Pages → "Deploy from a branch", `main` / `(root)`. A few minutes later the
+   app is live at `https://<user>.github.io/<repo>/`. Cloudflare Pages works too; HTTPS is required.
+3. On the iPhone, open the address in Safari or Chrome → Share → Add to Home Screen.
+4. In the app, tap the settings button at the top right → "Photo and text analysis" and choose a provider:
+   - **OpenAI-compatible** (Gemini free tier, OpenCode Zen/Go, OpenRouter): pick the preset, enter the
+     key, then "Save and test". If the model cannot read photos, use "find a model that reads photos".
+   - **Claude:** create a key at https://platform.claude.com → API Keys; it needs prepaid credit.
 
-- **Bugün:** “Sıradaki öğün” kartında Kaydet’e dokun (token harcamaz). Tartı ve adım satırına dokununca sayı girişi açılır.
-- Bir kayda dokununca ayrıntısı açılır: porsiyon, düzenleme, silme.
-- **Akış:** fotoğraf çek, galeriden birkaç fotoğraf seç ya da yaz. Örnekler:
-  `85,4` (tartı) · `8200 adım` · `su 2 bardak` · `antrenman` · `2 dilim pizza ve 1 bira`
-- Galeriden seçilen fotoğrafın saati fotoğraftan okunur; 3 dakika içinde çekilmiş kareler tek öğün sayılır.
-- Kartta porsiyonu ½ / 1 / 1½ / 2 ile düzelt; "Sık yenenlere ekle" ile bir dahaki sefere tek dokunuş.
-- **Yedek:** Ayarlar → "Yedeği kaydet" → Dosyalar. Haftada bir yap.
+   Plan meals, weight, steps and water work without any provider.
+5. Optional: Settings → Location. Tap "I am here: Home" at home and "I am here: Office" at the office.
 
-## Güncelleme
+## Using it
 
-Dosyaları değiştirdikten sonra `sw.js` içindeki `VERSION` ve `js/app.js` içindeki `APP_VERSION`
-değerlerini birlikte artır. Uygulama açılırken ya da öne geldiğinde yeni sürümü bulur ve yenilenir.
-Hangi sürümün çalıştığı Ayarlar → "Sürüm ve güncelleme" başlığında yazar; aynı yerde elle denetleme
-ve önbelleği temizleme düğmeleri var.
+- **Today:** tap "Log this meal" in the next-meal card (uses no tokens). Tap the weigh-in or steps row
+  to enter a number.
+- **Log:** take a photo, choose several from the library, or type. Examples:
+  `85.4` (weight), `8200 steps`, `water 2 glasses`, `workout`, `2 slices of pizza and a beer`.
+- Each entry is one line: time, name, calories and, for photos, a small thumbnail. Tap it to see the
+  photo and to correct the portion (½ / 1 / 1½ / 2), calories, meal or time, or to delete it.
+- A photo chosen from the library keeps its capture time; photos taken within 3 minutes of each other
+  count as one meal.
+- "Add to favourites" on an entry makes it a one-tap chip on the Log tab.
+- **Backup:** Settings → Backup → "Save backup" → Files. Do it once a week.
 
-## Dosyalar
+## Updating
 
-- `js/plan.js` — besin tablosu, öğün şablonları, hedefler, kurallar
-- `js/ai.js` — Claude API çağrısı, istem ve çıktı şeması
-- `js/exif.js` — fotoğraftan saat ve konum okuma
-- `js/app.js`, `js/views.js` — durum, hesaplar ve ekranlar
-- `js/db.js` — IndexedDB
+After changing files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` together. The app
+finds the new version when it opens or comes to the front, and reloads. The running version is shown
+under Settings → "Version and updates", next to buttons for checking manually and clearing the cache.
+
+Data written by version 5 and earlier (Turkish field values) is converted on first launch, and older
+backup files are converted on import.
+
+## Files
+
+- `js/plan.js`: food table, meal templates, targets, rules
+- `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
+- `js/exif.js`: reads capture time and location from a photo
+- `js/app.js`, `js/views.js`: state, calculations and screens
+- `js/db.js`: IndexedDB
+- `sw.js`: offline cache and updates

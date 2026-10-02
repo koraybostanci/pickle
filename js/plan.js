@@ -1,132 +1,135 @@
-// Plan v2 — besin tablosu, öğün şablonları, hedefler ve kurallar.
-// Öğün değerleri elle yazılmaz; aşağıdaki 100 g tablosundan hesaplanır.
+// Plan v2: food table, meal templates, targets and rules.
+// Meal values are never typed by hand; they are computed from the per-100 g table below.
 
-// 100 g başına: [kcal, protein, karbonhidrat, yağ, lif]
+// Number and date formatting for the whole app
+export const LOCALE = 'en-GB';
+
+// Per 100 g: [kcal, protein, carbs, fat, fibre]
 export const FOODS = {
-  yumurta:     { ad: 'Haşlanmış yumurta',            v: [143, 12.6, 0.7, 9.5, 0] },
-  peynir:      { ad: 'Az yağlı beyaz peynir',        v: [170, 18, 1, 10.5, 0] },
-  salata:      { ad: 'Salatalık, domates, yeşillik', v: [18, 1, 3, 0.2, 1.2] },
-  zeytin:      { ad: 'Zeytin',                        v: [145, 1, 1, 15, 3] },
-  ekmek:       { ad: 'Tam buğday / çavdar ekmeği',   v: [215, 8, 38, 2, 7.5] },
-  zeytinyagi:  { ad: 'Zeytinyağı',                    v: [884, 0, 0, 100, 0] },
-  patates:     { ad: 'Haşlanmış patates (soğutulmuş)', v: [77, 2, 17, 0.1, 1.8] },
-  ton:         { ad: 'Ton balığı (kendi suyunda, süzülmüş)', v: [110, 25, 0, 1, 0] },
-  skyr:        { ad: 'Sade skyr',                     v: [63, 11, 4, 0.2, 0] },
-  musli:       { ad: 'Basis müsli (şekersiz)',        v: [360, 11, 60, 6.5, 9] },
-  soya:        { ad: 'Soya gevreği',                  v: [400, 40, 6, 20, 16] },
-  muz:         { ad: 'Muz',                           v: [89, 1.1, 20, 0.3, 2.6] },
-  berry:       { ad: 'Orman meyvesi',                 v: [45, 0.9, 7.5, 0.4, 4] },
-  seftali:     { ad: 'Şeftali (veya 1 avuç kiraz/üzüm)', v: [41, 0.9, 9, 0.1, 1.5] },
-  ceviz:       { ad: 'Ceviz içi',                     v: [670, 15, 7, 65, 6.5] },
-  knacke:      { ad: 'Knäckebrot',                    v: [340, 10, 62, 2, 15] },
-  humus:       { ad: 'Humus',                         v: [260, 7, 12, 19, 5] },
-  cigsebze:    { ad: 'Çiğ sebze (biber, havuç, salatalık)', v: [28, 1, 5, 0.2, 2] },
-  kefir:       { ad: 'Kefir / sade ayran',            v: [50, 3.4, 4, 1.5, 0] },
-  badem:       { ad: 'Çiğ badem / fındık',            v: [600, 21, 6, 53, 12] },
-  cottage:     { ad: 'Körniger Frischkäse (cottage)', v: [98, 12.5, 2.5, 4.3, 0] },
-  tavuk:       { ad: 'Tavuk göğsü (çiğ ağırlık)',     v: [110, 23, 0, 1.5, 0] },
-  kiyma:       { ad: 'Yağsız kıyma, en çok %10 yağ (çiğ)', v: [170, 20, 0, 10, 0] },
-  et:          { ad: 'Yağsız kırmızı et (çiğ ağırlık)', v: [135, 21.5, 0, 5, 0] },
-  somon:       { ad: 'Somon (çiğ ağırlık)',           v: [200, 20, 0, 13.5, 0] },
-  firinsebze:  { ad: 'Fırın sebze (dondurulmuş karışım olur)', v: [35, 2.2, 5, 0.4, 2.8] },
-  bulgur:      { ad: 'Pişmiş bulgur',                 v: [83, 3.1, 18.6, 0.2, 4.5] },
-  mercimek:    { ad: 'Pişmiş yeşil mercimek / nohut', v: [116, 9, 20, 0.4, 8] },
+  egg:        { name: 'Boiled egg',                               v: [143, 12.6, 0.7, 9.5, 0] },
+  cheese:     { name: 'Low-fat white cheese',                     v: [170, 18, 1, 10.5, 0] },
+  salad:      { name: 'Cucumber, tomato, greens',                 v: [18, 1, 3, 0.2, 1.2] },
+  olives:     { name: 'Olives',                                   v: [145, 1, 1, 15, 3] },
+  bread:      { name: 'Whole-wheat or rye bread',                 v: [215, 8, 38, 2, 7.5] },
+  oliveOil:   { name: 'Olive oil',                                v: [884, 0, 0, 100, 0] },
+  potato:     { name: 'Boiled potato (cooled)',                   v: [77, 2, 17, 0.1, 1.8] },
+  tuna:       { name: 'Tuna in water, drained',                   v: [110, 25, 0, 1, 0] },
+  skyr:       { name: 'Plain skyr',                               v: [63, 11, 4, 0.2, 0] },
+  muesli:     { name: 'Unsweetened muesli',                       v: [360, 11, 60, 6.5, 9] },
+  soyFlakes:  { name: 'Soy flakes',                               v: [400, 40, 6, 20, 16] },
+  banana:     { name: 'Banana',                                   v: [89, 1.1, 20, 0.3, 2.6] },
+  berries:    { name: 'Mixed berries',                            v: [45, 0.9, 7.5, 0.4, 4] },
+  peach:      { name: 'Peach (or a handful of cherries or grapes)', v: [41, 0.9, 9, 0.1, 1.5] },
+  walnuts:    { name: 'Walnuts',                                  v: [670, 15, 7, 65, 6.5] },
+  crispbread: { name: 'Crispbread',                               v: [340, 10, 62, 2, 15] },
+  hummus:     { name: 'Hummus',                                   v: [260, 7, 12, 19, 5] },
+  rawVeg:     { name: 'Raw vegetables (pepper, carrot, cucumber)', v: [28, 1, 5, 0.2, 2] },
+  kefir:      { name: 'Kefir or plain ayran',                     v: [50, 3.4, 4, 1.5, 0] },
+  almonds:    { name: 'Raw almonds or hazelnuts',                 v: [600, 21, 6, 53, 12] },
+  cottage:    { name: 'Cottage cheese',                           v: [98, 12.5, 2.5, 4.3, 0] },
+  chicken:    { name: 'Chicken breast (raw weight)',              v: [110, 23, 0, 1.5, 0] },
+  mince:      { name: 'Lean mince, max 10% fat (raw)',            v: [170, 20, 0, 10, 0] },
+  beef:       { name: 'Lean red meat (raw weight)',               v: [135, 21.5, 0, 5, 0] },
+  salmon:     { name: 'Salmon (raw weight)',                      v: [200, 20, 0, 13.5, 0] },
+  ovenVeg:    { name: 'Oven vegetables (a frozen mix is fine)',   v: [35, 2.2, 5, 0.4, 2.8] },
+  bulgur:     { name: 'Cooked bulgur',                            v: [83, 3.1, 18.6, 0.2, 4.5] },
+  lentils:    { name: 'Cooked green lentils or chickpeas',        v: [116, 9, 20, 0.4, 8] },
 };
 
-// [besin, gram, isteğe bağlı ev ölçüsü]
-const T = [
-  // Öğle
-  { id: 'L-A', slot: 'ogle', ad: 'Yumurta–peynir tabağı',
-    ic: [['yumurta', 106, '2 adet'], ['peynir', 60], ['salata', 350, 'büyük kâse'], ['zeytin', 20, '5 adet'], ['ekmek', 45, '1 dilim'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  { id: 'L-B', slot: 'ogle', ad: 'Patatesli salata (ekmeksiz)',
-    ic: [['yumurta', 106, '2 adet'], ['peynir', 60], ['salata', 350, 'büyük kâse'], ['zeytin', 20, '5 adet'], ['patates', 150, '1 orta boy'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  { id: 'L-C', slot: 'ogle', ad: 'Ton balıklı salata',
-    ic: [['ton', 130, '1 kutu'], ['yumurta', 53, '1 adet'], ['salata', 350, 'büyük kâse'], ['zeytin', 20, '5 adet'], ['ekmek', 45, '1 dilim'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  { id: 'L-D', slot: 'ogle', ad: 'Sebzeli omlet',
-    ic: [['yumurta', 159, '3 adet'], ['peynir', 30], ['salata', 250], ['ekmek', 45, '1 dilim'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  // 1. ara öğün
-  { id: 'S1-A', slot: 'ara1', ad: 'Skyr kâsesi, orman meyveli',
-    ic: [['skyr', 250], ['musli', 30, '3 yemek kaşığı'], ['soya', 10, '1 yemek kaşığı'], ['berry', 80, '1 avuç']] },
-  { id: 'S1-B', slot: 'ara1', ad: 'Skyr kâsesi, muzlu',
-    ic: [['skyr', 250], ['musli', 30, '3 yemek kaşığı'], ['soya', 10, '1 yemek kaşığı'], ['muz', 60, 'yarım']] },
-  { id: 'S1-C', slot: 'ara1', ad: 'Skyr kâsesi, şeftalili',
-    ic: [['skyr', 250], ['musli', 30, '3 yemek kaşığı'], ['soya', 10, '1 yemek kaşığı'], ['seftali', 150, '1 adet']] },
-  // 2. ara öğün
-  { id: 'S2-A', slot: 'ara2', ad: 'Ceviz ve meyve',
-    ic: [['ceviz', 20, '5 adet'], ['seftali', 150, '1 porsiyon']] },
-  { id: 'S2-B', slot: 'ara2', ad: 'Knäckebrot ve humus',
-    ic: [['knacke', 20, '2 adet'], ['humus', 30, '2 yemek kaşığı'], ['cigsebze', 100]] },
-  { id: 'S2-C', slot: 'ara2', ad: 'Kefir ve badem',
-    ic: [['kefir', 200, '1 bardak'], ['badem', 15, '12 adet']] },
-  { id: 'S2-D', slot: 'ara2', ad: 'Cottage ve çiğ sebze',
-    ic: [['cottage', 150], ['cigsebze', 100]] },
-  // Akşam
-  { id: 'D-A', slot: 'aksam', ad: 'Tavuk ve fırın sebze',
-    ic: [['tavuk', 200], ['firinsebze', 350], ['bulgur', 100, '4 yemek kaşığı'], ['zeytinyagi', 10, '2 tatlı kaşığı']] },
-  { id: 'D-B', slot: 'aksam', ad: 'Köfte ve salata',
-    ic: [['kiyma', 180], ['salata', 350, 'büyük kâse'], ['bulgur', 100, '4 yemek kaşığı'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  { id: 'D-C', slot: 'aksam', ad: 'Kırmızı et ve fırın sebze',
-    ic: [['et', 200], ['firinsebze', 350], ['zeytinyagi', 10, '2 tatlı kaşığı']] },
-  { id: 'D-D', slot: 'aksam', ad: 'Somon ve fırın sebze',
-    ic: [['somon', 150], ['firinsebze', 350], ['bulgur', 100, '4 yemek kaşığı'], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  { id: 'D-E', slot: 'aksam', ad: 'Mercimek ve tavuk',
-    ic: [['mercimek', 250], ['tavuk', 100], ['salata', 250], ['zeytinyagi', 5, '1 tatlı kaşığı']] },
-  // Gece (yalnızca çok açsan ya da protein eksikse)
-  { id: 'N-A', slot: 'gece', ad: 'Sade skyr',
-    ic: [['skyr', 150]] },
-  // Antrenman günü ekleri
-  { id: 'T-A', slot: 'ant', ad: 'Antrenman öncesi muz',
-    ic: [['muz', 120, '1 adet']] },
-  { id: 'T-B', slot: 'ant', ad: 'Antrenman sonrası skyr',
-    ic: [['skyr', 150]] },
+// ingredients: [food, grams, optional household measure]
+const TEMPLATES = [
+  // Lunch
+  { id: 'L-A', slot: 'lunch', name: 'Egg and cheese plate',
+    ingredients: [['egg', 106, '2 eggs'], ['cheese', 60], ['salad', 350, 'large bowl'], ['olives', 20, '5 olives'], ['bread', 45, '1 slice'], ['oliveOil', 5, '1 tsp']] },
+  { id: 'L-B', slot: 'lunch', name: 'Potato salad (no bread)',
+    ingredients: [['egg', 106, '2 eggs'], ['cheese', 60], ['salad', 350, 'large bowl'], ['olives', 20, '5 olives'], ['potato', 150, '1 medium'], ['oliveOil', 5, '1 tsp']] },
+  { id: 'L-C', slot: 'lunch', name: 'Tuna salad',
+    ingredients: [['tuna', 130, '1 can'], ['egg', 53, '1 egg'], ['salad', 350, 'large bowl'], ['olives', 20, '5 olives'], ['bread', 45, '1 slice'], ['oliveOil', 5, '1 tsp']] },
+  { id: 'L-D', slot: 'lunch', name: 'Vegetable omelette',
+    ingredients: [['egg', 159, '3 eggs'], ['cheese', 30], ['salad', 250], ['bread', 45, '1 slice'], ['oliveOil', 5, '1 tsp']] },
+  // Snack 1
+  { id: 'S1-A', slot: 'snack1', name: 'Skyr bowl with berries',
+    ingredients: [['skyr', 250], ['muesli', 30, '3 tbsp'], ['soyFlakes', 10, '1 tbsp'], ['berries', 80, '1 handful']] },
+  { id: 'S1-B', slot: 'snack1', name: 'Skyr bowl with banana',
+    ingredients: [['skyr', 250], ['muesli', 30, '3 tbsp'], ['soyFlakes', 10, '1 tbsp'], ['banana', 60, 'half']] },
+  { id: 'S1-C', slot: 'snack1', name: 'Skyr bowl with peach',
+    ingredients: [['skyr', 250], ['muesli', 30, '3 tbsp'], ['soyFlakes', 10, '1 tbsp'], ['peach', 150, '1 peach']] },
+  // Snack 2
+  { id: 'S2-A', slot: 'snack2', name: 'Walnuts and fruit',
+    ingredients: [['walnuts', 20, '5 walnuts'], ['peach', 150, '1 portion']] },
+  { id: 'S2-B', slot: 'snack2', name: 'Crispbread and hummus',
+    ingredients: [['crispbread', 20, '2 slices'], ['hummus', 30, '2 tbsp'], ['rawVeg', 100]] },
+  { id: 'S2-C', slot: 'snack2', name: 'Kefir and almonds',
+    ingredients: [['kefir', 200, '1 glass'], ['almonds', 15, '12 almonds']] },
+  { id: 'S2-D', slot: 'snack2', name: 'Cottage cheese and raw vegetables',
+    ingredients: [['cottage', 150], ['rawVeg', 100]] },
+  // Dinner
+  { id: 'D-A', slot: 'dinner', name: 'Chicken and oven vegetables',
+    ingredients: [['chicken', 200], ['ovenVeg', 350], ['bulgur', 100, '4 tbsp'], ['oliveOil', 10, '2 tsp']] },
+  { id: 'D-B', slot: 'dinner', name: 'Meatballs and salad',
+    ingredients: [['mince', 180], ['salad', 350, 'large bowl'], ['bulgur', 100, '4 tbsp'], ['oliveOil', 5, '1 tsp']] },
+  { id: 'D-C', slot: 'dinner', name: 'Red meat and oven vegetables',
+    ingredients: [['beef', 200], ['ovenVeg', 350], ['oliveOil', 10, '2 tsp']] },
+  { id: 'D-D', slot: 'dinner', name: 'Salmon and oven vegetables',
+    ingredients: [['salmon', 150], ['ovenVeg', 350], ['bulgur', 100, '4 tbsp'], ['oliveOil', 5, '1 tsp']] },
+  { id: 'D-E', slot: 'dinner', name: 'Lentils and chicken',
+    ingredients: [['lentils', 250], ['chicken', 100], ['salad', 250], ['oliveOil', 5, '1 tsp']] },
+  // Late (only when very hungry or short on protein)
+  { id: 'N-A', slot: 'late', name: 'Plain skyr',
+    ingredients: [['skyr', 150]] },
+  // Workout-day extras
+  { id: 'T-A', slot: 'workout', name: 'Pre-workout banana',
+    ingredients: [['banana', 120, '1 banana']] },
+  { id: 'T-B', slot: 'workout', name: 'Post-workout skyr',
+    ingredients: [['skyr', 150]] },
 ];
 
-const r1 = (x) => Math.round(x * 10) / 10;
+const round1 = (x) => Math.round(x * 10) / 10;
 
-export function macros(ic) {
+export function macros(ingredients) {
   const s = [0, 0, 0, 0, 0];
-  for (const [k, g] of ic) FOODS[k].v.forEach((v, i) => { s[i] += (v * g) / 100; });
-  return { kcal: Math.round(s[0]), p: r1(s[1]), c: r1(s[2]), f: r1(s[3]), fib: r1(s[4]) };
+  for (const [k, g] of ingredients) FOODS[k].v.forEach((v, i) => { s[i] += (v * g) / 100; });
+  return { kcal: Math.round(s[0]), p: round1(s[1]), c: round1(s[2]), f: round1(s[3]), fib: round1(s[4]) };
 }
 
-export const MEALS = T.map((t) => ({
+export const MEALS = TEMPLATES.map((t) => ({
   ...t,
-  ...macros(t.ic),
-  items: t.ic.map(([k, g, olcu]) => ({
-    n: FOODS[k].ad, g, olcu: olcu || '',
+  ...macros(t.ingredients),
+  items: t.ingredients.map(([k, g, measure]) => ({
+    n: FOODS[k].name, g, measure: measure || '',
     kcal: Math.round((FOODS[k].v[0] * g) / 100),
-    p: r1((FOODS[k].v[1] * g) / 100),
+    p: round1((FOODS[k].v[1] * g) / 100),
   })),
 }));
 
 export const MEAL_BY_ID = Object.fromEntries(MEALS.map((m) => [m.id, m]));
 
 export const SLOTS = [
-  { id: 'ogle', ad: 'Öğle', saat: '12:00' },
-  { id: 'ara1', ad: '1. ara öğün', saat: '14:30' },
-  { id: 'ara2', ad: '2. ara öğün', saat: '16:00' },
-  { id: 'aksam', ad: 'Akşam', saat: '18:00' },
-  { id: 'gece', ad: 'Saat 20:00 sonrası', saat: '20:00' },
+  { id: 'lunch', name: 'Lunch', time: '12:00' },
+  { id: 'snack1', name: 'Snack 1', time: '14:30' },
+  { id: 'snack2', name: 'Snack 2', time: '16:00' },
+  { id: 'dinner', name: 'Dinner', time: '18:00' },
+  { id: 'late', name: 'Late', time: '20:00' },
 ];
-export const SLOT_AD = {
-  sabah: 'Sabah', ogle: 'Öğle', ara1: '1. ara öğün', ara2: '2. ara öğün',
-  aksam: 'Akşam', gece: 'Gece', ant: 'Antrenman',
+export const SLOT_NAME = {
+  morning: 'Morning', lunch: 'Lunch', snack1: 'Snack 1', snack2: 'Snack 2',
+  dinner: 'Dinner', late: 'Late', workout: 'Workout',
 };
 
 export function slotByTime(d) {
   const h = d.getHours() + d.getMinutes() / 60;
-  if (h < 10.5) return 'sabah';
-  if (h < 13.75) return 'ogle';
-  if (h < 15.5) return 'ara1';
-  if (h < 17.25) return 'ara2';
-  if (h < 20) return 'aksam';
-  return 'gece';
+  if (h < 10.5) return 'morning';
+  if (h < 13.75) return 'lunch';
+  if (h < 15.5) return 'snack1';
+  if (h < 17.25) return 'snack2';
+  if (h < 20) return 'dinner';
+  return 'late';
 }
 
-// Haftalık esnek bütçe için tek dokunuşluk kalemler
+// One-tap items that count against the weekly flex budget
 export const FLEX = [
-  { id: 'F-BIRA33', ad: 'Bira 0,33 l', kcal: 140, p: 1, c: 11, f: 0, fib: 0, flags: ['alkol'] },
-  { id: 'F-BIRA50', ad: 'Bira 0,5 l', kcal: 215, p: 2, c: 17, f: 0, fib: 0, flags: ['alkol'] },
+  { id: 'F-BEER33', name: 'Beer 0.33 l', kcal: 140, p: 1, c: 11, f: 0, fib: 0, flags: ['alcohol'] },
+  { id: 'F-BEER50', name: 'Beer 0.5 l', kcal: 215, p: 2, c: 17, f: 0, fib: 0, flags: ['alcohol'] },
 ];
 
 export const DEFAULTS = {
@@ -145,50 +148,50 @@ export const DEFAULTS = {
 };
 
 export const RULES = {
-  hergun: [
-    'Günde en az 2–2,5 litre su.',
-    'Günde 8.000 adım. Masa başında açığın en ucuz kısmı bu.',
-    'Et, tavuk ve balık çiğ ağırlıkla tartılır.',
-    'Pişirme ve salata yağı ölçülür: 1 tatlı kaşığı zeytinyağı yaklaşık 45 kcal.',
-    'Kuruyemiş çiğ ve tuzsuz, 20–25 g ve tartılarak. Ceviz, badem, fındık, fıstık aynı kurala tabi.',
-    'Meyve günde 2 porsiyon. Belirleyici olan toplam kalori, meyvenin kendisi değil.',
-    'Patatesi salataya eklersen o gün ekmek yok. Haşlayıp soğutulmuş patates daha uzun tok tutar.',
-    'Saat 20:00 sonrası bitki çayı. Çok açsan ya da protein eksikse 150 g sade skyr.',
+  daily: [
+    'At least 2 to 2.5 litres of water a day.',
+    '8,000 steps a day. With a desk job this is the cheapest part of the deficit.',
+    'Meat, chicken and fish are weighed raw.',
+    'Cooking and salad oil is measured: 1 tsp of olive oil is about 45 kcal.',
+    'Nuts are raw and unsalted, 20 to 25 g, and weighed. Walnuts, almonds, hazelnuts and peanuts follow the same rule.',
+    'Two portions of fruit a day. Total calories decide the outcome, not the fruit itself.',
+    'If you add potato to the salad, skip the bread that day. Boiled and cooled potato keeps you full longer.',
+    'After 20:00, herbal tea. If you are very hungry or short on protein, 150 g of plain skyr.',
   ],
-  haftalik: [
-    '1 esnek akşam yemeği (dışarıda ya da plan dışı), 700 kcal civarı.',
-    '1 bira (0,33 l) veya 200 kcal’e kadar 1 küçük tatlı. Yanında cips, fıstık, kızartma yok.',
+  weekly: [
+    'One flexible dinner (eating out or off plan), around 700 kcal.',
+    'One beer (0.33 l) or one small dessert up to 200 kcal. No crisps, peanuts or fried food with it.',
   ],
-  yok: [
-    'Şekerli içecek: kola, gazoz, meyve suyu.',
-    'Yağda kızartma, patates kızartması.',
-    'Cips ve tuzlu, kavrulmuş kuruyemiş.',
-    'Hamur işi: simit, poğaça, börek, kruvasan, bretzel.',
-    'Beyaz ekmek, tost ekmeği, lavaş.',
+  off: [
+    'Sugary drinks: cola, soda, fruit juice.',
+    'Deep-fried food, including fries.',
+    'Crisps and salted, roasted nuts.',
+    'Pastries: simit, poğaça, börek, croissant, pretzel.',
+    'White bread, toast bread, lavash.',
   ],
-  spor: [
-    'Haftada 3 antrenman: spinning veya kettlebell (swing, halo) ve karın.',
-    'En az 2 gün kettlebell sabit. Açıkta kası koruyan şey direnç antrenmanı.',
-    'Antrenman günü 1.750 kcal: öncesinde 1 muz, sonrasında 150 g skyr eklenir.',
+  training: [
+    'Three workouts a week: spinning, or kettlebell (swing, halo) plus core.',
+    'At least two fixed kettlebell days. Resistance training is what protects muscle in a deficit.',
+    'Workout days are 1,750 kcal: add a banana before and 150 g of skyr after.',
   ],
-  surec: [
-    'Her sabah aynı koşulda tartıl. Tek günlük sayıya değil 7 günlük ortalamaya bak.',
-    'Ortalama iki hafta üst üste çizginin 0,7 kg üstündeyse: 100 kcal düş ya da 2.000 adım ekle.',
-    '1.500 kcal’in altına inme.',
-    '78 kg’a varınca kalori 2–3 haftada kademeli olarak koruma düzeyine çıkar.',
+  process: [
+    'Weigh in every morning under the same conditions. Read the 7-day average, not a single day.',
+    'If the average sits more than 0.7 kg above the line two weeks in a row: cut 100 kcal or add 2,000 steps.',
+    'Do not go below 1,500 kcal.',
+    'On reaching 78 kg, raise calories to maintenance gradually over 2 to 3 weeks.',
   ],
-  rotasyon: [
-    ['Pazartesi', 'Tavuk ve fırın sebze'],
-    ['Salı', 'Somon ve fırın sebze'],
-    ['Çarşamba', 'Mercimek ve tavuk'],
-    ['Perşembe', 'Köfte ve salata'],
-    ['Cuma', 'Kırmızı et ve fırın sebze'],
-    ['Cumartesi', 'Somon ya da esnek öğün'],
-    ['Pazar', 'Mercimek ve tavuk'],
+  rotation: [
+    ['Monday', 'Chicken and oven vegetables'],
+    ['Tuesday', 'Salmon and oven vegetables'],
+    ['Wednesday', 'Lentils and chicken'],
+    ['Thursday', 'Meatballs and salad'],
+    ['Friday', 'Red meat and oven vegetables'],
+    ['Saturday', 'Salmon or the flexible dinner'],
+    ['Sunday', 'Lentils and chicken'],
   ],
 };
 
-// ——— Tarih ve hedef çizgisi yardımcıları ———
+// ——— Date and target-line helpers ———
 export const dayKey = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -206,22 +209,22 @@ export const addDays = (s, n) => {
 };
 export const diffDays = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000);
 
-// Hedef çizgisinin o gündeki değeri (başlangıçtan önce başlangıç, sondan sonra hedef)
+// Value of the target line on a given day (start weight before the start, target weight after the end)
 export function targetAt(day, s) {
   const total = diffDays(s.startDate, s.targetDate);
   const t = Math.min(Math.max(diffDays(s.startDate, day), 0), total);
   return s.startKg + ((s.targetKg - s.startKg) * t) / total;
 }
 
-// Kısa plan özeti: analiz isteğine eklenir (token tasarrufu için tek satır/öğün)
-const KISA = {
-  yumurta: 'yumurta', peynir: 'beyaz peynir', salata: 'salata', zeytin: 'zeytin', ekmek: 'tam buğday ekmek',
-  zeytinyagi: 'zeytinyağı', patates: 'haşlanmış patates', ton: 'ton balığı', skyr: 'skyr', musli: 'müsli',
-  soya: 'soya gevreği', muz: 'muz', berry: 'berry', seftali: 'şeftali', ceviz: 'ceviz', knacke: 'knäckebrot',
-  humus: 'humus', cigsebze: 'çiğ sebze', kefir: 'kefir/ayran', badem: 'badem', cottage: 'cottage',
-  tavuk: 'tavuk göğsü', kiyma: 'köfte', et: 'kırmızı et', somon: 'somon', firinsebze: 'fırın sebze',
-  bulgur: 'bulgur', mercimek: 'mercimek',
+// Short plan summary appended to each analysis request (one line per meal to save tokens)
+const SHORT = {
+  egg: 'egg', cheese: 'white cheese', salad: 'salad', olives: 'olives', bread: 'whole-wheat bread',
+  oliveOil: 'olive oil', potato: 'boiled potato', tuna: 'tuna', skyr: 'skyr', muesli: 'muesli',
+  soyFlakes: 'soy flakes', banana: 'banana', berries: 'berries', peach: 'peach', walnuts: 'walnuts',
+  crispbread: 'crispbread', hummus: 'hummus', rawVeg: 'raw vegetables', kefir: 'kefir or ayran',
+  almonds: 'almonds', cottage: 'cottage cheese', chicken: 'chicken breast', mince: 'meatballs',
+  beef: 'red meat', salmon: 'salmon', ovenVeg: 'oven vegetables', bulgur: 'bulgur', lentils: 'lentils',
 };
 export function planDigest() {
-  return MEALS.map((m) => `${m.id}: ${m.ic.map(([k, g]) => `${KISA[k]} ${g}g`).join(', ')} = ${m.kcal} kcal, ${Math.round(m.p)}p`).join('\n');
+  return MEALS.map((m) => `${m.id}: ${m.ingredients.map(([k, g]) => `${SHORT[k]} ${g}g`).join(', ')} = ${m.kcal} kcal, ${Math.round(m.p)}p`).join('\n');
 }
