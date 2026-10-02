@@ -122,9 +122,12 @@ export const ZEN_FREE = [
 const SHAPE = '\nReturn exactly one JSON object with all of these keys: {"kind":"meal|weight|steps|none","title":"","slot":"morning|lunch|snack1|snack2|dinner|late|workout","plan":"","items":[{"n":"","g":0,"kcal":0,"p":0}],"kcal":0,"p":0,"c":0,"f":0,"fib":0,"tier":"plan|flex|off","flags":[],"conf":0,"q":"","kg":0,"steps":0}';
 
 function classify(status, msg) {
-  if (/credit balance|insufficient (credit|balance|quota|funds)|billing|payment required/i.test(msg) || status === 402) return 'no_credit';
+  // 429 is a quota or rate limit, whatever the text says: Gemini's quota message mentions "billing" on the free tier too.
+  // "limit: 0" means this model has no quota at all on the account's plan.
+  if (status === 429) return /limit:\s*0\b/.test(msg) ? 'no_quota' : 'rate';
+  if (status === 402 || /credit balance|insufficient (credit|balance|funds)|payment required/i.test(msg)) return 'no_credit';
+  if (/free tier is not available|enable billing|billing account/i.test(msg)) return 'needs_billing';
   if (status === 401 || status === 403) return 'bad_key';
-  if (status === 429) return 'rate';
   if (/image|vision|multimodal|modalit/i.test(msg) && (status === 400 || status === 404 || status === 415 || status === 422)) return 'no_vision';
   if (status === 404) return 'bad_model';
   if (status === 400 || status === 422) return 'bad_request';
@@ -243,20 +246,38 @@ export async function analyze(o) {
     const r = await callModel(o.cfg, { ...req, onRetry: o.onRetry });
     return { data: parseLoose(r.text), usage: r.usage, model: o.cfg.model };
   } catch (e) {
-    if (e.code !== 'server') throw e;
-    // Still busy: try the same provider's fallback models once each
+    if (!FALLBACK_ON.includes(e.code)) throw e;
+    // Busy or out of quota (quotas are per model): try the same provider's fallback models once each
     const preset = openai ? PRESETS.find((p) => p.base === o.cfg.base) : null;
     for (const model of ((preset && preset.alt) || []).filter((m) => m !== o.cfg.model)) {
-      if (o.onRetry) o.onRetry(0, 0, model);
+      if (o.onRetry) o.onRetry(0, 0, model, e.code);
       try {
         const r = await callModel({ ...o.cfg, model }, { ...req, retry: false });
-        return { data: parseLoose(r.text), usage: r.usage, model };
+        return { data: parseLoose(r.text), usage: r.usage, model, fallbackFrom: e };
       } catch (e2) {
-        if (e2.code !== 'server' && e2.code !== 'rate' && e2.code !== 'bad_model') throw e2;
+        if (!FALLBACK_ON.includes(e2.code) && e2.code !== 'bad_model') throw e2;
       }
     }
     throw e;
   }
+}
+const FALLBACK_ON = ['server', 'rate', 'no_quota'];
+
+// The useful part of a provider's error text: for quota errors the limit, the model and the wait, otherwise the start of the message
+export function errorDetail(err, max = 200) {
+  const msg = String((err && err.message) || '');
+  if (err && (err.code === 'rate' || err.code === 'no_quota')) {
+    const limit = /limit:\s*(\d+)/.exec(msg);
+    const model = /model:\s*([\w.-]+)/.exec(msg);
+    const retry = /retry in\s*([\d.]+)\s*s/i.exec(msg);
+    const period = /per[\s_]?day/i.test(msg) ? ' a day' : /per[\s_]?minute/i.test(msg) ? ' a minute' : '';
+    const parts = [];
+    if (limit && model) parts.push(`The limit for ${model[1]} is ${limit[1]} ${limit[1] === '1' ? 'request' : 'requests'}${period}.`);
+    else if (limit) parts.push(`The limit is ${limit[1]} ${limit[1] === '1' ? 'request' : 'requests'}${period}.`);
+    if (retry && err.code === 'rate') parts.push(`The provider says to retry in ${Math.ceil(+retry[1])} s.`);
+    if (parts.length) return parts.join(' ');
+  }
+  return msg.replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 // Checks that the model really sees photos: it has to read a random number from an image.
@@ -300,8 +321,10 @@ export const AI_ERRORS = {
   bad_key: 'The API key was rejected. Check it in Settings.',
   offline: 'No internet. The entry is waiting; tap “Analyse” once you are back online.',
   net: 'Could not reach the server; the entry is waiting. If you are online, this provider may not allow calls from a browser.',
-  rate: 'Too many requests or the daily quota is used up; the entry is waiting. Tap “Analyse” a little later.',
-  no_credit: 'The account has no credit; the entry is waiting. Buy credit or pick another provider in Settings.',
+  rate: 'Too many requests or the quota is used up; the entry is waiting. Tap “Analyse” a little later.',
+  no_quota: 'This model has no quota on your plan; the entry is waiting. Pick another model in Settings.',
+  no_credit: 'The provider says the account has no credit; the entry is waiting. Add credit or pick another provider in Settings.',
+  needs_billing: 'The provider wants billing enabled on this account before it answers; the entry is waiting. Enable it with the provider or pick another one in Settings.',
   no_vision: 'This model does not accept photos. Pick a model with image support in Settings.',
   bad_model: 'Model not found. Check the model name in Settings.',
   server: 'The provider is busy right now; the entry is waiting. Tap “Analyse” a little later.',

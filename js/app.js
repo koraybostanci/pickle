@@ -1,13 +1,13 @@
 import * as db from './db.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '8'; // bump together with VERSION in sw.js
+export const APP_VERSION = '9'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -415,7 +415,7 @@ async function analyzeEntry(id, opts = {}) {
     if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
     const { data, usage, model: usedModel } = await analyze({
       cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
-      onRetry: (n, of, alt) => { S.retry.set(id, alt ? `Model busy, trying ${alt}` : `Provider busy, retrying (${n}/${of})`); render(); },
+      onRetry: (n, of, alt, why) => { S.retry.set(id, alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`); render(); },
     });
     const u = S.settings.usage;
     u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(usedModel, usage);
@@ -458,8 +458,8 @@ async function analyzeEntry(id, opts = {}) {
     }
   } catch (err) {
     const code = err && err.code;
-    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
-    const detail = ['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '';
+    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
+    const detail = ['bad_request', 'http', 'bad_model', 'server', 'rate', 'no_quota', 'no_credit', 'needs_billing'].includes(code) ? ' ' + errorDetail(err, 140) : '';
     Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + detail });
   }
   S.busy.delete(id);
@@ -801,13 +801,32 @@ const ACT = {
     if (!hasKey()) { out.textContent = S.settings.provider === 'openai' ? 'Address, model and key are all required.' : 'A key is required.'; return; }
     const cfg = aiCfg();
     const add = async (u) => { S.settings.usage.in += u.in; S.settings.usage.out += u.out; S.settings.usage.calls += 1; S.settings.usage.usd += costUSD(cfg.model, u); await saveSettings(); };
-    const why = (err) => (err.code === 'no_credit' ? 'The account has no credit; the key and the connection are fine.' : (AI_ERRORS[err.code] || 'Failed.').replace('; the entry is waiting', '') + ' ' + String(err.message || '').slice(0, 140));
+    // Always show what the provider said, so the cause can be checked
+    const gemini = cfg.provider === 'openai' && /generativelanguage\.googleapis\.com/.test(cfg.base || '');
+    const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? ' Your plan and limits: aistudio.google.com/rate-limit' : '');
+    const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? ` ${d}` : ` The provider said: “${d}”`; };
+    const why = (err) => `${(AI_ERRORS[err.code] || 'Failed.').replace('; the entry is waiting', '').replace(' Tap “Analyse” a little later.', '')}${said(err)}${limitsHint(err)}`;
     out.textContent = 'Testing text…';
     let textLine;
     try {
       const r = await analyze({ cfg, text: '1 medium apple', when: new Date() });
       await add(r.usage);
       textLine = `Text works: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal (${r.usage.in} input and ${r.usage.out} output tokens).`;
+      if (r.model !== cfg.model) {
+        // The chosen model was out of quota or busy and a fallback answered
+        const from = cfg.model;
+        const reason = why(r.fallbackFrom);
+        cfg.model = r.model;
+        if (r.fallbackFrom.code === 'no_quota') {
+          S.settings.oaModel = r.model;
+          await saveSettings();
+          const inp = $('#set-oamodel');
+          if (inp) inp.value = r.model;
+          textLine = `${from}: ${reason}\nSwitched to ${r.model}. ${textLine}`;
+        } else {
+          textLine = `${from}: ${reason}\nFor now ${r.model} answers instead. ${textLine}`;
+        }
+      }
     } catch (err) {
       out.textContent = 'Text: ' + why(err);
       return;
