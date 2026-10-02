@@ -302,7 +302,7 @@ function entryCard(e, inSheet = false) {
   const meta = [when, SLOT_AD[e.slot] || '', e.place ? (e.place === 'dışarı' ? 'dışarıda' : esc(e.place)) : ''].filter(Boolean).join(', ');
   let body;
   if (busy) {
-    body = '<p class="durum"><span class="spin" aria-hidden="true"></span>Analiz ediliyor</p>';
+    body = `<p class="durum"><span class="spin" aria-hidden="true"></span>${esc(S.retry.get(e.id) || 'Analiz ediliyor')}</p>`;
   } else if (e.status === 'pending') {
     body = `<p class="durum">${esc(e.err || 'Analiz bekliyor.')}</p><div class="k-act"><button type="button" class="btn" data-act="analyze" data-id="${e.id}">Analiz et</button><button type="button" class="lnk" data-act="del" data-id="${e.id}">Sil</button></div>`;
   } else if (e.status === 'error') {

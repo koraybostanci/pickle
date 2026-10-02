@@ -15,6 +15,7 @@ export const S = {
   days: {},
   viewDay: dayKey(new Date()),
   busy: new Set(),
+  retry: new Map(), // analiz sırasında gösterilecek durum notu
   urls: new Map(),
   persisted: null,
   storage: null,
@@ -400,11 +401,14 @@ async function analyzeEntry(id, opts = {}) {
     const cfg = aiCfg();
     if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
     const model = cfg.model;
-    const { data, usage } = await analyze({ cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint });
+    const { data, usage, model: usedModel } = await analyze({
+      cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
+      onRetry: (n, of, alt) => { S.retry.set(id, alt ? `Model meşgul, ${alt} deneniyor` : `Sağlayıcı meşgul, yeniden deneniyor (${n}/${of})`); render(); },
+    });
     const u = S.set.usage;
-    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
+    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(usedModel, usage);
     await saveSet();
-    e.model = model;
+    e.model = usedModel;
     e.err = '';
     if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
       const kg = Math.round(data.kg * 10) / 10;
@@ -442,10 +446,11 @@ async function analyzeEntry(id, opts = {}) {
     }
   } catch (err) {
     const code = err && err.code;
-    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key'].includes(code);
+    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERR_TR[code] || 'Analiz başarısız oldu.') + (['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '') });
   }
   S.busy.delete(id);
+  S.retry.delete(id);
   if (S.entries.some((x) => x.id === id)) await saveEntry(e);
   render();
 }

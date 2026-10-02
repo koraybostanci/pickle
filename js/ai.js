@@ -110,7 +110,7 @@ export class AiError extends Error {
 export const PRESETS = [
   { id: 'opencode-zen', ad: 'OpenCode Zen (ücretsiz modeller)', base: 'https://opencode.ai/zen/v1', model: '' },
   { id: 'opencode-go', ad: 'OpenCode Go', base: 'https://opencode.ai/zen/go/v1', model: '' },
-  { id: 'gemini', ad: 'Google Gemini (ücretsiz katman)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.5-flash' },
+  { id: 'gemini', ad: 'Google Gemini (ücretsiz katman)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.5-flash', alt: ['gemini-3.5-flash-lite', 'gemini-3.8-flash'] },
   { id: 'openrouter', ad: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: '' },
 ];
 // /models listesi alınamazsa denenecek ücretsiz OpenCode Zen kimlikleri
@@ -132,7 +132,11 @@ function classify(status, msg) {
   return 'http';
 }
 
-async function post(url, headers, payload) {
+// Sağlayıcı meşgulken (503 ve benzeri) kısa aralıklarla yeniden denenir; bekleme süreleri ms
+const RETRY_MS = [1200, 3000];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function postOnce(url, headers, payload) {
   let res;
   try {
     res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload) });
@@ -142,18 +146,33 @@ async function post(url, headers, payload) {
   let json = null;
   try { json = await res.json(); } catch { /* gövde yok */ }
   if (!res.ok) {
-    const er = json && json.error;
-    const msg = (er && (er.message || (typeof er === 'string' ? er : ''))) || (json && json.message) || `HTTP ${res.status}`;
-    throw new AiError(classify(res.status, String(msg)), String(msg));
+    const er = (Array.isArray(json) ? json[0] : json) || {};
+    const e = er.error;
+    const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || er.message || `HTTP ${res.status}`;
+    throw new AiError(classify(res.status, String(msg)), /HTTP \d+/.test(String(msg)) ? String(msg) : `${msg} (HTTP ${res.status})`);
   }
   return json || {};
+}
+
+async function post(url, headers, payload, opts = {}) {
+  const tries = opts.retry === false ? 0 : RETRY_MS.length;
+  for (let i = 0; ; i++) {
+    try {
+      return await postOnce(url, headers, payload);
+    } catch (e) {
+      if (e.code !== 'server' || i >= tries) throw e;
+      if (opts.onRetry) opts.onRetry(i + 1, tries);
+      await wait(RETRY_MS[i] * (0.85 + Math.random() * 0.3));
+    }
+  }
 }
 
 /**
  * Tek çağrı. cfg: {provider:'anthropic'|'openai', key, model, base?}
  * @returns {Promise<{text:string, usage:{in:number,out:number}}>}
  */
-export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600 }) {
+export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600, retry = true, onRetry = null }) {
+  const ropts = { retry, onRetry };
   if (!cfg || !cfg.key) throw new AiError('no_key', 'API anahtarı girilmemiş');
   const imgs = [];
   for (const b of blobs.slice(0, 3)) imgs.push(await toB64(b));
@@ -172,11 +191,11 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
     const headers = { authorization: `Bearer ${cfg.key}` };
     let out;
     try {
-      out = await post(url, headers, body);
+      out = await post(url, headers, body, ropts);
     } catch (e) {
       if (json && e.code === 'bad_request' && /response_format|json/i.test(e.message)) {
         const { response_format, ...rest } = body;
-        out = await post(url, headers, rest);
+        out = await post(url, headers, rest, ropts);
       } else throw e;
     }
     const msg = out.choices && out.choices[0] && out.choices[0].message;
@@ -195,12 +214,12 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
   const url = 'https://api.anthropic.com/v1/messages';
   let out;
   try {
-    out = await post(url, headers, body);
+    out = await post(url, headers, body, ropts);
   } catch (e) {
     // Şemalı çıktı reddedilirse aynı isteği şemasız bir kez dene.
     if (schema && e.code === 'bad_request' && /output_config|schema|format/i.test(e.message)) {
       const { output_config, ...rest } = body;
-      out = await post(url, headers, rest);
+      out = await post(url, headers, rest, ropts);
     } else throw e;
   }
   const txt = (out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
@@ -219,14 +238,25 @@ export async function analyze(o) {
   if (o.text) lines.push(`Not: ${o.text}`);
   if (o.hint) lines.push(o.hint);
   const openai = o.cfg && o.cfg.provider === 'openai';
-  const r = await callModel(o.cfg, {
-    system: openai ? SYSTEM + SHAPE : SYSTEM,
-    text: lines.join('\n'),
-    blobs: o.blobs || [],
-    schema: openai ? null : SCHEMA,
-    json: true,
-  });
-  return { data: parseLoose(r.text), usage: r.usage, model: o.cfg.model };
+  const req = { system: openai ? SYSTEM + SHAPE : SYSTEM, text: lines.join('\n'), blobs: o.blobs || [], schema: openai ? null : SCHEMA, json: true };
+  try {
+    const r = await callModel(o.cfg, { ...req, onRetry: o.onRetry });
+    return { data: parseLoose(r.text), usage: r.usage, model: o.cfg.model };
+  } catch (e) {
+    if (e.code !== 'server') throw e;
+    // Model hâlâ meşgul: aynı sağlayıcının yedek modellerini birer kez dene
+    const preset = openai ? PRESETS.find((p) => p.base === o.cfg.base) : null;
+    for (const model of ((preset && preset.alt) || []).filter((m) => m !== o.cfg.model)) {
+      if (o.onRetry) o.onRetry(0, 0, model);
+      try {
+        const r = await callModel({ ...o.cfg, model }, { ...req, retry: false });
+        return { data: parseLoose(r.text), usage: r.usage, model };
+      } catch (e2) {
+        if (e2.code !== 'server' && e2.code !== 'rate' && e2.code !== 'bad_model') throw e2;
+      }
+    }
+    throw e;
+  }
 }
 
 // Modelin fotoğrafı gerçekten görüp görmediğini sınar: rastgele bir sayıyı resimden okutur.
@@ -270,11 +300,11 @@ export const AI_ERR_TR = {
   bad_key: 'API anahtarı kabul edilmedi. Ayarlar’dan kontrol et.',
   offline: 'İnternet yok. Kayıt bekliyor; bağlanınca “Analiz et”e dokun.',
   net: 'Sunucuya ulaşılamadı; kayıt bekliyor. İnternet varsa bu sağlayıcı tarayıcıdan çağrıya izin vermiyor olabilir.',
-  rate: 'Çok sık istek ya da kota sınırı. Biraz sonra tekrar dene.',
+  rate: 'Çok sık istek ya da günlük kota doldu; kayıt bekliyor. Biraz sonra “Analiz et”e dokun.',
   no_credit: 'Hesapta kredi yok; kayıt bekliyor. Kredi al ya da Ayarlar’dan başka bir sağlayıcı seç.',
   no_vision: 'Bu model fotoğraf kabul etmiyor. Ayarlar’dan görsel destekleyen bir model seç.',
   bad_model: 'Model bulunamadı. Ayarlar’da model adını kontrol et.',
-  server: 'Sağlayıcı tarafında geçici sorun. Tekrar dene.',
+  server: 'Sağlayıcı şu an meşgul; kayıt bekliyor. Biraz sonra “Analiz et”e dokun.',
   bad_request: 'İstek reddedildi.',
   empty: 'Model bu girdiyi yorumlayamadı. Kısa bir not ekleyip tekrar dene.',
   http: 'İstek başarısız oldu.',
