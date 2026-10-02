@@ -5,12 +5,12 @@ import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_AD, FLEX, DEFAULTS,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
-import { renderBugun, renderAkis, renderIlerleme, renderPlan, renderSettings, attachChart } from './views.js';
+import { renderBugun, renderAkis, renderIlerleme, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
 // ——— Durum ———
 export const S = {
   tab: 'bugun',
-  set: { ...DEFAULTS, apiKey: '', provider: 'anthropic', oaBase: '', oaModel: '', oaKey: '', useLocation: false, places: [], favs: [], usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0 },
+  set: { ...DEFAULTS, apiKey: '', provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', useLocation: false, places: [], favs: [], hideStart: false, usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0 },
   entries: [],
   days: {},
   viewDay: dayKey(new Date()),
@@ -19,6 +19,9 @@ export const S = {
   persisted: null,
   storage: null,
   calPick: null,
+  sheet: null, // açık alt sayfa: {type:'settings'|'entry'|'num', ...}
+  openSlots: new Set(), // Bugün'de açık bırakılan öğün seçenekleri
+  setOpen: '', // Ayarlar'da açık bölüm
 };
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -209,6 +212,7 @@ async function removeEntry(id, silent) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return;
   S.entries = S.entries.filter((x) => x.id !== id);
+  if (S.sheet && S.sheet.type === 'entry' && S.sheet.id === id) closeSheet();
   await db.del('entries', id);
   for (const pid of e.photoIds || []) {
     await db.del('photos', pid);
@@ -501,7 +505,10 @@ async function importBackup(file) {
 // ——— Yükleme ve çizim ———
 async function load() {
   const st = await db.kvGet('settings', null);
-  if (st) S.set = { ...S.set, ...st, usage: { ...S.set.usage, ...(st.usage || {}) } };
+  if (st) {
+    S.set = { ...S.set, ...st, usage: { ...S.set.usage, ...(st.usage || {}) } };
+    if (!st.provider) S.set.provider = st.apiKey ? 'anthropic' : 'openai'; // sağlayıcı seçimi olmayan eski kayıt
+  }
   S.entries = await db.all('entries');
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
 }
@@ -526,11 +533,11 @@ function render() {
   const fn = { bugun: renderBugun, akis: renderAkis, ilerleme: renderIlerleme, plan: renderPlan }[S.tab];
   const focusId = document.activeElement && v.contains(document.activeElement) ? document.activeElement.id : '';
   v.innerHTML = fn();
-  v.dataset.tab = S.tab;
+  v.dataset.view = S.tab;
   document.querySelectorAll('.tabs button').forEach((b) => {
     if (b.dataset.tab === S.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  const showYaz = S.tab === 'bugun' || S.tab === 'akis';
+  const showYaz = S.tab === 'akis' || (S.tab === 'bugun' && S.viewDay === today()); // yazılanlar hep bugüne düşer
   $('#yaz').hidden = !showYaz;
   document.body.classList.toggle('has-yaz', showYaz);
   renderFavRow();
@@ -538,29 +545,35 @@ function render() {
   if (S.tab === 'ilerleme') attachChart(v);
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
+  if (S.sheet && S.sheet.type === 'entry') {
+    const html = renderEntrySheet(S.sheet.id);
+    if (html) { $('#sheet-body').innerHTML = html; hydratePhotos(); } else closeSheet();
+  }
 }
 
 function renderFavRow() {
   const row = $('#favrow');
   const favs = S.set.favs || [];
-  const show = S.tab === 'akis';
+  const show = S.tab === 'akis' && favs.length > 0;
   row.hidden = !show;
-  if (!show) return;
   row.innerHTML = '';
-  const mk = (label, kcal, act, id) => {
+  if (!show) return;
+  const lab = document.createElement('span');
+  lab.className = 'favrow-l';
+  lab.textContent = 'Sık yenenler';
+  row.append(lab);
+  for (const f of favs) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip';
-    b.dataset.act = act;
-    b.dataset.id = id;
-    b.append(label + ' ');
-    const s = document.createElement('span');
-    s.textContent = String(Math.round(kcal));
-    b.append(s);
-    return b;
-  };
-  favs.forEach((f) => row.append(mk(f.ad, f.kcal, 'log-fav', f.id)));
-  FLEX.forEach((f) => row.append(mk(f.ad, f.kcal, 'log-flex', f.id)));
+    b.dataset.act = 'log-fav';
+    b.dataset.id = f.id;
+    b.append(f.ad + ' ');
+    const sp = document.createElement('span');
+    sp.textContent = String(Math.round(f.kcal));
+    b.append(sp);
+    row.append(b);
+  }
 }
 
 async function hydratePhotos() {
@@ -577,26 +590,42 @@ async function hydratePhotos() {
   }
 }
 
-function openSheet(html) {
-  $('#sheet-body').innerHTML = html;
+let sheetOpener = null;
+function openSheet(html, state, focusSel, keepFocus) {
+  const wasHidden = $('#sheet').hidden;
+  if (wasHidden) { sheetOpener = document.activeElement; $('#toast').hidden = true; }
+  const body = $('#sheet-body');
+  const keep = !wasHidden && S.sheet && S.sheet.type === state.type ? body.scrollTop : 0;
+  S.sheet = state;
+  body.innerHTML = html;
+  body.dataset.type = state.type;
   $('#sheet').hidden = false;
   document.body.classList.add('sheet-open');
-  const h = $('#sheet-body h2');
-  if (h) { h.tabIndex = -1; h.focus(); }
+  body.scrollTop = keep;
+  if (!keepFocus) {
+    const f = focusSel ? body.querySelector(focusSel) : body.querySelector('h2');
+    if (f) { if (!focusSel) f.tabIndex = -1; f.focus({ preventScroll: true }); if (focusSel && f.select) f.select(); }
+  }
+  hydratePhotos();
 }
 function closeSheet() {
   $('#sheet').hidden = true;
+  S.sheet = null;
   document.body.classList.remove('sheet-open');
+  if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
+  sheetOpener = null;
 }
-async function openSettings() {
+async function openSettings(sec) {
+  if (sec) S.setOpen = sec;
   await refreshStorage();
-  openSheet(renderSettings());
+  const wasOpen = !!(S.sheet && S.sheet.type === 'settings');
+  openSheet(renderSettings(), { type: 'settings' }, null, wasOpen);
 }
 
 // ——— Olaylar ———
 const ACT = {
   'tab': (el) => go(el.dataset.tab),
-  'settings': () => openSettings(),
+  'settings': (el) => openSettings(el && el.dataset.sec),
   'close-sheet': () => closeSheet(),
   'day-prev': () => { S.viewDay = addDays(S.viewDay, -1); render(); },
   'day-next': () => { if (S.viewDay < today()) { S.viewDay = addDays(S.viewDay, 1); render(); } },
@@ -605,8 +634,27 @@ const ACT = {
   'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'esnek' }, 'flex', today()); },
   'log-fav': (el) => { const f = (S.set.favs || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'fav', today()); },
   'open-entry': (el) => {
-    go('akis');
-    requestAnimationFrame(() => { const c = document.querySelector(`[data-entry="${el.dataset.id}"]`); if (c) c.scrollIntoView({ block: 'center' }); });
+    const html = renderEntrySheet(el.dataset.id);
+    if (html) openSheet(html, { type: 'entry', id: el.dataset.id });
+  },
+  'num': (el) => {
+    const kind = el.dataset.kind;
+    openSheet(renderNumSheet(kind, S.viewDay), { type: 'num', kind }, '#num-in');
+  },
+  'num-clear': async (el) => {
+    await saveDay(el.dataset.day, el.dataset.kind === 'kg' ? { kg: null } : { steps: null });
+    closeSheet();
+    render();
+    toast(el.dataset.kind === 'kg' ? 'Tartı silindi' : 'Adım silindi');
+  },
+  'hide-start': async () => { S.set.hideStart = true; await saveSet(); render(); },
+  'cam': () => $('#f-cam').click(),
+  'lib': () => $('#f-lib').click(),
+  'hint': (el) => {
+    const inp = $('#yaz-in');
+    inp.value = el.dataset.fill;
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
   },
   'train': async (el) => { await saveDay(S.viewDay, { train: el.dataset.v === '1' }); render(); },
   'water': async (el) => {
@@ -681,6 +729,7 @@ const ACT = {
     await saveSet();
     toast(aiCfg().key ? 'Ayar bu cihaza kaydedildi' : 'Anahtar silindi');
     render();
+    await openSettings();
     if (hasKey()) ACT['analyze-all']();
   },
   'test-key': async () => {
@@ -794,7 +843,7 @@ const ACT = {
 };
 
 document.addEventListener('click', (ev) => {
-  const el = ev.target.closest('[data-act],[data-tab],[data-close-sheet]');
+  const el = ev.target.closest('[data-act],.tabs [data-tab],[data-close-sheet]');
   if (!el) return;
   if (el.matches('input[type=checkbox]')) return; // change olayında işlenir
   if (el.dataset.closeSheet !== undefined) return closeSheet();
@@ -819,17 +868,44 @@ document.addEventListener('change', async (ev) => {
     if (p) { $('#set-base').value = p.base; $('#set-oamodel').value = p.model; }
     return;
   }
-  if (el.dataset.chg === 'kg') {
-    const kg = parseFloat(el.value.replace(',', '.'));
-    if (kg >= 50 && kg <= 160) setWeight(Math.round(kg * 10) / 10, S.viewDay, false);
-    else if (el.value.trim() === '') { await saveDay(S.viewDay, { kg: null }); render(); }
-    return;
-  }
-  if (el.dataset.chg === 'steps') {
-    const st = parseInt(el.value.replace(/\D/g, ''), 10);
-    if (st >= 0) setSteps(st, S.viewDay, false);
+});
+
+// Sayı sayfası: tartı ya da adım kaydı
+document.addEventListener('submit', (ev) => {
+  const f = ev.target;
+  if (f.id !== 'num-form') return;
+  ev.preventDefault();
+  const raw = $('#num-in').value.trim();
+  const err = $('#num-err');
+  const day = f.dataset.day;
+  if (f.dataset.kind === 'kg') {
+    const kg = parseFloat(raw.replace(',', '.'));
+    if (!(kg >= 50 && kg <= 160)) { err.textContent = '50 ile 160 kg arasında bir değer gir. Örnek: 85,4'; err.hidden = false; return; }
+    closeSheet();
+    setWeight(Math.round(kg * 10) / 10, day, false);
+  } else {
+    const st = parseInt(raw.replace(/\D/g, ''), 10);
+    if (!(st >= 0 && st <= 100000)) { err.textContent = 'Adım sayısını rakamla gir. Örnek: 8200'; err.hidden = false; return; }
+    closeSheet();
+    setSteps(st, day, false);
   }
 });
+
+// Açılır bölümlerin durumu yeniden çizimde korunur (toggle olayı kabarcıklanmaz: yakalama aşaması)
+document.addEventListener('toggle', (ev) => {
+  const d = ev.target;
+  if (!d.matches) return;
+  if (d.matches('details.slot-d')) { if (d.open) S.openSlots.add(d.dataset.slot); else S.openSlots.delete(d.dataset.slot); }
+  if (d.matches('details.ayar')) {
+    if (d.open) {
+      S.setOpen = d.dataset.sec;
+      document.querySelectorAll('details.ayar[open]').forEach((o) => { if (o !== d) o.open = false; });
+    } else if (S.setOpen === d.dataset.sec) S.setOpen = '';
+  }
+}, true);
+
+// Örnek çiplerine dokununca yazma kutusu odağı kaybetmesin
+document.addEventListener('pointerdown', (ev) => { if (ev.target.closest('[data-act="hint"]')) ev.preventDefault(); });
 
 $('#btn-cam').addEventListener('click', () => $('#f-cam').click());
 $('#btn-lib').addEventListener('click', () => $('#f-lib').click());
