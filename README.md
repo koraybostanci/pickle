@@ -17,7 +17,9 @@ shows one: food in the pan, the weight on the beam, the two in balance.
 - **Today:** where you stand against the schedule, the day's calorie and protein budget, the meals
   of the day with a suggestion for the next one, steps, water and a weekly budget for treats.
 - **Log:** everything you sent, one line per entry. Take a photo, choose photos from the library, or
-  type. A model estimates calories and macros; you can correct the portion, the numbers or the time.
+  type. A model estimates calories and macros and lists each item with its amount and calories,
+  including what it had to assume ("falafel, assumed fried"). Tell it in a few words what the photo
+  does not show and it revises the items; you can also correct the portion, the numbers or the time.
 - **Progress:** weight chart with a 7-day average, projected arrival date, a consistency calendar
   and checkpoints.
 - **Plan:** the meal options with ingredients and amounts, and the rules of the plan.
