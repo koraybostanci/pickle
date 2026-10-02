@@ -24,8 +24,8 @@ const ICON = {
 };
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
 
-// ——— Glide ruler: start weight to target weight, with the current average and where the line is today ———
-function ruler(cur, line) {
+// ——— Glide ruler: start weight to target weight, with the current average and today's target ———
+function ruler(cur, target) {
   const s = S.settings;
   const W = 320;
   const pad = 16;
@@ -41,10 +41,10 @@ function ruler(cur, line) {
     if (major) labels += `<text x="${x(kg).toFixed(1)}" y="57" text-anchor="middle" class="r-label">${kg}</text>`;
   }
   const xc = cur ? x(cur) : null;
-  const xl = x(line);
+  const xl = x(target);
   const anchor = (px) => (px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle');
   const tx = (px) => (px < 40 ? px - 6 : px > W - 40 ? px + 6 : px);
-  return `<svg class="ruler" viewBox="0 0 ${W} 62" role="img" aria-label="${esc(`Ruler from ${s.startKg} kg to ${s.targetKg} kg. ${cur ? `Your average is ${n1(cur)} kg.` : ''} The line is at ${n1(line)} kg today.`)}">
+  return `<svg class="ruler" viewBox="0 0 ${W} 62" role="img" aria-label="${esc(`Ruler from ${s.startKg} kg to ${s.targetKg} kg. ${cur ? `Your average is ${n1(cur)} kg.` : ''} Today’s target is ${n1(target)} kg.`)}">
     <rect x="${pad}" y="26" width="${W - 2 * pad}" height="16" rx="3" class="r-track"/>
     ${xc != null ? `<rect x="${pad}" y="26" width="${Math.max(0, xc - pad).toFixed(1)}" height="16" rx="3" class="r-fill"/>` : ''}
     ${ticks}${labels}
@@ -53,38 +53,55 @@ function ruler(cur, line) {
   </svg>`;
 }
 
-function lineSentence() {
+// Where the weight stands against the schedule, in plain words
+function progressSummary() {
   const s = S.settings;
-  const a = avg7(today());
-  const line = targetAt(today(), s);
-  const left = diffDays(today(), s.targetDate);
-  const toStart = diffDays(today(), s.startDate);
-  const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of the last ${a.n} weigh-ins`;
-  const when = toStart > 0 ? `Starts ${dLong.format(parseDay(s.startDate))}` : left > 0 ? `${left} days to ${dShort.format(parseDay(s.targetDate))}` : 'The target date is here';
+  const t = today();
+  const a = avg7(t);
+  const target = targetAt(t, s);
+  const left = diffDays(t, s.targetDate);
+  const toStart = diffDays(t, s.startDate);
+  const started = toStart <= 0;
+  const pace = ((s.startKg - s.targetKg) / diffDays(s.startDate, s.targetDate)) * 7;
+  const endDate = dShort.format(parseDay(s.targetDate));
+  const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
+  const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
+  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
   let head;
   let sub;
-  if (!a) {
-    head = 'Enter your first weigh-in to start the line.';
-    sub = `${when}. Target: ${s.targetKg} kg by ${dShort.format(parseDay(s.targetDate))}.`;
+  let stats;
+  if (!started) {
+    head = `Starts ${dLong.format(parseDay(s.startDate))}`;
+    sub = `${n1(s.startKg)} kg down to ${s.targetKg} kg by ${endDate}, about ${n1(pace)} kg a week.`;
+    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Starts in', days(toStart)]];
+  } else if (!a) {
+    head = 'Enter your first weigh-in';
+    sub = `The target is ${s.targetKg} kg by ${endDate}.`;
+    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Days left', String(Math.max(0, left))]];
   } else {
-    const diff = a.kg - line;
-    if (a.kg <= s.targetKg) head = `You reached ${s.targetKg} kg.`;
-    else if (Math.abs(diff) < 0.05) head = 'Right on the line.';
-    else if (diff < 0) head = `${n1(-diff)} kg ahead of the line.`;
-    else head = `${n1(diff)} kg behind the line.`;
-    sub = `${source} ${n1(a.kg)} kg, line today ${n1(line)} kg. ${when}.`;
+    const diff = a.kg - target;
+    if (a.kg <= s.targetKg) head = `You reached ${s.targetKg} kg`;
+    else if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
+    else if (Math.abs(diff) <= 0.2) head = 'On schedule';
+    else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
+    else head = `${n1(diff)} kg behind schedule`;
+    sub = `${source} ${n1(a.kg)} kg; today’s target is ${n1(target)} kg.`;
+    const change = s.startKg - a.kg;
+    stats = [[change < -0.05 ? 'Gained' : 'Lost', `${n1(Math.abs(change))} kg`], ['To go', toLose], ['Days left', String(Math.max(0, left))]];
   }
-  return { head, sub, a, line, source, when };
+  return { head, sub, stats, a, target, source, started };
 }
 
-// Top of Today: sentence, ruler, legend and today's weigh-in
+// Top of Today: where you stand, the ruler, three numbers and today's weigh-in
 function glide() {
-  const { head, a, line, source, when } = lineSentence();
+  const p = progressSummary();
   const kg = (S.days[today()] || {}).kg;
-  return `<section class="glide" aria-label="Target line">
-    ${!a && startStep() === 1 ? '' : `<p class="glide-head">${esc(head)}</p>`}
-    ${ruler(a ? a.kg : null, line)}
-    <p class="legend">${a ? `<span><i class="key-current"></i>${esc(lower(source))} ${n1(a.kg)}</span>` : ''}<span><i class="key-line"></i>line today ${n1(line)}</span><span>${esc(when)}</span></p>
+  const duplicatesStartCard = p.started && !p.a && startStep() === 1;
+  return `<section class="glide" aria-label="Progress towards the target">
+    ${duplicatesStartCard ? '' : `<p class="glide-head">${esc(p.head)}</p>`}
+    ${ruler(p.a ? p.a.kg : null, p.target)}
+    <p class="legend">${p.a ? `<span><i class="key-current"></i>${esc(lower(p.source))} ${n1(p.a.kg)} kg</span>` : ''}<span><i class="key-line"></i>${p.started ? 'today’s target' : 'start'} ${n1(p.target)} kg</span></p>
+    <dl class="stats stats-3">${p.stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
     <button type="button" class="row-field" data-act="num" data-kind="kg"><span>Today’s weigh-in</span><b>${kg ? n1(kg) + ' kg' : '–'}</b><i>${kg ? 'Change' : 'Enter'}</i></button>
   </section>`;
 }
@@ -120,63 +137,57 @@ function entryMini(e) {
 
 const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(m.name)} <span>${m.kcal}</span></button>`;
 
-// Next meal: the one primary action on the screen
-function nextCard(day) {
-  const sg = suggest(day);
-  const isToday = day === today();
-  if (sg.rem < -50) {
-    return `<section class="next"><h2>Budget exceeded by ${n0(-sg.rem)} kcal</h2><p class="next-note">Return to the plan tomorrow. Do not skip a meal to make up for it; the weekly average is what counts.</p></section>`;
-  }
-  if (!sg.meal) {
-    return `<section class="next"><h2>Meals done</h2><p class="next-note">${sg.remP > 12 ? `Protein is ${n0(sg.remP)} g short.` : 'The day is on target.'}</p></section>`;
-  }
-  if (sg.extra) {
-    return `<section class="next"><h2>Meals done</h2><p class="next-note">Protein is ${n0(sg.remP)} g short. 150 g of plain skyr closes the gap and fits the budget.</p>
-      <button type="button" class="btn btn-primary btn-wide" data-act="log-plan" data-id="${sg.meal.id}">Log skyr, ${sg.meal.kcal} kcal</button></section>`;
-  }
-  const [h, m] = sg.slot.time.split(':').map(Number);
-  const now = new Date();
-  const late = isToday && now.getHours() * 60 + now.getMinutes() > h * 60 + m + 120;
-  const others = MEALS.filter((x) => x.slot === sg.slot.id && x.id !== sg.meal.id);
-  return `<section class="next" aria-labelledby="next-label">
-    <p class="next-label" id="next-label">${late ? 'Not logged' : isToday ? 'Next meal' : 'Missing meal'}: ${esc(lower(sg.slot.name))}, ${sg.slot.time}</p>
-    <h2>${esc(sg.meal.name)}</h2>
-    <p class="next-note">${sg.meal.kcal} kcal, ${n0(sg.meal.p)} g protein, ${sg.tight ? 'the lightest option' : 'fits your budget'}.</p>
-    <button type="button" class="btn btn-primary btn-wide" data-act="log-plan" data-id="${sg.meal.id}">Log this meal</button>
-    <p class="next-alt">Ate something else?</p>
-    <div class="chips">${others.map((x) => chip(x)).join('')}${isToday ? `<button type="button" class="chip chip-icon" data-act="camera">${ICON.camera}Take a photo</button>` : ''}</div>
-  </section>`;
-}
-
+// The day's meals. The next open slot carries the suggestion and the screen's one primary action.
 function dayList(day) {
   const dd = S.days[day] || {};
+  const isToday = day === today();
   const all = S.entries.filter((e) => e.day === day && e.kind === 'meal');
   const sg = suggest(day);
-  const nextId = sg.meal && !sg.extra && sg.slot ? sg.slot.id : '';
+  const over = sg.rem < -50;
+  const nextId = isToday && !over && sg.meal && sg.slot ? sg.slot.id : '';
+  let note = '';
+  if (over) note = `Over budget by ${n0(-sg.rem)} kcal.${isToday ? ' Return to the plan tomorrow and do not skip a meal to make up for it; the weekly average is what counts.' : ''}`;
+  else if (!sg.meal) note = sg.remP > 12 ? `Meals done. Protein is ${n0(sg.remP)} g short.` : 'Meals done. The day is on target.';
+  else if (sg.extra) note = `Meals done. Protein is ${n0(sg.remP)} g short; 150 g of plain skyr closes the gap and fits the budget.`;
+  const now = new Date();
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
   const rows = [];
   const add = (id, name, time, hint) => {
     const entries = all.filter((e) => e.slot === id).sort((x, y) => x.ts - y.ts);
     const done = entries.some((e) => e.status === 'ok');
     const logged = new Set(entries.map((e) => e.planId));
     const options = MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
+    const isNext = id === nextId && (!entries.length || !!sg.extra);
+    const open = S.openSlots.has(id) ? ' open' : '';
     let body = entries.map(entryMini).join('');
-    if (id === nextId && !entries.length) body += '<p class="slot-hint">Shown in the card above.</p>';
-    else if ((!entries.length || id === 'workout') && options.length) {
-      body += `<details class="slot-options" data-slot="${id}"${S.openSlots.has(id) ? ' open' : ''}><summary>${hint || 'Show options'}</summary><div class="chips">${options.map((x) => chip(x)).join('')}</div></details>`;
+    let late = false;
+    if (isNext) {
+      const [h, m] = time.split(':').map(Number);
+      late = !sg.extra && minutesNow > h * 60 + m + 120;
+      const others = options.filter((x) => x.id !== sg.meal.id);
+      const fit = !sg.extra && sg.tight ? ', the lightest option' : '';
+      body += `<div class="slot-next">
+        <p class="slot-suggest"><b>${esc(sg.meal.name)}</b><span>${sg.meal.kcal} kcal, ${n0(sg.meal.p)} g protein${fit}</span></p>
+        <button type="button" class="btn btn-primary btn-wide" data-act="log-plan" data-id="${sg.meal.id}">Log this meal</button>
+      </div>
+      <details class="slot-options" data-slot="${id}"${open}><summary>Something else</summary><div class="chips">${others.map((x) => chip(x)).join('')}<button type="button" class="chip chip-icon" data-act="camera">${ICON.camera}Take a photo</button></div></details>`;
+    } else if ((!entries.length || id === 'workout') && options.length) {
+      body += `<details class="slot-options" data-slot="${id}"${open}><summary>${hint || 'Show options'}</summary><div class="chips">${options.map((x) => chip(x)).join('')}</div></details>`;
     }
-    rows.push(`<li class="slot${done ? ' is-done' : ''}${id === nextId ? ' is-next' : ''}">
+    rows.push(`<li class="slot${done ? ' is-done' : ''}${isNext ? ' is-next' : ''}">
       <div class="slot-time">${time}</div>
-      <div class="slot-body"><h3>${name}</h3>${body}</div>
+      <div class="slot-body"><h3>${name}${late ? ' <small>not logged yet</small>' : ''}</h3>${body}</div>
     </li>`);
   };
   if (all.some((e) => e.slot === 'morning')) add('morning', SLOT_NAME.morning, '', '');
   SLOTS.filter((x) => x.id !== 'late').forEach((x) => add(x.id, x.name, x.time, ''));
   if (dd.train || all.some((e) => e.slot === 'workout')) add('workout', 'Workout extras', '', 'Banana before, skyr after');
   add('late', 'After 20:00', '20:00', 'Herbal tea; skyr if very hungry');
-  return `<section class="meals"><h2>${day === today() ? 'Today’s meals' : 'Meals'}</h2>
+  return `<section class="meals"><h2>${isToday ? 'Today’s meals' : 'Meals'}</h2>
     <button type="button" class="switch" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}">
       <i aria-hidden="true"></i><span>Workout day</span><small>${dd.train ? `target ${n0(S.settings.kcalTrain)} kcal, banana and skyr added` : `target ${n0(S.settings.kcalRest)} kcal`}</small>
     </button>
+    ${note ? `<p class="meals-note${over ? ' is-over' : ''}">${note}</p>` : ''}
     <ol class="slots">${rows.join('')}</ol></section>`;
 }
 
@@ -225,8 +236,8 @@ function startCard() {
   const n = startStep();
   if (!n) return '';
   const step = {
-    1: ['Enter your first weigh-in', 'The line and the forecasts are calculated from your weigh-ins.', '<button type="button" class="btn btn-primary" data-act="num" data-kind="kg">Enter weight</button>'],
-    2: ['Log your first meal', 'Tap “Log this meal” in the card below. No key needed.', ''],
+    1: ['Enter your first weigh-in', 'Progress and forecasts are calculated from your weigh-ins.', '<button type="button" class="btn btn-primary" data-act="num" data-kind="kg">Enter weight</button>'],
+    2: ['Log your first meal', 'Tap “Log this meal” under Today’s meals. No key needed.', ''],
     3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
   }[n];
@@ -263,7 +274,6 @@ export function renderToday() {
       ${gauge('Protein', tot.p, S.settings.protein, 'g', 10, false)}
     </div>
   </section>
-  ${nextCard(day)}
   ${dayList(day)}
   ${counters(day)}
   ${flexBlock(day)}`;
@@ -513,7 +523,7 @@ export function attachChart(root) {
     const rows = [[dShort.format(parseDay(day)), '']];
     if (d && d.kg) rows.push([n1(d.kg) + ' kg', 'weigh-in']);
     if (chartData.avg[day]) rows.push([n1(chartData.avg[day]) + ' kg', 'average']);
-    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', 'line']);
+    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', 'target']);
     tip.innerHTML = '';
     rows.forEach(([value, label], k) => {
       const p = document.createElement('p');
@@ -576,7 +586,7 @@ function checkpoints() {
   for (let i = 28; i < total - 6; i += 28) points.push(addDays(s.startDate, i));
   points.push(s.targetDate);
   const t = today();
-  return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Line</th><th scope="col">Your average</th></tr></thead><tbody>
+  return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Target</th><th scope="col">Your average</th></tr></thead><tbody>
     ${points.map((d) => { const a = d <= t ? avg7(d) : null; return `<tr><td>${esc(dShort.format(parseDay(d)))}</td><td>${n1(targetAt(d, s))} kg</td><td>${a ? n1(a.kg) + ' kg' : '–'}</td></tr>`; }).join('')}
   </tbody></table>`;
 }
@@ -589,14 +599,14 @@ function adjustNotice() {
   const b = avg7(addDays(t, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
   if (a.kg - targetAt(t, s) > 0.7 && b.kg - targetAt(addDays(t, -7), s) > 0.7) {
-    return `<div class="notice"><p>Your average has been more than 0.7 kg above the line for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(1500, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
+    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(1500, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
   }
   return '';
 }
 
 export function renderProgress() {
   const s = S.settings;
-  const { head, sub, a, line } = lineSentence();
+  const { head, sub, a, target } = progressSummary();
   const pr = projection();
   const series = weightSeries();
   const lost = a ? s.startKg - a.kg : 0;
@@ -614,7 +624,7 @@ export function renderProgress() {
   ${adjustNotice()}
   <section class="glide">
     <p class="glide-head">${esc(head)}</p>
-    ${ruler(a ? a.kg : null, line)}
+    ${ruler(a ? a.kg : null, target)}
     <p class="glide-note">${esc(sub)}</p>
   </section>
   <section>
@@ -639,7 +649,7 @@ export function renderProgress() {
   <section>
     <details class="table-details">
       <summary>Weigh-in table</summary>
-      ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Line</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
+      ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Target</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
     </details>
   </section>`;
 }
