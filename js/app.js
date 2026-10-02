@@ -8,7 +8,7 @@ import {
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '10'; // bump together with VERSION in sw.js
+export const APP_VERSION = '11'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -443,7 +443,8 @@ async function analyzeEntry(id, opts = {}) {
         const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
         Object.assign(e, {
           planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items,
-          kcal: Math.round(+data.kcal || sumKcal), p: +data.p || items.reduce((a, i) => a + i.p, 0),
+          // The item list is what explains the total, so the total is their sum whenever items carry calories
+          kcal: Math.round(sumKcal || +data.kcal || 0), p: +data.p || items.reduce((a, i) => a + i.p, 0), edited: false,
           c: +data.c || 0, f: +data.f || 0, fib: +data.fib || 0,
           tier: ['plan', 'flex', 'off'].includes(data.tier) ? data.tier : 'plan',
         });
@@ -745,11 +746,16 @@ const ACT = {
   'analyze': (el) => queueAnalyze(el.dataset.id),
   'analyze-all': () => { S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id)); },
   'reanalyze': (el) => queueAnalyze(el.dataset.id, { strong: true }),
-  'answer': (el) => {
+  // The person tells the model what the photo does not show; the model revises its own item list
+  'answer': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     const inp = document.getElementById('answer-' + el.dataset.id);
-    if (!e || !inp || !inp.value.trim()) return;
-    queueAnalyze(e.id, { hint: `Earlier question: ${e.q}\nAnswer: ${inp.value.trim()}` });
+    const said = inp ? inp.value.trim() : '';
+    if (!e || !said) return;
+    const earlier = (e.items || []).map((i) => `${i.n} ${Math.round(i.g || 0)} g ${Math.round(i.kcal || 0)} kcal`).join('; ');
+    // The correction is kept as part of the entry's note, so a later re-analysis still knows it
+    await saveEntry({ ...e, text: [e.text, said].filter(Boolean).join('; ').slice(0, 400) });
+    queueAnalyze(e.id, { hint: `${earlier ? `Your earlier estimate: ${earlier}.\n` : ''}${e.q ? `Your earlier question: ${e.q}\n` : ''}Correction from the person: ${said}\nRevise the estimate with this correction and keep the items it does not mention.` });
   },
   'favorite': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
@@ -778,7 +784,7 @@ const ACT = {
     const slot = field('edit-slot').value;
     const time = field('edit-time').value;
     const next = { ...e, slot };
-    if (kcal >= 0) { next.kcal = Math.round(kcal / (e.mult || 1)); next.conf = 1; next.planId = ''; }
+    if (kcal >= 0 && Math.round(kcal) !== Math.round(eff(e).kcal)) { next.kcal = Math.round(kcal / (e.mult || 1)); next.conf = 1; next.planId = ''; next.edited = true; }
     if (p >= 0) next.p = Math.round((p / (e.mult || 1)) * 10) / 10;
     if (/^\d{2}:\d{2}$/.test(time)) {
       const d = new Date(e.ts);
@@ -1032,7 +1038,14 @@ $('#composer').addEventListener('submit', (ev) => {
   inp.value = '';
   submitText(t);
 });
-document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet();
+  // Enter in the correction box sends it
+  if (ev.key === 'Enter' && ev.target.id && ev.target.id.startsWith('answer-')) {
+    ev.preventDefault();
+    ACT.answer({ dataset: { id: ev.target.id.slice(7) } });
+  }
+});
 
 // If the app stayed open past midnight, move on to the new day
 let lastToday = today();

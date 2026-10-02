@@ -327,20 +327,32 @@ function entryDetail(e) {
   } else {
     const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Flex budget</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
     const rough = e.conf > 0 && e.conf < 0.6 && !e.planId;
-    const items = (e.items || []).length ? `<ul class="items">${e.items.map((i) => `<li><span>${esc(i.n)}</span><span>${i.g ? n0(i.g * (e.mult || 1)) + ' g' : ''}</span></li>`).join('')}</ul>` : '';
-    const question = e.q ? `<div class="question"><p>${esc(e.q)}</p><div><label class="sr-only" for="answer-${e.id}">Your answer</label><input id="answer-${e.id}" type="text" placeholder="Answer briefly"><button type="button" class="btn" data-act="answer" data-id="${e.id}">Update</button></div></div>` : '';
+    const mult = e.mult || 1;
+    const canReanalyse = e.src === 'photo' || e.src === 'text';
+    // Item table: what the total is made of. A last row accounts for any difference, so the column always adds up.
+    const list = e.items || [];
+    const itemSum = list.reduce((a, i) => a + (i.kcal || 0), 0) * mult;
+    const rest = Math.round(v.kcal - itemSum);
+    const restRow = list.length && itemSum > 0 && Math.abs(rest) >= 5
+      ? `<tr class="items-rest"><th scope="row">${e.edited || (e.conf === 1 && !e.planId) ? 'Your edit' : 'Not itemised'}</th><td></td><td>${rest > 0 ? '+' : '−'}${n0(Math.abs(rest))}</td></tr>` : '';
+    const items = list.length ? `<table class="items-table">
+        <thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">kcal</th></tr></thead>
+        <tbody>${list.map((i) => `<tr><th scope="row">${esc(i.n)}</th><td>${i.g ? n0(i.g * mult) + ' g' : ''}</td><td>${i.kcal ? n0(i.kcal * mult) : '–'}</td></tr>`).join('')}${restRow}</tbody>
+      </table>` : '';
+    // The person can always tell the model what it could not see; if the model asked, its question is the prompt
+    const prompt = e.q || (e.src === 'photo' ? 'Something the photo does not show?' : 'Something to correct?');
+    const question = canReanalyse ? `<div class="question${e.q ? ' is-asked' : ''}"><p id="ask-${e.id}">${esc(prompt)}</p><div><input id="answer-${e.id}" type="text" aria-labelledby="ask-${e.id}" enterkeyhint="send" autocomplete="off" placeholder="${e.q ? 'Answer briefly' : 'e.g. 2 eggs, low-fat cheese, baked'}"><button type="button" class="btn" data-act="answer" data-id="${e.id}">Update</button></div><p class="note">The model revises the items with your note.</p></div>` : '';
     const mults = [0.5, 1, 1.5, 2].map((m) => `<button type="button" data-act="mult" data-id="${e.id}" data-v="${m}" aria-pressed="${(e.mult || 1) === m}">${m === 1 ? '1' : multLabel(m)}</button>`).join('');
     const slotOptions = Object.entries(SLOT_NAME).map(([k, name]) => `<option value="${k}"${e.slot === k ? ' selected' : ''}>${name}</option>`).join('');
-    const canReanalyse = e.src === 'photo' || e.src === 'text';
     body = `
       <p class="entry-value"><b>${n0(v.kcal)}</b> kcal<span>${n0(v.p)} g protein, ${n0(v.c)} g carbs, ${n0(v.f)} g fat</span></p>
-      ${rough ? '<p class="status">Rough estimate. Adjust the portion or add a short note.</p>' : ''}
+      ${rough ? '<p class="status">Rough estimate. A short note below tightens it.</p>' : ''}
+      ${items}
       ${question}
       <div class="actions">
         <div class="seg seg-small" role="group" aria-label="Portion">${mults}</div>
         ${tier}
       </div>
-      ${items}
       <div class="field-grid">
         <label for="edit-kcal-${e.id}">Calories<input id="edit-kcal-${e.id}" type="text" inputmode="numeric" value="${Math.round(v.kcal)}"></label>
         <label for="edit-protein-${e.id}">Protein (g)<input id="edit-protein-${e.id}" type="text" inputmode="decimal" value="${Math.round(v.p)}"></label>
