@@ -3,7 +3,7 @@ import {
   weekStart, weekFlex, streak, suggest, hasKey,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { MEALS, SLOTS, SLOT_AD, RULES, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
+import { MEALS, SLOTS, SLOT_AD, FLEX, RULES, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = (x) => Math.round(x).toLocaleString('tr-TR');
@@ -54,31 +54,33 @@ function lineSentence() {
   const line = targetAt(today(), s);
   const left = diffDays(today(), s.targetDate);
   const toStart = diffDays(today(), s.startDate);
+  const src = !a ? '' : a.n >= 3 ? '7 günlük ortalaman' : a.n === 1 ? 'Son tartın' : `Son ${a.n} tartının ortalaması`;
+  const when = toStart > 0 ? `Başlangıç ${dLong.format(parseDay(s.startDate))}` : left > 0 ? `${dShort.format(parseDay(s.targetDate))}’a ${left} gün` : 'Hedef tarihi geldi';
   let head;
   let sub;
   if (!a) {
     head = 'İlk tartını gir, çizgi oradan başlasın.';
-    sub = toStart > 0 ? `Başlangıç ${dLong.format(parseDay(s.startDate))}. Hedef ${dShort.format(parseDay(s.targetDate))}, ${s.targetKg} kg.` : `Hedef ${dShort.format(parseDay(s.targetDate))}, ${s.targetKg} kg.`;
+    sub = `${when}. Hedef ${dShort.format(parseDay(s.targetDate))}, ${s.targetKg} kg.`;
   } else {
     const diff = a.kg - line;
     if (a.kg <= s.targetKg) head = `${s.targetKg} kg’a ulaştın.`;
     else if (Math.abs(diff) < 0.05) head = 'Tam çizgidesin.';
     else if (diff < 0) head = `Çizginin ${n1(-diff)} kg önündesin.`;
     else head = `Çizginin ${n1(diff)} kg gerisindesin.`;
-    const src = a.n >= 3 ? '7 günlük ortalaman' : a.n === 1 ? 'Son tartın' : `Son ${a.n} tartının ortalaması`;
-    sub = `${src} ${n1(a.kg)} kg, çizgi bugün ${n1(line)} kg. ` + (left > 0 ? `${dShort.format(parseDay(s.targetDate))}’a ${left} gün.` : 'Hedef tarihi geldi.');
-    if (toStart > 0) sub = `${src} ${n1(a.kg)} kg. Başlangıç ${dLong.format(parseDay(s.startDate))}.`;
+    sub = `${src} ${n1(a.kg)} kg, çizgi bugün ${n1(line)} kg. ${when}.`;
   }
-  return { head, sub, a, line };
+  return { head, sub, a, line, src, when };
 }
 
+// Bugün ekranının başı: cümle, cetvel, açıklama satırı ve günün tartısı
 function inis() {
-  const { head, sub, a, line } = lineSentence();
+  const { head, a, line, src, when } = lineSentence();
+  const kg = (S.days[today()] || {}).kg;
   return `<section class="inis" aria-label="Hedef çizgisi">
-    <p class="inis-h">${esc(head)}</p>
+    ${!a && startStep() === 1 ? '' : `<p class="inis-h">${esc(head)}</p>`}
     ${ruler(a ? a.kg : null, line)}
-    <p class="inis-s">${esc(sub)}</p>
-    <p class="lej"><span><i class="k-cur"></i>ortalaman</span><span><i class="k-line"></i>çizgi bugün</span></p>
+    <p class="lej">${a ? `<span><i class="k-cur"></i>${esc(src.toLocaleLowerCase('tr-TR'))} ${n1(a.kg)}</span>` : ''}<span><i class="k-line"></i>çizgi bugün ${n1(line)}</span><span>${esc(when)}</span></p>
+    <button type="button" class="satir" data-act="num" data-kind="kg"><span>Bugünkü tartı</span><b>${kg ? n1(kg) + ' kg' : '–'}</b><i>${kg ? 'Değiştir' : 'Gir'}</i></button>
   </section>`;
 }
 
@@ -91,7 +93,7 @@ function tape(label, val, target, unit, step, lowerIsGood) {
   if (lowerIsGood) note = val > target ? `${n0(val - target)} ${unit} üstünde` : `${n0(target - val)} ${unit} kaldı`;
   else note = done ? 'Hedef tamam' : `${n0(target - val)} ${unit} daha`;
   return `<div class="serit${over ? ' is-over' : ''}${done ? ' is-done' : ''}">
-    <div class="serit-h"><h2>${label}</h2><p><b>${n0(val)}</b> / ${n0(target)} ${unit}</p></div>
+    <div class="serit-h"><h2>${label}</h2><p><b>${n0(val)}</b> / ${n0(target)}${unit === 'g' ? ' g' : ''}</p></div>
     <div class="tape" role="img" aria-label="${label}: ${n0(val)} / ${n0(target)} ${unit}" style="--v:${v.toFixed(1)}%;--tick:${((step / max) * 100).toFixed(3)}%"><i></i><b></b></div>
     <p class="serit-s">${note}</p>
   </div>`;
@@ -99,52 +101,93 @@ function tape(label, val, target, unit, step, lowerIsGood) {
 
 function entryMini(e) {
   const v = eff(e);
-  return `<button type="button" class="kayit" data-act="open-entry" data-id="${e.id}">
-    <span class="kayit-t">${esc(e.title)}${e.mult && e.mult !== 1 ? ` ×${String(e.mult).replace('.', ',')}` : ''}</span>
-    <span class="kayit-v">${n0(v.kcal)} kcal, ${n0(v.p)} g protein</span>
+  const ok = e.status === 'ok';
+  const state = S.busy.has(e.id) ? 'Analiz ediliyor' : e.status === 'error' ? 'Analiz edilemedi' : 'Analiz bekliyor';
+  return `<button type="button" class="kayit${ok ? '' : ' kayit-p'}" data-act="open-entry" data-id="${e.id}">
+    <span class="kayit-t">${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${String(e.mult).replace('.', ',')}` : ''}</span>
+    <span class="kayit-v">${ok ? `${n0(v.kcal)} kcal, ${n0(v.p)} g protein` : state}</span>
   </button>`;
 }
 
-function slotRows(day) {
-  const dd = S.days[day] || {};
-  const meals = mealsOf(day);
-  const pend = S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status !== 'ok');
+const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(m.ad)} <span>${m.kcal}</span></button>`;
+const CAM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.4" r="3.4"/></svg>';
+
+// Sıradaki öğün: ekranın tek birincil eylemi
+function nextCard(day) {
   const sg = suggest(day);
-  const rows = [];
-  const mk = (id, ad, saat, hint) => {
-    const es = meals.filter((e) => e.slot === id).sort((a, b) => a.ts - b.ts);
-    const ps = pend.filter((e) => e.slot === id);
-    const logged = new Set(es.map((e) => e.planId));
-    let opts = MEALS.filter((m) => m.slot === id);
-    if (id === 'ant') opts = opts.filter((m) => !logged.has(m.id));
-    const showChips = id === 'ant' ? opts.length > 0 : es.length === 0;
-    const chips = showChips ? `<div class="chips">${opts.map((m) => `<button type="button" class="chip${sg && sg.meal && sg.meal.id === m.id ? ' chip-on' : ''}" data-act="log-plan" data-id="${m.id}">${esc(m.ad)} <span>${m.kcal}</span></button>`).join('')}</div>` : '';
-    rows.push(`<li class="slot${es.length ? ' is-done' : ''}">
-      <div class="slot-t">${saat}</div>
-      <div class="slot-b">
-        <h3>${ad}</h3>
-        ${es.map(entryMini).join('')}
-        ${ps.map((e) => `<button type="button" class="kayit kayit-p" data-act="open-entry" data-id="${e.id}"><span class="kayit-t">${esc(e.title)}</span><span class="kayit-v">${S.busy.has(e.id) ? 'Analiz ediliyor' : e.status === 'error' ? 'Analiz edilemedi' : 'Analiz bekliyor'}</span></button>`).join('')}
-        ${hint && !es.length ? `<p class="slot-h">${hint}</p>` : ''}
-        ${chips}
-      </div>
-    </li>`);
-  };
-  if (meals.some((e) => e.slot === 'sabah') || pend.some((e) => e.slot === 'sabah')) mk('sabah', 'Sabah', '–', '');
-  SLOTS.filter((s) => s.id !== 'gece').forEach((s) => mk(s.id, s.ad, s.saat, ''));
-  if (dd.train || meals.some((e) => e.slot === 'ant')) mk('ant', 'Antrenman ekleri', '±', 'Öncesinde muz, sonrasında skyr.');
-  mk('gece', SLOT_AD.gece, '20:00', 'Bitki çayı. Çok açsan ya da protein eksikse skyr.');
-  return rows.join('');
+  const isToday = day === today();
+  if (sg.rem < -50) {
+    return `<section class="sira"><h2>Bütçe ${n0(-sg.rem)} kcal aşıldı</h2><p class="sira-n">Yarın plana dön. Telafi için öğün atlama; haftalık ortalama belirleyici.</p></section>`;
+  }
+  if (!sg.meal) {
+    return `<section class="sira"><h2>Öğünler tamam</h2><p class="sira-n">${sg.remP > 12 ? `Protein ${n0(sg.remP)} g eksik kaldı.` : 'Gün hedefte.'}</p></section>`;
+  }
+  if (sg.extra) {
+    return `<section class="sira"><h2>Öğünler tamam</h2><p class="sira-n">Protein ${n0(sg.remP)} g eksik. 150 g sade skyr bunu kapatır ve bütçeye sığar.</p>
+      <button type="button" class="btn btn-p btn-w" data-act="log-plan" data-id="${sg.meal.id}">Skyr’i kaydet, ${sg.meal.kcal} kcal</button></section>`;
+  }
+  const [h, m] = sg.slot.saat.split(':').map(Number);
+  const now = new Date();
+  const late = isToday && now.getHours() * 60 + now.getMinutes() > h * 60 + m + 120;
+  const others = MEALS.filter((x) => x.slot === sg.slot.id && x.id !== sg.meal.id);
+  return `<section class="sira" aria-labelledby="sira-h">
+    <p class="sira-k" id="sira-h">${late ? 'Kayıt yok' : isToday ? 'Sıradaki öğün' : 'Eksik öğün'}: ${esc(sg.slot.ad.toLocaleLowerCase('tr-TR'))}, ${sg.slot.saat}</p>
+    <h2>${esc(sg.meal.ad)}</h2>
+    <p class="sira-n">${sg.meal.kcal} kcal, ${n0(sg.meal.p)} g protein, ${sg.tight ? 'en hafif seçenek' : 'bütçene uygun'}.</p>
+    <button type="button" class="btn btn-p btn-w" data-act="log-plan" data-id="${sg.meal.id}">Kaydet</button>
+    <p class="sira-d">Başka bir şey mi yedin?</p>
+    <div class="chips">${others.map((x) => chip(x)).join('')}${isToday ? `<button type="button" class="chip chip-i" data-act="cam">${CAM}Fotoğrafını çek</button>` : ''}</div>
+  </section>`;
 }
 
-function suggestLine(day) {
+function dayList(day) {
+  const dd = S.days[day] || {};
+  const all = S.entries.filter((e) => e.day === day && e.kind === 'meal');
   const sg = suggest(day);
-  const t = dayTotals(day);
-  if (!t.n && day !== today()) return '';
-  if (sg.rem < -50) return `<p class="oneri">Bugünün bütçesi ${n0(-sg.rem)} kcal aşıldı. Yarın plana dön; telafi için öğün atlama.</p>`;
-  if (!sg.meal) return sg.remP > 12 ? `<p class="oneri">Öğünler tamam. Protein ${n0(sg.remP)} g eksik kaldı.</p>` : '<p class="oneri">Öğünler tamam, gün hedefte.</p>';
-  if (sg.extra) return `<p class="oneri">Protein ${n0(sg.remP)} g eksik. 150 g sade skyr bunu kapatır ve bütçeye sığar.</p>`;
-  return `<p class="oneri">Sıradaki öğün ${esc(sg.slot.ad.toLocaleLowerCase('tr-TR'))}: ${esc(sg.meal.ad.toLocaleLowerCase('tr-TR'))}${sg.tight ? ' (bütçe dar, en hafif seçenek)' : ''}.</p>`;
+  const nextId = sg.meal && !sg.extra && sg.slot ? sg.slot.id : '';
+  const rows = [];
+  const mk = (id, ad, saat, hint) => {
+    const es = all.filter((e) => e.slot === id).sort((x, y) => x.ts - y.ts);
+    const done = es.some((e) => e.status === 'ok');
+    const logged = new Set(es.map((e) => e.planId));
+    const opts = MEALS.filter((x) => x.slot === id && !(id === 'ant' && logged.has(x.id)));
+    let body = es.map(entryMini).join('');
+    if (id === nextId && !es.length) body += '<p class="slot-h">Yukarıdaki kartta.</p>';
+    else if ((!es.length || id === 'ant') && opts.length) {
+      body += `<details class="slot-d" data-slot="${id}"${S.openSlots.has(id) ? ' open' : ''}><summary>${hint || 'Seçenekleri göster'}</summary><div class="chips">${opts.map((x) => chip(x)).join('')}</div></details>`;
+    }
+    rows.push(`<li class="slot${done ? ' is-done' : ''}${id === nextId ? ' is-next' : ''}">
+      <div class="slot-t">${saat}</div>
+      <div class="slot-b"><h3>${ad}</h3>${body}</div>
+    </li>`);
+  };
+  if (all.some((e) => e.slot === 'sabah')) mk('sabah', 'Sabah', '', '');
+  SLOTS.filter((x) => x.id !== 'gece').forEach((x) => mk(x.id, x.ad, x.saat, ''));
+  if (dd.train || all.some((e) => e.slot === 'ant')) mk('ant', 'Antrenman ekleri', '', 'Öncesinde muz, sonrasında skyr');
+  mk('gece', SLOT_AD.gece, '20:00', 'Bitki çayı; çok açsan skyr');
+  return `<section class="ogunler"><h2>Günün öğünleri</h2>
+    <button type="button" class="anahtar" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}">
+      <i aria-hidden="true"></i><span>Antrenman günü</span><small>${dd.train ? `hedef ${n0(S.set.kcalTrain)} kcal, muz ve skyr eklenir` : `hedef ${n0(S.set.kcalRest)} kcal`}</small>
+    </button>
+    <ol class="slots">${rows.join('')}</ol></section>`;
+}
+
+function counters(day) {
+  const dd = S.days[day] || {};
+  const water = dd.water || 0;
+  const lt = (ml) => (ml / 1000).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+  return `<section class="sayac" aria-label="Adım ve su">
+    <button type="button" class="satir" data-act="num" data-kind="steps">
+      <span>Adım</span><b>${dd.steps ? n0(dd.steps) : '–'}</b><small>/ ${n0(S.set.steps)}</small><i>${dd.steps ? 'Değiştir' : 'Gir'}</i>
+    </button>
+    <div class="satir">
+      <span id="su-l">Su</span><b>${lt(water)} l</b><small>/ ${lt(S.set.water)} l</small>
+      <div class="su-c" role="group" aria-labelledby="su-l">
+        <button type="button" data-act="water" data-v="-250" aria-label="250 ml azalt"${water ? '' : ' disabled'}>−</button>
+        <button type="button" data-act="water" data-v="250" aria-label="250 ml ekle">+</button>
+      </div>
+    </div>
+  </section>`;
 }
 
 function flexBlock(day) {
@@ -157,6 +200,33 @@ function flexBlock(day) {
       <div><dt>Esnek akşam yemeği</dt><dd><span class="pips">${pips(f.ogun, 1)}</span>${f.ogun} / 1</dd></div>
       ${f.yok ? `<div><dt>Plan dışı kayıt</dt><dd>${f.yok}</dd></div>` : ''}
     </dl>
+    ${day === today() ? `<div class="chips">${FLEX.map((x) => chip(x, 'log-flex')).join('')}</div>` : ''}
+  </section>`;
+}
+
+// İlk kullanım: sıradaki tek adımı gösterir; bitince ya da gizlenince kaybolur
+function startStep() {
+  if (S.set.hideStart) return 0;
+  if (!Object.values(S.days).some((d) => d.kg)) return 1;
+  if (!S.entries.some((e) => e.kind === 'meal' && e.status === 'ok')) return 2;
+  if (!hasKey()) return 3;
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  return standalone ? 0 : 4;
+}
+function startCard() {
+  const n = startStep();
+  if (!n) return '';
+  const step = {
+    1: ['İlk tartını gir', 'Çizgi ve tahminler tartıdan hesaplanır.', '<button type="button" class="btn btn-p" data-act="num" data-kind="kg">Tartıyı gir</button>'],
+    2: ['İlk öğününü kaydet', 'Aşağıdaki kartta “Kaydet”e dokun. Anahtar gerekmez.', ''],
+    3: ['Fotoğraf analizi için anahtar ekle', 'Gemini’nin ücretsiz katmanı yeterli. Plan öğünleri anahtarsız çalışır.', '<button type="button" class="btn btn-p" data-act="settings" data-sec="analiz">Anahtar ekle</button>'],
+    4: ['Ana ekrana ekle', 'Tarayıcının Paylaş menüsünden “Ana Ekrana Ekle”. Veriler böyle daha kalıcı olur.', ''],
+  }[n];
+  return `<section class="basla" aria-labelledby="basla-h">
+    <div class="basla-h"><p>Başlarken, adım ${n} / 4</p><button type="button" class="lnk" data-act="hide-start">${n === 4 ? 'Tamam' : 'Gizle'}</button></div>
+    <h2 id="basla-h">${step[0]}</h2>
+    <p class="basla-n">${step[1]}</p>
+    ${step[2]}
   </section>`;
 }
 
@@ -166,12 +236,11 @@ export function renderBugun() {
   const tot = dayTotals(day);
   const tg = dayTarget(day);
   const dd = S.days[day] || {};
-  const water = dd.water || 0;
   return `
   <header class="top">
     <div>
-      <h1>${isToday ? 'Bugün' : esc(dLong.format(parseDay(day)))}</h1>
-      <p class="sub">${isToday ? esc(dLong.format(parseDay(day))) : '<button type="button" class="lnk" data-act="day-today">Bugüne dön</button>'}</p>
+      <h1>${isToday ? 'Bugün' : esc(dShort.format(parseDay(day)))}</h1>
+      <p class="sub">${isToday ? esc(dLong.format(parseDay(day))) : `${esc(new Intl.DateTimeFormat('tr-TR', { weekday: 'long' }).format(parseDay(day)))}. <button type="button" class="lnk lnk-i" data-act="day-today">Bugüne dön</button>`}</p>
     </div>
     <div class="top-r">
       <button type="button" class="ib" data-act="day-prev" aria-label="Önceki gün">${ICON.prev}</button>
@@ -179,30 +248,47 @@ export function renderBugun() {
       <button type="button" class="ib" data-act="settings" aria-label="Ayarlar">${ICON.gear}</button>
     </div>
   </header>
-  ${isToday ? inis() : ''}
-  <section class="olcu" aria-label="Günlük ölçüler">
-    ${tape('Kalori', tot.kcal, tg, 'kcal', 100, true)}
-    ${tape('Protein', tot.p, S.set.protein, 'g', 10, false)}
-    <div class="seg" role="group" aria-label="Gün tipi">
-      <button type="button" data-act="train" data-v="0" aria-pressed="${dd.train ? 'false' : 'true'}">Dinlenme günü</button>
-      <button type="button" data-act="train" data-v="1" aria-pressed="${dd.train ? 'true' : 'false'}">Antrenman günü</button>
-    </div>
-    <div class="uc">
-      <label for="in-kg">Tartı<span><input id="in-kg" data-chg="kg" type="text" inputmode="decimal" autocomplete="off" value="${dd.kg ? n1(dd.kg) : ''}" placeholder="–"> kg</span></label>
-      <label for="in-steps">Adım<span><input id="in-steps" data-chg="steps" type="text" inputmode="numeric" autocomplete="off" value="${dd.steps ? n0(dd.steps) : ''}" placeholder="${n0(S.set.steps)}"></span></label>
-      <div class="su"><span id="su-l" class="su-l">Su</span><div class="su-c" role="group" aria-labelledby="su-l"><button type="button" data-act="water" data-v="-250" aria-label="250 ml azalt"${water ? '' : ' disabled'}>−</button><b>${(water / 1000).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} l</b><button type="button" data-act="water" data-v="250" aria-label="250 ml ekle">+</button></div></div>
+  ${isToday ? startCard() : ''}
+  ${isToday ? inis() : `<section class="inis"><button type="button" class="satir" data-act="num" data-kind="kg"><span>Bu günün tartısı</span><b>${dd.kg ? n1(dd.kg) + ' kg' : 'Yok'}</b><i>${dd.kg ? 'Değiştir' : 'Gir'}</i></button></section>`}
+  <section class="butce" aria-label="Günlük bütçe">
+    <div class="butce-g">
+      ${tape('Kalori', tot.kcal, tg, 'kcal', 100, true)}
+      ${tape('Protein', tot.p, S.set.protein, 'g', 10, false)}
     </div>
   </section>
-  <section class="ogunler">
-    <h2>Öğünler</h2>
-    ${suggestLine(day)}
-    <ol class="slots">${slotRows(day)}</ol>
-  </section>
+  ${nextCard(day)}
+  ${dayList(day)}
+  ${counters(day)}
   ${flexBlock(day)}`;
 }
 
+// ——— Alt sayfalar ———
+export function renderNumSheet(kind, day) {
+  const dd = S.days[day] || {};
+  const isKg = kind === 'kg';
+  const cur = isKg ? dd.kg : dd.steps;
+  const dayTxt = day === today() ? 'Bugünkü' : esc(dShort.format(parseDay(day)));
+  return `
+  <header class="sh-top"><h2 id="sheet-title">${dayTxt} ${isKg ? 'tartı' : 'adım'}</h2><button type="button" class="btn" data-act="close-sheet">Vazgeç</button></header>
+  <form id="num-form" class="num" data-kind="${kind}" data-day="${day}" autocomplete="off">
+    <label for="num-in" class="dip">${isKg ? 'Sabah, aynı koşulda tartıl. Tek günlük sayı oynar; hesap 7 günlük ortalamadan yapılır.' : `Telefonun Sağlık uygulamasındaki günlük adım sayısı. Hedef ${n0(S.set.steps)}.`}</label>
+    <div class="num-r"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? (isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.set.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : 'adım'}</span></div>
+    <p class="dip is-err" id="num-err" role="alert" hidden></p>
+    <button type="submit" class="btn btn-p btn-w">Kaydet</button>
+    ${cur ? `<button type="button" class="lnk lnk-del" data-act="num-clear" data-kind="${kind}" data-day="${day}">${isKg ? 'Tartıyı sil' : 'Adımı sil'}</button>` : ''}
+  </form>`;
+}
+
+export function renderEntrySheet(id) {
+  const e = S.entries.find((x) => x.id === id);
+  if (!e) return '';
+  return `
+  <header class="sh-top"><h2 id="sheet-title">Kayıt</h2><button type="button" class="btn" data-act="close-sheet">Kapat</button></header>
+  ${entryCard(e, true)}`;
+}
+
 // ——— Akış ———
-function entryCard(e) {
+function entryCard(e, inSheet = false) {
   const busy = S.busy.has(e.id);
   const when = `${hhmm(e.ts)}${{ exif: ', saat fotodan', file: ', saat dosyadan', manual: ', elle', now: '' }[e.timeSrc] || ''}`;
   if (e.kind === 'weight' || e.kind === 'steps') {
@@ -236,7 +322,7 @@ function entryCard(e) {
         <div class="seg seg-s" role="group" aria-label="Porsiyon">${mults}</div>
         ${tier}
       </div>
-      <details class="duzen">
+      <details class="duzen"${inSheet ? ' open' : ''}>
         <summary>${e.planId ? 'İçerik ve düzenleme' : 'Düzenle'}</summary>
         ${e.planId ? items : ''}
         <div class="duzen-g">
@@ -253,7 +339,7 @@ function entryCard(e) {
         </div>
       </details>`;
   }
-  return `<article class="kart" data-entry="${e.id}">
+  return `<article class="kart${inSheet ? ' kart-s' : ''}" data-entry="${e.id}">
     ${photos ? `<div class="kart-f${(e.photoIds || []).length > 1 ? ' kart-f-n' : ''}">${photos}</div>` : ''}
     <div class="kart-b">
       <h3>${esc(e.title)}</h3>
@@ -280,15 +366,17 @@ export function renderAkis() {
       ${es.map(entryCard).join('')}
     </section>`;
   }).join('');
-  const keyHint = hasKey() ? '' : `<div class="uyari"><p>Fotoğraf ve serbest metin analizi için bir model anahtarı gerekiyor. Plan öğünleri, tartı ve adım anahtarsız çalışır.</p><button type="button" class="btn" data-act="settings">Ayarları aç</button></div>`;
+  const keyHint = hasKey() ? '' : `<div class="uyari"><p>Fotoğraf ve serbest metin analizi için bir model anahtarı gerekiyor. Plan öğünleri, tartı ve adım anahtarsız çalışır.</p><button type="button" class="btn" data-act="settings" data-sec="analiz">Anahtar ekle</button></div>`;
   const pendBar = pend.length && hasKey() ? `<div class="uyari"><p>${pend.length} kayıt analiz bekliyor.</p><button type="button" class="btn" data-act="analyze-all">Hepsini analiz et</button></div>` : '';
   return `
   <header class="top">
-    <div><h1>Akış</h1><p class="sub">Fotoğraf çek ya da yaz. Saat ve yer fotoğraftan okunur.</p></div>
+    <div><h1>Akış</h1><p class="sub">Gönderdiklerin, yeniden eskiye.</p></div>
     <div class="top-r"><button type="button" class="ib" data-act="settings" aria-label="Ayarlar">${ICON.gear}</button></div>
   </header>
   ${keyHint}${pendBar}
-  ${groups || '<div class="bos"><p>Henüz kayıt yok.</p><p>Aşağıdan tabağının fotoğrafını çek, galeriden birkaç fotoğraf seç ya da ne yediğini yaz. Tartı için yalnızca sayıyı yaz: 85,4</p></div>'}`;
+  ${groups || `<div class="bos"><p>Henüz kayıt yok.</p><p>Gönderdiğin her şey burada sıralanır: fotoğraf, yazdığın öğün, tartı, adım.</p>
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="cam">Fotoğraf çek</button><button type="button" class="btn" data-act="lib">Galeriden seç</button></div>
+    <p>Yazarak da olur. Aşağıdaki kutuya dokununca örnekler çıkar.</p></div>`}`;
 }
 
 // ——— İlerleme ———
@@ -420,7 +508,7 @@ function calendar() {
     const d = S.calPick;
     const tot = dayTotals(d);
     const dd = S.days[d] || {};
-    pick = `<p class="tk-p"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'öğün kaydı yok'}${dd.kg ? `, tartı ${n1(dd.kg)} kg` : ''}. <button type="button" class="lnk" data-act="goto-day" data-day="${d}">Günü aç</button></p>`;
+    pick = `<p class="tk-p"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'öğün kaydı yok'}${dd.kg ? `, tartı ${n1(dd.kg)} kg` : ''}. <button type="button" class="lnk lnk-i" data-act="goto-day" data-day="${d}">Günü aç</button></p>`;
   }
   return `<div class="takvim">
     <div class="tk-r tk-head"><span class="tk-m"></span>${['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'].map((x) => `<span>${x}</span>`).join('')}</div>
@@ -538,49 +626,54 @@ export function renderPlan() {
   <section><h2>Süreç kuralları</h2>${list(RULES.surec)}</section>`;
 }
 
-// ——— Ayarlar ———
+// ——— Ayarlar: her bölüm kapalı gelir, başlıkta güncel durum yazar ———
 export function renderSettings() {
   const s = S.set;
   const u = s.usage || { in: 0, out: 0, calls: 0, usd: 0 };
   const st = S.storage;
   const mb = (b) => (b / 1048576).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
   const places = s.places || [];
+  const favs = s.favs || [];
   const oa = s.provider === 'openai';
   const backupAge = s.lastBackup ? diffDays(dayKey(new Date(s.lastBackup)), today()) : null;
-  return `
-  <header class="sh-top"><h2 id="sheet-title">Ayarlar</h2><button type="button" class="btn" data-act="close-sheet">Kapat</button></header>
+  const backupTxt = backupAge == null ? 'Henüz alınmadı' : backupAge === 0 ? 'Son yedek bugün' : `Son yedek ${backupAge} gün önce`;
+  const preset = PRESETS.find((p) => p.base === s.oaBase);
+  const aiTxt = !hasKey() ? 'Anahtar yok' : oa ? `${preset ? preset.ad.split(' (')[0] : 'OpenAI uyumlu'}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { ad: s.model }).ad.split(' (')[0]}`;
+  const sec = (id, title, status, body) => `<details class="ayar" data-sec="${id}"${S.setOpen === id ? ' open' : ''}>
+    <summary><span>${title}</span><small>${esc(status)}</small></summary>
+    <div class="ayar-b">${body}</div>
+  </details>`;
 
-  <section>
-    <h3>Fotoğraf ve metin analizi</h3>
+  const analiz = `
     <p class="dip">Analiz, seçtiğin sağlayıcıya doğrudan bu telefondan gider. Anahtar yalnızca bu cihazda saklanır ve yedeğe yazılmaz.</p>
     <label for="set-prov">Sağlayıcı</label>
     <select id="set-prov" data-chg="prov">
-      <option value="anthropic"${oa ? '' : ' selected'}>Claude (Anthropic, ön ödemeli kredi)</option>
-      <option value="openai"${oa ? ' selected' : ''}>OpenAI uyumlu (OpenCode, Gemini, OpenRouter)</option>
+      <option value="openai"${oa ? ' selected' : ''}>Gemini, OpenCode, OpenRouter (OpenAI uyumlu)</option>
+      <option value="anthropic"${oa ? '' : ' selected'}>Claude (ön ödemeli kredi ister)</option>
     </select>
     ${oa ? `
     <label for="set-preset">Hazır ayar</label>
     <select id="set-preset" data-chg="preset"><option value="">Seç ya da aşağıyı elle doldur</option>${PRESETS.map((p) => `<option value="${p.id}"${p.base === s.oaBase ? ' selected' : ''}>${p.ad}</option>`).join('')}</select>
-    <label for="set-base">Adres</label>
-    <input id="set-base" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaBase)}" placeholder="https://…/v1">
+    <label for="set-oakey">Anahtar</label>
+    <input id="set-oakey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaKey)}">
+    ${preset && preset.id === 'gemini' ? '<p class="dip">Ücretsiz anahtarı aistudio.google.com adresinde “Get API key” ile alırsın.</p>' : ''}
     <label for="set-oamodel">Model</label>
     <input id="set-oamodel" type="text" list="oa-models" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaModel)}" placeholder="model kimliği">
     <datalist id="oa-models">${ZEN_FREE.map((m) => `<option value="${m}"></option>`).join('')}</datalist>
-    <label for="set-oakey">Anahtar</label>
-    <input id="set-oakey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaKey)}">
-    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-key">Kaydet</button><button type="button" class="btn" data-act="test-key">Kaydet ve dene</button><button type="button" class="btn" data-act="find-vision">Fotoğraf okuyan modeli bul</button></div>
-    <p class="dip">Her model fotoğraf kabul etmez. “Fotoğraf okuyan modeli bul” sağlayıcının modellerini küçük bir test resmiyle tek tek dener ve ilk okuyanı seçer.</p>` : `
+    <label for="set-base">Adres</label>
+    <input id="set-base" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaBase)}" placeholder="https://…/v1">
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="test-key">Kaydet ve dene</button><button type="button" class="btn" data-act="save-key">Yalnızca kaydet</button></div>
+    <p class="dip pre" id="key-test" role="status"></p>
+    <p class="dip">Model fotoğraf okumuyorsa: <button type="button" class="lnk lnk-i" data-act="find-vision">fotoğraf okuyan modeli bul</button>. Sağlayıcının modellerini küçük bir test resmiyle tek tek dener.</p>` : `
     <label for="set-key">Anahtar</label>
     <input id="set-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.apiKey)}" placeholder="sk-ant-…">
     <label for="set-model">Model</label>
     <select id="set-model">${Object.entries(MODELS).map(([k, m]) => `<option value="${k}"${s.model === k ? ' selected' : ''}>${m.ad}</option>`).join('')}</select>
-    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-key">Kaydet</button><button type="button" class="btn" data-act="test-key">Kaydet ve dene</button></div>`}
-    <p class="dip pre" id="key-test" role="status"></p>
-    <p class="dip">Şimdiye kadar ${n0(u.calls)} çağrı, ${n0(u.in)} giriş ve ${n0(u.out)} çıkış token. Claude için tahmini maliyet ${u.usd.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} $.</p>
-  </section>
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="test-key">Kaydet ve dene</button><button type="button" class="btn" data-act="save-key">Yalnızca kaydet</button></div>
+    <p class="dip pre" id="key-test" role="status"></p>`}
+    <p class="dip">Şimdiye kadar ${n0(u.calls)} çağrı, ${n0(u.in)} giriş ve ${n0(u.out)} çıkış token.${oa ? '' : ` Tahmini maliyet ${u.usd.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} $.`}</p>`;
 
-  <section>
-    <h3>Hedefler</h3>
+  const hedef = `
     <div class="duzen-g">
       <label for="set-start">Başlangıç<input id="set-start" type="date" value="${s.startDate}"></label>
       <label for="set-end">Bitiş<input id="set-end" type="date" value="${s.targetDate}"></label>
@@ -590,23 +683,19 @@ export function renderSettings() {
       <label for="set-train">Antrenman günü kcal<input id="set-train" type="text" inputmode="numeric" value="${s.kcalTrain}"></label>
       <label for="set-prot">Protein (g)<input id="set-prot" type="text" inputmode="numeric" value="${s.protein}"></label>
     </div>
-    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-targets">Hedefleri kaydet</button></div>
-  </section>
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-targets">Hedefleri kaydet</button></div>`;
 
-  <section>
-    <h3>Konum</h3>
+  const konum = `
     <label class="chk"><input type="checkbox" data-act="loc-toggle"${s.useLocation ? ' checked' : ''}> Fotoğrafın konumunu kullan</label>
     <p class="dip">Konum cihazda okunur ve kayıtlı yerlerle burada eşleştirilir. Modele yalnızca “Ev”, “Ofis” ya da “dışarı” kelimesi gider; koordinat gitmez. Galeriden seçerken konumun gelmesi için seçicide Seçenekler altında Konum açık olmalı.</p>
     <div class="k-act">
       <button type="button" class="btn" data-act="loc-save" data-name="Ev">Buradayım: Ev</button>
       <button type="button" class="btn" data-act="loc-save" data-name="Ofis">Buradayım: Ofis</button>
     </div>
-    <p class="dip" id="loc-out" role="status">${places.length ? 'Kayıtlı yerler: ' + places.map((p) => esc(p.name)).join(', ') + '.' : 'Kayıtlı yer yok.'}</p>
-  </section>
+    <p class="dip" id="loc-out" role="status">${places.length ? 'Kayıtlı yerler: ' + places.map((p) => esc(p.name)).join(', ') + '.' : 'Kayıtlı yer yok.'}</p>`;
 
-  <section>
-    <h3>Yedek</h3>
-    <p class="dip">Veriler yalnızca bu cihazda. iOS depolama sıkışınca web verisini silebilir; haftada bir yedeği Dosyalar’a kaydet. ${backupAge == null ? 'Henüz yedek alınmadı.' : backupAge === 0 ? 'Son yedek bugün.' : `Son yedek ${backupAge} gün önce.`}</p>
+  const yedek = `
+    <p class="dip">Veriler yalnızca bu cihazda. iOS depolama sıkışınca web verisini silebilir; haftada bir yedeği Dosyalar’a kaydet.</p>
     <div class="k-act">
       <button type="button" class="btn btn-p" data-act="export">Yedeği kaydet</button>
       <button type="button" class="btn" data-act="export-photos">Fotoğraflarla birlikte</button>
@@ -614,13 +703,24 @@ export function renderSettings() {
     </div>
     <input id="set-import" type="file" accept="application/json,.json" hidden>
     <p class="dip">${S.persisted === true ? 'Kalıcı depolama açık.' : S.persisted === false ? 'Kalıcı depolama henüz verilmedi. Uygulamayı ana ekrana eklemek bunu kolaylaştırır.' : ''} ${st && st.usage != null ? `Kullanılan alan ${mb(st.usage)} MB.` : ''}</p>
-    ${S.persisted === false ? '<div class="k-act"><button type="button" class="btn" data-act="persist">Kalıcı depolama iste</button></div>' : ''}
-  </section>
+    ${S.persisted === false ? '<div class="k-act"><button type="button" class="btn" data-act="persist">Kalıcı depolama iste</button></div>' : ''}`;
 
-  ${(s.favs || []).length ? `<section><h3>Sık yenenler</h3><ul class="icerik">${s.favs.map((f) => `<li><span>${esc(f.ad)}, ${n0(f.kcal)} kcal</span><button type="button" class="lnk" data-act="fav-del" data-id="${f.id}">Kaldır</button></li>`).join('')}</ul></section>` : ''}
+  const sik = favs.length
+    ? `<ul class="icerik">${favs.map((f) => `<li><span>${esc(f.ad)}, ${n0(f.kcal)} kcal</span><button type="button" class="lnk" data-act="fav-del" data-id="${f.id}">Kaldır</button></li>`).join('')}</ul>`
+    : '<p class="dip">Bir kaydın “Düzenle” bölümünden “Sık yenenlere ekle”ye dokun. Sonra Akış’ta tek dokunuşla girilir.</p>';
 
-  <section>
-    <h3>Sıfırla</h3>
-    <div class="k-act"><button type="button" class="btn btn-del" data-act="wipe">Tüm kayıtları sil</button></div>
-  </section>`;
+  const sifirla = `
+    <p class="dip">Tüm kayıtlar, fotoğraflar ve tartılar bu cihazdan silinir. Ayarlar ve anahtar kalır.</p>
+    <div class="k-act"><button type="button" class="btn btn-del" data-act="wipe">Tüm kayıtları sil</button></div>`;
+
+  return `
+  <header class="sh-top"><h2 id="sheet-title">Ayarlar</h2><button type="button" class="btn" data-act="close-sheet">Kapat</button></header>
+  <div class="ayarlar">
+    ${sec('analiz', 'Fotoğraf ve metin analizi', aiTxt, analiz)}
+    ${sec('hedef', 'Hedefler', `${n1(s.startKg)} kg’dan ${n1(s.targetKg)} kg’a, ${dShort.format(parseDay(s.targetDate))}`, hedef)}
+    ${sec('yedek', 'Yedek', backupTxt, yedek)}
+    ${sec('konum', 'Konum', s.useLocation ? (places.length ? 'Açık: ' + places.map((p) => p.name).join(', ') : 'Açık, kayıtlı yer yok') : 'Kapalı', konum)}
+    ${sec('sik', 'Sık yenenler', favs.length ? `${favs.length} öğün` : 'Henüz yok', sik)}
+    ${sec('sifirla', 'Sıfırla', '', sifirla)}
+  </div>`;
 }

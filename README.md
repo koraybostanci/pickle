@@ -19,7 +19,8 @@ Kayıtlar, fotoğraflar ve API anahtarı yalnızca telefonda durur.
 
 ## Kullanım
 
-- **Bugün:** plan öğününe dokun, kayıt düşer (token harcamaz). Tartı ve adım kutularına sayıyı yaz.
+- **Bugün:** “Sıradaki öğün” kartında Kaydet’e dokun (token harcamaz). Tartı ve adım satırına dokununca sayı girişi açılır.
+- Bir kayda dokununca ayrıntısı açılır: porsiyon, düzenleme, silme.
 - **Akış:** fotoğraf çek, galeriden birkaç fotoğraf seç ya da yaz. Örnekler:
   `85,4` (tartı) · `8200 adım` · `su 2 bardak` · `antrenman` · `2 dilim pizza ve 1 bira`
 - Galeriden seçilen fotoğrafın saati fotoğraftan okunur; 3 dakika içinde çekilmiş kareler tek öğün sayılır.

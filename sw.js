@@ -1,5 +1,5 @@
 // Uygulama kabuğunu önbelleğe alır; çevrimdışı açılır. Sürümü her yayında artır.
-const VERSION = 'kantar-v3';
+const VERSION = 'kantar-v4';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js',
