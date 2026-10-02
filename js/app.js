@@ -7,7 +7,7 @@ import {
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '7'; // bump together with VERSION in sw.js
+export const APP_VERSION = '8'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
