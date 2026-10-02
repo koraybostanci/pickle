@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, shrink, costUSD, AI_ERR_TR, STRONG_MODEL } from './ai.js';
+import { analyze, shrink, costUSD, probeVision, listModels, AI_ERR_TR, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_AD, FLEX, DEFAULTS,
   slotByTime, dayKey, parseDay, addDays, diffDays,
@@ -10,7 +10,7 @@ import { renderBugun, renderAkis, renderIlerleme, renderPlan, renderSettings, at
 // ——— Durum ———
 export const S = {
   tab: 'bugun',
-  set: { ...DEFAULTS, apiKey: '', useLocation: false, places: [], favs: [], usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0 },
+  set: { ...DEFAULTS, apiKey: '', provider: 'anthropic', oaBase: '', oaModel: '', oaKey: '', useLocation: false, places: [], favs: [], usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0 },
   entries: [],
   days: {},
   viewDay: dayKey(new Date()),
@@ -22,6 +22,15 @@ export const S = {
 };
 
 const $ = (s, r = document) => r.querySelector(s);
+
+// Seçili sağlayıcının çağrı ayarı
+export function aiCfg() {
+  const s = S.set;
+  return s.provider === 'openai'
+    ? { provider: 'openai', key: s.oaKey, model: s.oaModel, base: s.oaBase }
+    : { provider: 'anthropic', key: s.apiKey, model: s.model };
+}
+export const hasKey = () => { const c = aiCfg(); return !!c.key && (c.provider !== 'openai' || (!!c.base && !!c.model)); };
 export const today = () => dayKey(new Date());
 
 // ——— Hesaplar ———
@@ -383,10 +392,10 @@ async function analyzeEntry(id, opts = {}) {
   try {
     const blobs = [];
     for (const pid of e.photoIds || []) { const b = await photoBlob(pid); if (b) blobs.push(b); }
-    const model = opts.model || S.set.model;
-    const { data, usage } = await analyze({
-      apiKey: S.set.apiKey, model, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
-    });
+    const cfg = aiCfg();
+    if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
+    const model = cfg.model;
+    const { data, usage } = await analyze({ cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint });
     const u = S.set.usage;
     u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
     await saveSet();
@@ -428,8 +437,8 @@ async function analyzeEntry(id, opts = {}) {
     }
   } catch (err) {
     const code = err && err.code;
-    const waiting = code === 'no_key' || code === 'offline';
-    Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERR_TR[code] || 'Analiz başarısız oldu.') + (code === 'bad_request' || code === 'http' ? ' ' + String(err.message).slice(0, 140) : '') });
+    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key'].includes(code);
+    Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERR_TR[code] || 'Analiz başarısız oldu.') + (['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '') });
   }
   S.busy.delete(id);
   if (S.entries.some((x) => x.id === id)) await saveEntry(e);
@@ -446,7 +455,7 @@ const b64FromBuf = (buf) => {
 const bufFromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
 
 async function exportBackup(withPhotos) {
-  const { apiKey, ...setNoKey } = S.set;
+  const { apiKey, oaKey, ...setNoKey } = S.set;
   const data = { app: 'kantar', v: 1, at: new Date().toISOString(), settings: setNoKey, entries: S.entries, days: Object.values(S.days) };
   if (withPhotos) data.photos = (await db.all('photos')).map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, b64: b64FromBuf(p.buf) }));
   const name = `kantar-yedek-${today()}.json`;
@@ -483,7 +492,7 @@ async function importBackup(file) {
   await db.putMany('entries', data.entries);
   await db.putMany('days', data.days || []);
   if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, buf: bufFromB64(p.b64) })));
-  if (data.settings) { S.set = { ...S.set, ...data.settings, apiKey: S.set.apiKey }; await saveSet(); }
+  if (data.settings) { S.set = { ...S.set, ...data.settings, apiKey: S.set.apiKey, oaKey: S.set.oaKey }; await saveSet(); }
   await load();
   render();
   toast(`${data.entries.length} kayıt geri yüklendi`);
@@ -612,7 +621,7 @@ const ACT = {
   'del': (el) => removeEntry(el.dataset.id),
   'analyze': (el) => queueAnalyze(el.dataset.id),
   'analyze-all': () => { S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id)); },
-  'reanalyze': (el) => queueAnalyze(el.dataset.id, { model: STRONG_MODEL }),
+  'reanalyze': (el) => queueAnalyze(el.dataset.id, { strong: true }),
   'answer': (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     const inp = document.getElementById('ans-' + el.dataset.id);
@@ -661,25 +670,80 @@ const ACT = {
   'goto-day': (el) => { S.viewDay = el.dataset.day; go('bugun'); },
   // Ayarlar
   'save-key': async () => {
-    S.set.apiKey = $('#set-key').value.trim();
-    S.set.model = $('#set-model').value;
+    if (S.set.provider === 'openai') {
+      S.set.oaBase = $('#set-base').value.trim().replace(/\/+$/, '');
+      S.set.oaModel = $('#set-oamodel').value.trim();
+      S.set.oaKey = $('#set-oakey').value.trim();
+    } else {
+      S.set.apiKey = $('#set-key').value.trim();
+      S.set.model = $('#set-model').value;
+    }
     await saveSet();
-    toast(S.set.apiKey ? 'Anahtar bu cihaza kaydedildi' : 'Anahtar silindi');
-    if (S.set.apiKey) ACT['analyze-all']();
+    toast(aiCfg().key ? 'Ayar bu cihaza kaydedildi' : 'Anahtar silindi');
+    render();
+    if (hasKey()) ACT['analyze-all']();
   },
   'test-key': async () => {
     await ACT['save-key']();
-    if (!S.set.apiKey) return;
     const out = $('#key-test');
-    out.textContent = 'Deneniyor…';
+    if (!hasKey()) { out.textContent = S.set.provider === 'openai' ? 'Adres, model ve anahtar gerekli.' : 'Anahtar gerekli.'; return; }
+    const cfg = aiCfg();
+    const add = async (u) => { S.set.usage.in += u.in; S.set.usage.out += u.out; S.set.usage.calls += 1; S.set.usage.usd += costUSD(cfg.model, u); await saveSet(); };
+    const why = (err) => (err.code === 'no_credit' ? 'Hesapta kredi yok; anahtar ve bağlantı doğru.' : (AI_ERR_TR[err.code] || 'Başarısız.').replace('; kayıt bekliyor', '') + ' ' + String(err.message || '').slice(0, 140));
+    out.textContent = 'Metin deneniyor…';
+    let line1;
     try {
-      const r = await analyze({ apiKey: S.set.apiKey, model: S.set.model, text: '1 orta boy elma', when: new Date() });
-      S.set.usage.in += r.usage.in; S.set.usage.out += r.usage.out; S.set.usage.calls += 1; S.set.usage.usd += costUSD(S.set.model, r.usage);
-      await saveSet();
-      out.textContent = `Çalışıyor. Deneme: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal. ${r.usage.in} giriş ve ${r.usage.out} çıkış token harcandı.`;
+      const r = await analyze({ cfg, text: '1 orta boy elma', when: new Date() });
+      await add(r.usage);
+      line1 = `Metin çalışıyor: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal (${r.usage.in} giriş, ${r.usage.out} çıkış token).`;
     } catch (err) {
-      out.textContent = (AI_ERR_TR[err.code] || 'Başarısız.') + ' ' + String(err.message || '').slice(0, 160);
+      out.textContent = 'Metin: ' + why(err);
+      return;
     }
+    out.textContent = line1 + ' Fotoğraf deneniyor…';
+    try {
+      const v = await probeVision(cfg);
+      await add(v.usage);
+      out.textContent = line1 + (v.ok ? ' Fotoğraf çalışıyor: model resimdeki sayıyı okudu.' : ' Fotoğraf çalışmıyor: model resmi okuyamadı. Görsel destekleyen başka bir model seç.');
+    } catch (err) {
+      out.textContent = line1 + ' Fotoğraf: ' + why(err);
+    }
+  },
+  'find-vision': async () => {
+    await ACT['save-key']();
+    const out = $('#key-test');
+    if (!S.set.oaBase || !S.set.oaKey) { out.textContent = 'Önce adres ve anahtarı gir.'; return; }
+    const base = { provider: 'openai', key: S.set.oaKey, base: S.set.oaBase };
+    out.textContent = 'Model listesi alınıyor…';
+    let ids = await listModels(base);
+    const zen = /opencode\.ai\/zen\/v1$/.test(S.set.oaBase);
+    if (zen) ids = ids.filter((id) => /free|big-pickle/i.test(id));
+    if (!ids.length && zen) ids = ZEN_FREE.slice();
+    if (S.set.oaModel && !ids.includes(S.set.oaModel)) ids.unshift(S.set.oaModel);
+    ids = ids.slice(0, 16);
+    if (!ids.length) { out.textContent = 'Model listesi alınamadı. Model adını elle yazıp “Kaydet ve dene”ye bas.'; return; }
+    const lines = [];
+    let found = '';
+    for (const id of ids) {
+      out.textContent = lines.concat(`${id}: deneniyor…`).join('\n');
+      try {
+        const v = await probeVision({ ...base, model: id });
+        lines.push(`${id}: ${v.ok ? 'fotoğrafı okudu' : 'fotoğrafı okuyamadı'}`);
+        if (v.ok && !found) found = id;
+      } catch (err) {
+        lines.push(`${id}: ${(AI_ERR_TR[err.code] || 'hata').split('.')[0].toLocaleLowerCase('tr-TR')}`);
+        if (err.code === 'net' || err.code === 'offline' || err.code === 'bad_key') break;
+      }
+    }
+    if (found) {
+      S.set.oaModel = found;
+      await saveSet();
+      const inp = $('#set-oamodel');
+      if (inp) inp.value = found;
+      lines.push(`Seçilen model: ${found}. Şimdi “Kaydet ve dene”ye bas.`);
+    } else lines.push('Fotoğraf okuyan model bulunamadı.');
+    out.textContent = lines.join('\n');
+    render();
   },
   'save-targets': async () => {
     const num = (id) => parseFloat($(id).value.replace(',', '.'));
@@ -749,6 +813,12 @@ document.addEventListener('change', async (ev) => {
   }
   if (el.id === 'set-import') { if (el.files[0]) importBackup(el.files[0]); el.value = ''; return; }
   if (el.dataset.act === 'loc-toggle') return ACT['loc-toggle'](el);
+  if (el.dataset.chg === 'prov') { S.set.provider = el.value; await saveSet(); render(); return openSettings(); }
+  if (el.dataset.chg === 'preset') {
+    const p = PRESETS.find((x) => x.id === el.value);
+    if (p) { $('#set-base').value = p.base; $('#set-oamodel').value = p.model; }
+    return;
+  }
   if (el.dataset.chg === 'kg') {
     const kg = parseFloat(el.value.replace(',', '.'));
     if (kg >= 50 && kg <= 160) setWeight(Math.round(kg * 10) / 10, S.viewDay, false);
@@ -806,7 +876,7 @@ document.addEventListener('visibilitychange', () => {
     }).catch(() => {});
   }
   // Yarım kalan analizler: anahtar varsa ve çevrimiçiyse sürdür
-  if (S.set.apiKey && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
+  if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
 })();
 
 // Test ve hata ayıklama için
