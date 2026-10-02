@@ -429,6 +429,10 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 .setting-body .note, .setting-body .field-grid, .setting-body .items { margin-top: 0; }
 .setting-body .actions { margin-top: 6px; }
 .setting-body .items .link { min-height: 32px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+.brand img { flex: none; border-radius: 10px; box-shadow: 0 0 0 1px var(--line); }
+.brand p { display: grid; gap: 1px; font-size: 13.5px; color: var(--ink2); }
+.brand b { font: 700 17px/1.2 var(--num); color: var(--ink); }
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }

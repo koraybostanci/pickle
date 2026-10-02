@@ -1,53 +1,129 @@
+<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Kantar icon: a steelyard scale with food in the pan"></p>
+
 # Kantar
 
-A nutrition plan and daily tracker for going from 86 kg to 78 kg (5 October to 31 December 2026).
-It is a single-user web app (PWA) that installs with "Add to Home Screen".
-Entries, photos and the API key stay on the phone.
+Kantar is a personal weight-loss tracker that runs in the browser. You give it a start weight, a
+target weight and a date; it draws the schedule between them and helps you stick to a meal plan
+until you get there. You log food by photo, by typing, or with one tap on a planned meal.
 
-"Kantar" is Turkish for a weighing scale.
+It is a single-user web app (PWA) with no backend and no account. You host the files yourself,
+add the page to your phone's Home Screen, and all data stays on that phone.
 
-## Setup
+"Kantar" is Turkish for a steelyard, the scale with a sliding weight on a graduated beam. The icon
+shows one: food in the pan, the weight on the beam, the two in balance.
 
-1. Push the files in this folder to a GitHub repository. There are no secrets in the code, so the
-   repository can be public.
-2. Repository → Settings → Pages → "Deploy from a branch", `main` / `(root)`. A few minutes later the
-   app is live at `https://<user>.github.io/<repo>/`. Cloudflare Pages works too; HTTPS is required.
-3. On the iPhone, open the address in Safari or Chrome → Share → Add to Home Screen.
-4. In the app, tap the settings button at the top right → "Photo and text analysis" and choose a provider:
-   - **OpenAI-compatible** (Gemini free tier, OpenCode Zen/Go, OpenRouter): pick the preset, enter the
-     key, then "Save and test". If the model cannot read photos, use "find a model that reads photos".
-   - **Claude:** create a key at https://platform.claude.com → API Keys; it needs prepaid credit.
+## What it does
 
-   Plan meals, weight, steps and water work without any provider.
-5. Optional: Settings → Location. Tap "I am here: Home" at home and "I am here: Office" at the office.
+- **Today:** where you stand against the schedule, the day's calorie and protein budget, the meals
+  of the day with a suggestion for the next one, steps, water and a weekly budget for treats.
+- **Log:** everything you sent, one line per entry. Take a photo, choose photos from the library, or
+  type. A model estimates calories and macros; you can correct the portion, the numbers or the time.
+- **Progress:** weight chart with a 7-day average, projected arrival date, a consistency calendar
+  and checkpoints.
+- **Plan:** the meal options with ingredients and amounts, and the rules of the plan.
 
-## Using it
+Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
+water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
+on the device.
 
-- **Today:** under "Today's meals" the next open meal shows a suggestion; tap "Log this meal" (uses no tokens). Tap the weigh-in or steps row
-  to enter a number.
-- **Log:** take a photo, choose several from the library, or type. Examples:
-  `85.4` (weight), `8200 steps`, `water 2 glasses`, `workout`, `2 slices of pizza and a beer`.
-- Each entry is one line: time, name, calories and, for photos, a small thumbnail. Tap it to see the
-  photo and to correct the portion (½ / 1 / 1½ / 2), calories, meal or time, or to delete it.
-- A photo chosen from the library keeps its capture time; photos taken within 3 minutes of each other
-  count as one meal.
-- "Add to favourites" on an entry makes it a one-tap chip on the Log tab.
-- **Backup:** Settings → Backup → "Save backup" → Files. Do it once a week.
+## Privacy and data
 
-## Updating
+- Entries, photos and settings are stored in the browser's IndexedDB on your device. Nothing is
+  sent to a server of this project, because there is none.
+- Photo and free-text analysis goes straight from your phone to the model provider you choose,
+  with your own API key. Photos are downscaled to 768 px first.
+- The API key is stored only on the device and is never written to a backup file.
+- Photo location is off by default. When on, it is read on the device and matched to places you
+  saved; the model only receives a label such as "Home" or "out", never coordinates.
+- There is no sync. Back up from Settings → Backup; the backup is a JSON file you can restore on
+  the same or another device.
 
-After changing files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` together. The app
-finds the new version when it opens or comes to the front, and reloads. The running version is shown
-under Settings → "Version and updates", next to buttons for checking manually and clearing the cache.
+## Get your own copy
 
-Data written by version 5 and earlier (Turkish field values) is converted on first launch, and older
-backup files are converted on import.
+1. Fork this repository, or push the files to a repository of your own. There are no secrets in
+   the code, so it can be public.
+2. Serve it over HTTPS from any static host. With GitHub Pages: repository → Settings → Pages →
+   "Deploy from a branch", `main` / `(root)`. The app is then at `https://<user>.github.io/<repo>/`.
+3. Open that address on your phone and add it to the Home Screen (on iPhone: Share → Add to Home
+   Screen). The app then opens full screen and works offline.
+4. Open Settings (top right) → Targets and enter your own dates, weights and daily targets.
 
-## Files
+The app is built for and used on an iPhone. Other modern mobile browsers should work but have
+had less testing.
 
+## Photo and text analysis
+
+Optional. In Settings → "Photo and text analysis", choose a provider and enter your key:
+
+- **OpenAI-compatible endpoints:** presets for Google Gemini (has a free tier), OpenCode and
+  OpenRouter, or any base address and model you type in. "Save and test" checks both text and
+  photo input; "find a model that reads photos" tries the provider's models one by one.
+- **Claude:** an Anthropic API key from https://platform.claude.com, which needs prepaid credit.
+
+If the provider is busy, the app retries and, where a preset lists them, falls back to other
+models. If that also fails, the entry waits and is analysed later; nothing you sent is lost.
+
+Estimates from a photo are rough. Treat them as a starting point and correct the portion when
+it is off.
+
+## Make it your plan
+
+The repository ships with one example plan: about 1,550 kcal on rest days and 1,750 kcal on
+workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
+
+- **Targets** (dates, weights, calories, protein) are changed in the app under Settings → Targets.
+- **Meals and rules** live in `js/plan.js`:
+  - `FOODS`: nutrition per 100 g, as `[kcal, protein, carbs, fat, fibre]`.
+  - `TEMPLATES`: the meal options. Each has an id, a slot and a list of `[food, grams, measure]`.
+    Calories and macros are computed from the food table, never typed by hand.
+  - `SLOTS`: the meals of the day and their times.
+  - `FLEX`: one-tap treats that count against the weekly budget.
+  - `RULES`: the text shown on the Plan tab.
+  - `DEFAULTS`: targets used before anything is saved in Settings.
+
+  The model receives a short digest of the plan with every request, so it follows your changes
+  without further setup.
+
+The app uses kilograms, kilocalories and English (`en-GB` number and date formats).
+
+## Development
+
+There is no build step and there are no dependencies: plain HTML, CSS and JavaScript modules.
+
+```sh
+python3 -m http.server 8770
+# then open http://localhost:8770/
+```
+
+The service worker serves the app from a versioned cache, so after the first load your edits do
+not show up until you either bump the version (see below), use Settings → "Version and updates" →
+"Clear cache and reload", or bypass the service worker in the browser's developer tools.
+
+On `localhost` the app exposes `window.__kantar` for debugging.
+
+## Releasing an update
+
+Bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` together, then deploy. Installed copies
+find the new version when the app opens or comes to the front, and reload on their own. Stored
+data is kept. The running version is shown under Settings → "Version and updates".
+
+## Project layout
+
+- `index.html`, `styles.css`: shell and styles
+- `js/app.js`: state, calculations, storage, event handling
+- `js/views.js`: the screens
 - `js/plan.js`: food table, meal templates, targets, rules
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
 - `js/exif.js`: reads capture time and location from a photo
-- `js/app.js`, `js/views.js`: state, calculations and screens
 - `js/db.js`: IndexedDB
 - `sw.js`: offline cache and updates
+- `icons/`: `icon.svg` is the source; the PNG files are rendered from it for the Home Screen and
+  the web app manifest
+
+## Limits
+
+- One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
+- Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
+  less likely, and a regular backup covers the rest.
+- This is a tracking tool, not medical or dietary advice. The example plan was written for one
+  person; check your own targets with a professional if you have a health condition.
