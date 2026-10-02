@@ -35,7 +35,7 @@ on the device.
 - The API key is stored only on the device and is never written to a backup file.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
-- There is no sync. Back up from Settings → Backup; the backup is a JSON file you can restore on
+- There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can restore on
   the same or another device.
 
 ## Get your own copy
@@ -86,6 +86,42 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
 The app uses kilograms, kilocalories and English (`en-GB` number and date formats).
 
+## Export to SQLite
+
+Settings → "Backup and export" → "Export for SQLite" saves one `.sql` file. It is plain text that
+creates the tables and fills them, so any SQLite tool can load it:
+
+```sh
+sqlite3 kantar.db < kantar-export-2026-10-12.sql
+```
+
+Loading a newer export into the same database replaces the `kantar_*` tables and leaves everything
+else in that database alone.
+
+| Table or view | One row per | Columns |
+|---|---|---|
+| `kantar_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
+| `kantar_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
+| `kantar_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
+| `kantar_settings` | setting | `key`, `value` (dates, weights and daily targets) |
+| `kantar_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
+
+Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
+have numbers. Photos, API keys and saved places are not exported.
+
+```sql
+-- weight against the schedule
+SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM kantar_daily ORDER BY day;
+
+-- days over the calorie target
+SELECT day, kcal, target_kcal FROM kantar_daily WHERE kcal > target_kcal;
+
+-- what was off plan, and how much it cost
+SELECT day, title, kcal FROM kantar_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
+```
+
+The export is for analysis. To move or restore the app's data, use the JSON backup.
+
 ## Development
 
 There is no build step and there are no dependencies: plain HTML, CSS and JavaScript modules.
@@ -116,6 +152,7 @@ data is kept. The running version is shown under Settings → "Version and updat
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
 - `js/exif.js`: reads capture time and location from a photo
 - `js/db.js`: IndexedDB
+- `js/export.js`: the SQL export
 - `sw.js`: offline cache and updates
 - `icons/`: `icon.svg` is the source; the PNG files are rendered from it for the Home Screen and
   the web app manifest
