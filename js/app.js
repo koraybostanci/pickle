@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { buildSql, exportName } from './export.js';
 import { readMeta, placeLabel } from './exif.js';
 import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
@@ -7,7 +8,7 @@ import {
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '9'; // bump together with VERSION in sw.js
+export const APP_VERSION = '10'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -513,35 +514,46 @@ const b64FromBuf = (buf) => {
 };
 const bufFromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
 
+// Hands a file to the share sheet where that is possible (Save to Files on iOS), otherwise downloads it.
+// Returns false when the person cancelled.
+async function deliverFile(name, content, type) {
+  const blob = new Blob([content], { type });
+  try {
+    const file = new File([blob], name, { type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      return true;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return false;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return true;
+}
+
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
   const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days) };
   if (withPhotos) data.photos = (await db.all('photos')).map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, b64: b64FromBuf(p.buf) }));
-  const name = `kantar-backup-${today()}.json`;
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  let shared = false;
-  try {
-    const file = new File([blob], name, { type: 'application/json' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: name });
-      shared = true;
-    }
-  } catch (err) {
-    if (err && err.name === 'AbortError') return;
-  }
-  if (!shared) {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  }
+  const done = await deliverFile(`kantar-backup-${today()}.json`, JSON.stringify(data), 'application/json');
+  if (!done) return;
   S.settings.lastBackup = Date.now();
   await saveSettings();
   render();
   toast('Backup ready');
+}
+
+// For analysis elsewhere: a .sql file that builds the tables in any SQLite database
+async function exportSql() {
+  const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), appVersion: APP_VERSION });
+  const done = await deliverFile(exportName(), sql, 'text/plain');
+  if (done) toast(`Exported ${counts.days} ${counts.days === 1 ? 'day' : 'days'} and ${counts.meals} ${counts.meals === 1 ? 'meal' : 'meals'}`);
 }
 
 async function importBackup(file) {
@@ -909,6 +921,7 @@ const ACT = {
   },
   'export': () => exportBackup(false),
   'export-photos': () => exportBackup(true),
+  'export-sql': () => exportSql(),
   'import': () => $('#set-import').click(),
   'persist': async () => {
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* not supported */ }

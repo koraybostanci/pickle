@@ -697,7 +697,7 @@ export function renderSettings() {
   const favorites = s.favorites || [];
   const openai = s.provider === 'openai';
   const backupAge = s.lastBackup ? diffDays(dayKey(new Date(s.lastBackup)), today()) : null;
-  const backupStatus = backupAge == null ? 'Never' : backupAge === 0 ? 'Last backup today' : `Last backup ${backupAge} ${backupAge === 1 ? 'day' : 'days'} ago`;
+  const backupStatus = backupAge == null ? 'No backup yet' : backupAge === 0 ? 'Last backup today' : `Last backup ${backupAge} ${backupAge === 1 ? 'day' : 'days'} ago`;
   const preset = PRESETS.find((p) => p.base === s.oaBase);
   const analysisStatus = !hasKey() ? 'No key' : openai ? `${preset ? preset.name.split(' (')[0] : 'OpenAI-compatible'}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { name: s.model }).name.split(' (')[0]}`;
   const section = (id, title, status, body) => `<details class="setting" data-sec="${id}"${S.openSetting === id ? ' open' : ''}>
@@ -763,6 +763,8 @@ export function renderSettings() {
       <button type="button" class="btn" data-act="import">Restore from backup</button>
     </div>
     <input id="set-import" type="file" accept="application/json,.json" hidden>
+    <p class="note">For analysis on a computer: one .sql file with your days, meals and targets that loads into any SQLite database. Photos, keys and saved places are left out.</p>
+    <div class="actions"><button type="button" class="btn" data-act="export-sql">Export for SQLite</button></div>
     <p class="note">${S.persisted === true ? 'Persistent storage is on.' : S.persisted === false ? 'Persistent storage has not been granted yet. Adding the app to the Home Screen makes that more likely.' : ''} ${storage && storage.usage != null ? `Space used: ${mb(storage.usage)} MB.` : ''}</p>
     ${S.persisted === false ? '<div class="actions"><button type="button" class="btn" data-act="persist">Request persistent storage</button></div>' : ''}`;
 
@@ -784,7 +786,7 @@ export function renderSettings() {
   <div class="settings">
     ${section('analysis', 'Photo and text analysis', analysisStatus, analysis)}
     ${section('targets', 'Targets', `${n1(s.startKg)} kg to ${n1(s.targetKg)} kg by ${dShort.format(parseDay(s.targetDate))}`, targets)}
-    ${section('backup', 'Backup', backupStatus, backup)}
+    ${section('backup', 'Backup and export', backupStatus, backup)}
     ${section('location', 'Location', s.useLocation ? (places.length ? 'On: ' + places.map((p) => p.name).join(', ') : 'On, no saved places') : 'Off', location)}
     ${section('favorites', 'Favourites', favorites.length ? `${favorites.length} ${favorites.length === 1 ? 'meal' : 'meals'}` : 'None yet', favoritesBody)}
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
