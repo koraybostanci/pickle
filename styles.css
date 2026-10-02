@@ -84,6 +84,7 @@ body.has-yaz #view { padding-bottom: calc(var(--tabs-h) + var(--yaz-h) + var(--s
 h2 { font: 700 19px/1.2 var(--num); }
 h3 { font: 600 16px/1.3 var(--txt); }
 .dip { color: var(--ink2); font-size: 14px; margin-top: 6px; }
+.pre { white-space: pre-line; overflow-wrap: anywhere; }
 
 /* İniş cetveli */
 .inis { margin-top: 22px !important; }

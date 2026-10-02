@@ -10,8 +10,11 @@ Kayıtlar, fotoğraflar ve API anahtarı yalnızca telefonda durur.
 2. Repo → Settings → Pages → "Deploy from a branch", `main` / `(root)`. Birkaç dakika sonra
    `https://<kullanıcı>.github.io/<repo>/` adresi açılır. Cloudflare Pages de olur; HTTPS şart.
 3. iPhone'da adresi Chrome ya da Safari'de aç → Paylaş → Ana Ekrana Ekle.
-4. Uygulamada sağ üstteki ayar düğmesi → Claude API anahtarı → "Kaydet ve dene".
-   Anahtar: https://platform.claude.com → API Keys. Console'da düşük bir aylık harcama sınırı koy.
+4. Uygulamada sağ üstteki ayar düğmesi → "Fotoğraf ve metin analizi" → sağlayıcıyı seç:
+   - **OpenAI uyumlu** (OpenCode Zen/Go, Gemini ücretsiz katman, OpenRouter): hazır ayarı seç,
+     anahtarı gir, "Fotoğraf okuyan modeli bul"a bas, sonra "Kaydet ve dene".
+   - **Claude:** anahtar https://platform.claude.com → API Keys; ön ödemeli kredi ister.
+   Plan öğünleri, tartı, adım ve su hiçbir sağlayıcı olmadan çalışır.
 5. İstersen Ayarlar → Konum: evdeyken "Buradayım: Ev", ofisteyken "Buradayım: Ofis".
 
 ## Kullanım

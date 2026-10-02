@@ -1,8 +1,8 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
-  weekStart, weekFlex, streak, suggest,
+  weekStart, weekFlex, streak, suggest, hasKey,
 } from './app.js';
-import { MODELS } from './ai.js';
+import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_AD, RULES, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -248,7 +248,7 @@ function entryCard(e) {
         <div class="k-act">
           <button type="button" class="btn" data-act="save-edit" data-id="${e.id}">Kaydet</button>
           <button type="button" class="lnk" data-act="fav" data-id="${e.id}">Sık yenenlere ekle</button>
-          ${e.src !== 'plan' && e.src !== 'fav' && e.src !== 'flex' ? `<button type="button" class="lnk" data-act="reanalyze" data-id="${e.id}">Sonnet ile yeniden analiz et</button>` : ''}
+          ${e.src !== 'plan' && e.src !== 'fav' && e.src !== 'flex' ? `<button type="button" class="lnk" data-act="reanalyze" data-id="${e.id}">${S.set.provider === 'openai' ? 'Yeniden analiz et' : 'Sonnet ile yeniden analiz et'}</button>` : ''}
           <button type="button" class="lnk lnk-del" data-act="del" data-id="${e.id}">Sil</button>
         </div>
       </details>`;
@@ -280,8 +280,8 @@ export function renderAkis() {
       ${es.map(entryCard).join('')}
     </section>`;
   }).join('');
-  const keyHint = S.set.apiKey ? '' : `<div class="uyari"><p>Fotoğraf ve serbest metin analizi için API anahtarı gerekiyor. Plan öğünleri, tartı ve adım anahtarsız çalışır.</p><button type="button" class="btn" data-act="settings">Anahtarı ekle</button></div>`;
-  const pendBar = pend.length && S.set.apiKey ? `<div class="uyari"><p>${pend.length} kayıt analiz bekliyor.</p><button type="button" class="btn" data-act="analyze-all">Hepsini analiz et</button></div>` : '';
+  const keyHint = hasKey() ? '' : `<div class="uyari"><p>Fotoğraf ve serbest metin analizi için bir model anahtarı gerekiyor. Plan öğünleri, tartı ve adım anahtarsız çalışır.</p><button type="button" class="btn" data-act="settings">Ayarları aç</button></div>`;
+  const pendBar = pend.length && hasKey() ? `<div class="uyari"><p>${pend.length} kayıt analiz bekliyor.</p><button type="button" class="btn" data-act="analyze-all">Hepsini analiz et</button></div>` : '';
   return `
   <header class="top">
     <div><h1>Akış</h1><p class="sub">Fotoğraf çek ya da yaz. Saat ve yer fotoğraftan okunur.</p></div>
@@ -545,20 +545,38 @@ export function renderSettings() {
   const st = S.storage;
   const mb = (b) => (b / 1048576).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
   const places = s.places || [];
+  const oa = s.provider === 'openai';
   const backupAge = s.lastBackup ? diffDays(dayKey(new Date(s.lastBackup)), today()) : null;
   return `
   <header class="sh-top"><h2 id="sheet-title">Ayarlar</h2><button type="button" class="btn" data-act="close-sheet">Kapat</button></header>
 
   <section>
-    <h3>Claude API anahtarı</h3>
-    <p class="dip">Fotoğraf ve serbest metin analizi bu anahtarla doğrudan Anthropic’e gider. Anahtar yalnızca bu cihazda saklanır ve yedeğe yazılmaz.</p>
+    <h3>Fotoğraf ve metin analizi</h3>
+    <p class="dip">Analiz, seçtiğin sağlayıcıya doğrudan bu telefondan gider. Anahtar yalnızca bu cihazda saklanır ve yedeğe yazılmaz.</p>
+    <label for="set-prov">Sağlayıcı</label>
+    <select id="set-prov" data-chg="prov">
+      <option value="anthropic"${oa ? '' : ' selected'}>Claude (Anthropic, ön ödemeli kredi)</option>
+      <option value="openai"${oa ? ' selected' : ''}>OpenAI uyumlu (OpenCode, Gemini, OpenRouter)</option>
+    </select>
+    ${oa ? `
+    <label for="set-preset">Hazır ayar</label>
+    <select id="set-preset" data-chg="preset"><option value="">Seç ya da aşağıyı elle doldur</option>${PRESETS.map((p) => `<option value="${p.id}"${p.base === s.oaBase ? ' selected' : ''}>${p.ad}</option>`).join('')}</select>
+    <label for="set-base">Adres</label>
+    <input id="set-base" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaBase)}" placeholder="https://…/v1">
+    <label for="set-oamodel">Model</label>
+    <input id="set-oamodel" type="text" list="oa-models" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaModel)}" placeholder="model kimliği">
+    <datalist id="oa-models">${ZEN_FREE.map((m) => `<option value="${m}"></option>`).join('')}</datalist>
+    <label for="set-oakey">Anahtar</label>
+    <input id="set-oakey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaKey)}">
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-key">Kaydet</button><button type="button" class="btn" data-act="test-key">Kaydet ve dene</button><button type="button" class="btn" data-act="find-vision">Fotoğraf okuyan modeli bul</button></div>
+    <p class="dip">Her model fotoğraf kabul etmez. “Fotoğraf okuyan modeli bul” sağlayıcının modellerini küçük bir test resmiyle tek tek dener ve ilk okuyanı seçer.</p>` : `
     <label for="set-key">Anahtar</label>
     <input id="set-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.apiKey)}" placeholder="sk-ant-…">
     <label for="set-model">Model</label>
     <select id="set-model">${Object.entries(MODELS).map(([k, m]) => `<option value="${k}"${s.model === k ? ' selected' : ''}>${m.ad}</option>`).join('')}</select>
-    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-key">Kaydet</button><button type="button" class="btn" data-act="test-key">Kaydet ve dene</button></div>
-    <p class="dip" id="key-test" role="status"></p>
-    <p class="dip">Şimdiye kadar ${n0(u.calls)} analiz, ${n0(u.in)} giriş ve ${n0(u.out)} çıkış token. Tahmini maliyet ${u.usd.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} $.</p>
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="save-key">Kaydet</button><button type="button" class="btn" data-act="test-key">Kaydet ve dene</button></div>`}
+    <p class="dip pre" id="key-test" role="status"></p>
+    <p class="dip">Şimdiye kadar ${n0(u.calls)} çağrı, ${n0(u.in)} giriş ve ${n0(u.out)} çıkış token. Claude için tahmini maliyet ${u.usd.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} $.</p>
   </section>
 
   <section>
