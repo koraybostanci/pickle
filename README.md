@@ -23,7 +23,7 @@ Entries, photos and the API key stay on the phone.
 
 ## Using it
 
-- **Today:** tap "Log this meal" in the next-meal card (uses no tokens). Tap the weigh-in or steps row
+- **Today:** under "Today's meals" the next open meal shows a suggestion; tap "Log this meal" (uses no tokens). Tap the weigh-in or steps row
   to enter a number.
 - **Log:** take a photo, choose several from the library, or type. Examples:
   `85.4` (weight), `8200 steps`, `water 2 glasses`, `workout`, `2 slices of pizza and a beer`.
