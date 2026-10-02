@@ -35,6 +35,7 @@ export function aiCfg() {
 }
 export const hasKey = () => { const c = aiCfg(); return !!c.key && (c.provider !== 'openai' || (!!c.base && !!c.model)); };
 export const today = () => dayKey(new Date());
+export const APP_VERSION = '5'; // sw.js içindeki VERSION ile birlikte artır
 
 // ——— Hesaplar ———
 export const eff = (e) => {
@@ -832,6 +833,27 @@ const ACT = {
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* yok */ }
     openSettings();
   },
+  'check-update': async () => {
+    const out = $('#upd-out');
+    if (!swReg) { out.textContent = 'Bu tarayıcıda çevrimdışı önbellek kapalı; sayfayı yenilemek yeterli.'; return; }
+    out.textContent = 'Denetleniyor…';
+    try {
+      await swReg.update();
+      // Yeni sürüm varsa kurulur ve sayfa kendiliğinden yenilenir
+      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? 'Yeni sürüm kuruluyor…' : 'Güncel: en son sürüm bu.'; }, 1500);
+    } catch {
+      out.textContent = 'Denetlenemedi. İnternet bağlantını kontrol et.';
+    }
+  },
+  'hard-reload': async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    } catch { /* yok */ }
+    location.reload();
+  },
   'wipe': async () => {
     if (!window.confirm('Bu cihazdaki tüm kayıtlar, fotoğraflar ve tartılar silinecek. Yedeğin var mı? Devam edilsin mi?')) return;
     await db.clear('entries'); await db.clear('photos'); await db.clear('days');
@@ -940,20 +962,29 @@ document.addEventListener('visibilitychange', () => {
   render();
   refreshStorage();
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { S.persisted = p; }); } catch { /* yok */ }
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing;
-        if (!nw) return;
-        nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) toast('Yeni sürüm hazır', { label: 'Yenile', fn: () => location.reload() });
-        });
-      });
-    }).catch(() => {});
-  }
+  setupUpdates();
   // Yarım kalan analizler: anahtar varsa ve çevrimiçiyse sürdür
   if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
 })();
+
+// ——— Güncelleme ———
+// Yeni service worker denetimi devraldığında sayfa eski dosyalarla çalışıyordur: yeniden yüklenir.
+let swReg = null;
+function safeToReload() {
+  return $('#sheet').hidden && !$('#yaz-in').value && !S.busy.size && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
+}
+function setupUpdates() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return; // ilk kurulumda yeniden yüklemeye gerek yok
+    if (safeToReload()) { reloading = true; location.reload(); } else toast('Yeni sürüm hazır', { label: 'Yenile', fn: () => location.reload() });
+  });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => { swReg = reg; }).catch(() => {});
+  // Ana ekrandaki uygulama arka planda bekleyip öne geldiğinde de güncelleme aransın
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && swReg) swReg.update().catch(() => {}); });
+}
 
 // Test ve hata ayıklama için
 if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos };

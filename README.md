@@ -29,8 +29,10 @@ Kayıtlar, fotoğraflar ve API anahtarı yalnızca telefonda durur.
 
 ## Güncelleme
 
-Dosyaları değiştirdikten sonra `sw.js` içindeki `VERSION` değerini artır (ör. `kantar-v2`).
-Uygulama bir sonraki açılışta "Yeni sürüm hazır" der.
+Dosyaları değiştirdikten sonra `sw.js` içindeki `VERSION` ve `js/app.js` içindeki `APP_VERSION`
+değerlerini birlikte artır. Uygulama açılırken ya da öne geldiğinde yeni sürümü bulur ve yenilenir.
+Hangi sürümün çalıştığı Ayarlar → "Sürüm ve güncelleme" başlığında yazar; aynı yerde elle denetleme
+ve önbelleği temizleme düğmeleri var.
 
 ## Dosyalar
 
