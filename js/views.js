@@ -1,6 +1,6 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
-  weekStart, weekFlex, streak, suggest, hasKey,
+  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_AD, FLEX, RULES, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
@@ -302,7 +302,7 @@ function entryCard(e, inSheet = false) {
   const meta = [when, SLOT_AD[e.slot] || '', e.place ? (e.place === 'dışarı' ? 'dışarıda' : esc(e.place)) : ''].filter(Boolean).join(', ');
   let body;
   if (busy) {
-    body = '<p class="durum"><span class="spin" aria-hidden="true"></span>Analiz ediliyor</p>';
+    body = `<p class="durum"><span class="spin" aria-hidden="true"></span>${esc(S.retry.get(e.id) || 'Analiz ediliyor')}</p>`;
   } else if (e.status === 'pending') {
     body = `<p class="durum">${esc(e.err || 'Analiz bekliyor.')}</p><div class="k-act"><button type="button" class="btn" data-act="analyze" data-id="${e.id}">Analiz et</button><button type="button" class="lnk" data-act="del" data-id="${e.id}">Sil</button></div>`;
   } else if (e.status === 'error') {
@@ -709,6 +709,11 @@ export function renderSettings() {
     ? `<ul class="icerik">${favs.map((f) => `<li><span>${esc(f.ad)}, ${n0(f.kcal)} kcal</span><button type="button" class="lnk" data-act="fav-del" data-id="${f.id}">Kaldır</button></li>`).join('')}</ul>`
     : '<p class="dip">Bir kaydın “Düzenle” bölümünden “Sık yenenlere ekle”ye dokun. Sonra Akış’ta tek dokunuşla girilir.</p>';
 
+  const surum = `
+    <p class="dip">Uygulama açılırken ve öne geldiğinde yeni sürümü kendisi arar; bulursa yenilenir. Kayıtların bundan etkilenmez.</p>
+    <div class="k-act"><button type="button" class="btn btn-p" data-act="check-update">Güncellemeyi denetle</button><button type="button" class="btn" data-act="hard-reload">Önbelleği temizle ve yeniden yükle</button></div>
+    <p class="dip" id="upd-out" role="status"></p>`;
+
   const sifirla = `
     <p class="dip">Tüm kayıtlar, fotoğraflar ve tartılar bu cihazdan silinir. Ayarlar ve anahtar kalır.</p>
     <div class="k-act"><button type="button" class="btn btn-del" data-act="wipe">Tüm kayıtları sil</button></div>`;
@@ -721,6 +726,7 @@ export function renderSettings() {
     ${sec('yedek', 'Yedek', backupTxt, yedek)}
     ${sec('konum', 'Konum', s.useLocation ? (places.length ? 'Açık: ' + places.map((p) => p.name).join(', ') : 'Açık, kayıtlı yer yok') : 'Kapalı', konum)}
     ${sec('sik', 'Sık yenenler', favs.length ? `${favs.length} öğün` : 'Henüz yok', sik)}
+    ${sec('surum', 'Sürüm ve güncelleme', `Sürüm ${APP_VERSION}`, surum)}
     ${sec('sifirla', 'Sıfırla', '', sifirla)}
   </div>`;
 }

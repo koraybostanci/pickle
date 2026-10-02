@@ -15,6 +15,7 @@ export const S = {
   days: {},
   viewDay: dayKey(new Date()),
   busy: new Set(),
+  retry: new Map(), // analiz sırasında gösterilecek durum notu
   urls: new Map(),
   persisted: null,
   storage: null,
@@ -35,6 +36,7 @@ export function aiCfg() {
 }
 export const hasKey = () => { const c = aiCfg(); return !!c.key && (c.provider !== 'openai' || (!!c.base && !!c.model)); };
 export const today = () => dayKey(new Date());
+export const APP_VERSION = '5'; // sw.js içindeki VERSION ile birlikte artır
 
 // ——— Hesaplar ———
 export const eff = (e) => {
@@ -399,11 +401,14 @@ async function analyzeEntry(id, opts = {}) {
     const cfg = aiCfg();
     if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
     const model = cfg.model;
-    const { data, usage } = await analyze({ cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint });
+    const { data, usage, model: usedModel } = await analyze({
+      cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
+      onRetry: (n, of, alt) => { S.retry.set(id, alt ? `Model meşgul, ${alt} deneniyor` : `Sağlayıcı meşgul, yeniden deneniyor (${n}/${of})`); render(); },
+    });
     const u = S.set.usage;
-    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
+    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(usedModel, usage);
     await saveSet();
-    e.model = model;
+    e.model = usedModel;
     e.err = '';
     if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
       const kg = Math.round(data.kg * 10) / 10;
@@ -441,10 +446,11 @@ async function analyzeEntry(id, opts = {}) {
     }
   } catch (err) {
     const code = err && err.code;
-    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key'].includes(code);
+    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERR_TR[code] || 'Analiz başarısız oldu.') + (['bad_request', 'http', 'bad_model', 'server'].includes(code) ? ' ' + String(err.message).slice(0, 140) : '') });
   }
   S.busy.delete(id);
+  S.retry.delete(id);
   if (S.entries.some((x) => x.id === id)) await saveEntry(e);
   render();
 }
@@ -832,6 +838,27 @@ const ACT = {
     try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* yok */ }
     openSettings();
   },
+  'check-update': async () => {
+    const out = $('#upd-out');
+    if (!swReg) { out.textContent = 'Bu tarayıcıda çevrimdışı önbellek kapalı; sayfayı yenilemek yeterli.'; return; }
+    out.textContent = 'Denetleniyor…';
+    try {
+      await swReg.update();
+      // Yeni sürüm varsa kurulur ve sayfa kendiliğinden yenilenir
+      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? 'Yeni sürüm kuruluyor…' : 'Güncel: en son sürüm bu.'; }, 1500);
+    } catch {
+      out.textContent = 'Denetlenemedi. İnternet bağlantını kontrol et.';
+    }
+  },
+  'hard-reload': async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    } catch { /* yok */ }
+    location.reload();
+  },
   'wipe': async () => {
     if (!window.confirm('Bu cihazdaki tüm kayıtlar, fotoğraflar ve tartılar silinecek. Yedeğin var mı? Devam edilsin mi?')) return;
     await db.clear('entries'); await db.clear('photos'); await db.clear('days');
@@ -940,20 +967,29 @@ document.addEventListener('visibilitychange', () => {
   render();
   refreshStorage();
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { S.persisted = p; }); } catch { /* yok */ }
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing;
-        if (!nw) return;
-        nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) toast('Yeni sürüm hazır', { label: 'Yenile', fn: () => location.reload() });
-        });
-      });
-    }).catch(() => {});
-  }
+  setupUpdates();
   // Yarım kalan analizler: anahtar varsa ve çevrimiçiyse sürdür
   if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
 })();
+
+// ——— Güncelleme ———
+// Yeni service worker denetimi devraldığında sayfa eski dosyalarla çalışıyordur: yeniden yüklenir.
+let swReg = null;
+function safeToReload() {
+  return $('#sheet').hidden && !$('#yaz-in').value && !S.busy.size && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
+}
+function setupUpdates() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return; // ilk kurulumda yeniden yüklemeye gerek yok
+    if (safeToReload()) { reloading = true; location.reload(); } else toast('Yeni sürüm hazır', { label: 'Yenile', fn: () => location.reload() });
+  });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => { swReg = reg; }).catch(() => {});
+  // Ana ekrandaki uygulama arka planda bekleyip öne geldiğinde de güncelleme aransın
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && swReg) swReg.update().catch(() => {}); });
+}
 
 // Test ve hata ayıklama için
 if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos };

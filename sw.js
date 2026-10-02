@@ -1,5 +1,8 @@
-// Uygulama kabuğunu önbelleğe alır; çevrimdışı açılır. Sürümü her yayında artır.
-const VERSION = 'kantar-v4';
+// Uygulama kabuğunu önbelleğe alır; çevrimdışı açılır.
+// Her yayında VERSION ve js/app.js içindeki APP_VERSION birlikte artırılır.
+// Dosyalar yalnızca sürümlü önbellekten sunulur: bir sürümün dosyaları birbirine karışmaz,
+// yeni sürüm ancak yeni service worker kurulunca gelir.
+const VERSION = 'kantar-v5';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js',
@@ -7,7 +10,12 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' tarayıcının HTTP önbelleğini atlar; eski dosya yeni sürüme sızmaz
+  e.waitUntil(
+    caches.open(VERSION)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -20,12 +28,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // API çağrılarına dokunma
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((hit) => {
-      const net = fetch(e.request).then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    }),
+    caches.open(VERSION)
+      .then((c) => c.match(e.request, { ignoreSearch: true }))
+      .then((hit) => hit || fetch(e.request)),
   );
 });
