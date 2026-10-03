@@ -298,7 +298,9 @@ button.tile:active, .tile-main:active, .chip:active, .btn:active { transform: sc
 
 /* First use: the next step */
 #view > .start { margin-top: 16px; }
-.start { background: var(--tape-track); border-radius: var(--r-card); padding: 8px 16px 16px; }
+.start { background: var(--tape-track); border-radius: var(--r-card); padding: 16px; }
+.start-brand { font-size: 13.5px; color: var(--ink2); }
+.start-brand b { font: 600 15px/1.2 var(--display); color: var(--ink); }
 .start-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; color: var(--ink2); }
 .start-head .link { padding-left: 12px; }
 .start h2 { margin-top: -2px; }
@@ -687,10 +689,12 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 .setting-body .note, .setting-body .field-grid, .setting-body .items { margin-top: 0; }
 .setting-body .actions { margin-top: 6px; }
 .setting-body .items .link { min-height: 44px; }
-.brand { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+.brand { display: flex; align-items: flex-start; gap: 12px; margin-top: 24px; }
 .brand img { flex: none; border-radius: 10px; box-shadow: 0 0 0 1px var(--line); }
 .brand p { display: grid; gap: 1px; font-size: 13.5px; color: var(--ink2); }
 .brand b { font: 600 18px/1.2 var(--display); color: var(--ink); }
+.brand b small { font-size: 13.5px; font-weight: 500; color: var(--ink2); }
+.brand span + span { margin-top: 1lh; }
 
 /* A short burst in the plate's colours when a kilo or a perfect day is reached */
 .confetti { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
