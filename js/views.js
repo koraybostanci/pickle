@@ -100,8 +100,29 @@ function beam(a, target, started, big) {
   if (!big) return `${bar}<span class="track-ends" aria-hidden="true"><span>${esc(kgLabel(s.startKg))}</span><span>${esc(kgLabel(s.targetKg))}</span></span>`;
   const lost = a ? s.startKg - a.kg : 0;
   const next = marks.find((kg, i) => i > 0 && s.startKg - kg > lost + 1e-6);
-  const every = marks.length > 11 ? 2 : 1;
-  const labels = marks.map((kg, i) => (i % every && i !== marks.length - 1 ? ''
+  // The start and the target are always labelled; the kilos in between at the smallest regular step (every kilo,
+  // every second, …) whose labels clear each other on the narrowest phone (about 250 px of beam, 7 px a character)
+  const ext = (kg, i) => {
+    const x = (pct(kg) / 100) * 250;
+    const w = kgLabel(kg).length * 7;
+    return i === 0 ? [x, x + w] : i === marks.length - 1 ? [x - w, x] : [x - w / 2, x + w / 2];
+  };
+  const last = marks.length - 1;
+  const begin = ext(marks[0], 0)[1] + 4;
+  const stop = ext(marks[last], last)[0] - 4;
+  const pick = (step) => marks.map((kg, i) => i === 0 || i === last || (i % step === 0 && ext(kg, i)[0] >= begin && ext(kg, i)[1] <= stop));
+  const fits = (keep) => {
+    let edge = -Infinity;
+    for (let i = 0; i < marks.length; i++) {
+      if (!keep[i]) continue;
+      const [l, r] = ext(marks[i], i);
+      if (l < edge) return false;
+      edge = r + 4;
+    }
+    return true;
+  };
+  const shown = [1, 2, 5, 10].map(pick).find(fits) || pick(Infinity);
+  const labels = marks.map((kg, i) => (!shown[i] ? ''
     : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
@@ -876,8 +897,11 @@ function weightChart() {
   let proj = '';
   if (whole) {
     labels += `<text x="${f(X(s.targetDate) + 6)}" y="${f(Y(s.targetKg) + 4)}" class="c-label">${esc(kgLabel(s.targetKg))} kg</text>`;
-    if (end) labels += `<text x="${f(X(end.day) + 8)}" y="${f(Y(end.kg) - 9)}" class="c-label-you">You ${esc(n1(end.kg))}</text>`;
-    if (pr && pr.eta && end && t >= x0) {
+    // Near the plan's end the label goes left of the dot, so it stays on the chart and clear of the target's label
+    const left = X(end ? end.day : x0) > W - m.r - 50;
+    if (end) labels += `<text x="${f(X(end.day) + (left ? -8 : 8))}" y="${f(Y(end.kg) - 9)}"${left ? ' text-anchor="end"' : ''} class="c-label-you">You ${esc(n1(end.kg))}</text>`;
+    // Only while the plan runs: after its end date, today lies outside the chart
+    if (pr && pr.eta && end && t >= x0 && t < x1) {
       const stop = pr.eta < x1 ? pr.eta : x1;
       const at = pr.now + pr.slope * diffDays(t, stop);
       proj = `<path d="M${f(X(t))} ${f(Y(pr.now))}L${f(X(stop))} ${f(Y(at))}" class="c-proj"/>`;
@@ -913,7 +937,7 @@ function weightChart() {
     </svg>
     <div class="tip" id="c-tip" hidden></div>
     ${!end && !whole ? '<p class="note">No weigh-ins in the last two weeks.</p>' : ''}
-    <p class="legend"><span><i class="key-avg"></i>You (7-day average)</span><span><i class="key-target"></i>Your line</span><span><i class="key-dot"></i>Daily weigh-in</span>${whole && pr && pr.eta ? '<span><i class="key-proj"></i>At this pace</span>' : ''}</p>
+    <p class="legend"><span><i class="key-avg"></i>You (7-day average)</span><span><i class="key-target"></i>Your line</span><span><i class="key-dot"></i>Daily weigh-in</span>${proj ? '<span><i class="key-proj"></i>At this pace</span>' : ''}</p>
   </div>`;
 }
 
