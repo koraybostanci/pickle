@@ -84,7 +84,7 @@ function kiloMarks() {
   return marks;
 }
 
-// The beam, the app's steelyard: a graduated scale from the start weight to the target. The teal part is the
+// The beam: a graduated scale from the start weight to the target. The teal part is the
 // distance covered, the brass block is you (the 7-day average), the small mark is where your line is today.
 // big: the Progress version, with a label for each kilo.
 function beam(a, target, started, big) {
@@ -1319,5 +1319,5 @@ export function renderSettings() {
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
     ${section('reset', 'Reset', '', reset)}
   </div>
-  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Denge</b><span>Balance over perfection. Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
+  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle</b><span>Good things take time. Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
 }

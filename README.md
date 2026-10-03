@@ -1,19 +1,20 @@
-<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Denge icon: a level beam in balance, a plate of greens on one side and a brass weight on the other"></p>
+<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Pickle icon: a pickle in a measuring jar with a brass lid"></p>
 
-# Denge
+# Pickle
 
-*Balance over perfection.*
+*Good things take time.*
 
-Denge is a personal weight-loss tracker that runs in the browser. You give it start and end dates
+Pickle is a personal weight-loss tracker that runs in the browser. You give it start and end dates
 and weights; it draws the schedule between them and helps you stick to a meal plan until you get
 there. You log food by photo, by typing, or with one tap on a planned meal.
 
 It is a single-user web app (PWA) with no backend and no account. You host the files yourself,
 add the page to your phone's Home Screen, and your entries are stored on that phone.
 
-"Denge" is Turkish for balance, as in *dengeli beslenme*, a balanced diet. The icon shows a level
-beam: a plate of greens on one side, a brass weight on the other, the two in balance. Throughout the
-app the brass weight is you, and the beam runs from your start weight to your target.
+A cucumber becomes a pickle through time and steady conditions, not one big effort. That is what
+the app asks of you: a steady average along your line, day after day. The icon shows the pickle in a
+measuring jar. Throughout the app the brass weight is you, and the beam runs from your start weight to
+your target.
 
 ## What it does
 
@@ -156,20 +157,20 @@ Settings → "Backup and export" → "Export for SQLite" saves one `.sql` file. 
 creates the tables and fills them, so any SQLite tool can load it:
 
 ```sh
-sqlite3 -bail denge.db < denge-export-2026-10-12.sql
+sqlite3 -bail pickle.db < pickle-export-2026-10-12.sql
 ```
 
 `-bail` stops at the first error, so a failed load is rolled back. Loading a newer export into the
-same database replaces the `denge_*` tables and the view, with anything you added to them, and
+same database replaces the `weightplan_*` tables and the view, with anything you added to them, and
 leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
 |---|---|---|
-| `denge_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
-| `denge_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
-| `denge_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
-| `denge_settings` | setting | `key`, `value` (dates, weights, daily targets, and the export's own version and time) |
-| `denge_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
+| `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
+| `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
+| `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
+| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily targets, and the export's own version and time) |
+| `weightplan_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
 
 Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
 have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Targets, so
@@ -178,13 +179,13 @@ exported.
 
 ```sql
 -- weight against the schedule
-SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM denge_daily ORDER BY day;
+SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM weightplan_daily ORDER BY day;
 
 -- days over the calorie target
-SELECT day, kcal, target_kcal FROM denge_daily WHERE kcal > target_kcal;
+SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal;
 
 -- what was off plan, and how much it cost
-SELECT day, title, kcal FROM denge_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
+SELECT day, title, kcal FROM weightplan_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
 ```
 
 The export is for analysis. To move or restore the app's data, use the JSON backup.
@@ -212,11 +213,15 @@ They cover the calculations (`js/core.js`), the checks on backup files (`js/back
 layer against a mocked `fetch` (`js/ai.js`) and the SQL export, which is loaded into Node's built-in
 SQLite and queried as in the section above. The screens and the IndexedDB code are not covered.
 
-On `localhost` the app exposes `window.__denge` for debugging.
+On `localhost` the app exposes `window.__app` for debugging.
+
+The app's internal id is `weightplan` (`APP_ID` in `js/core.js`). It names the IndexedDB database, the
+caches, the backup files' marker and the SQL tables, and stays the same when the app is renamed, so a
+new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'denge-v22'`) and `APP_VERSION` in `js/core.js` (`'22'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v22'`) and `APP_VERSION` in `js/core.js` (`'22'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,

@@ -19,8 +19,8 @@ test('the file loads, twice, and the numbers are multiplied by the portion', () 
   const db = new DatabaseSync(':memory:');
   load(db);
   load(db); // a newer export replaces the tables
-  assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM denge_meals')[0].n, 3);
-  const b = rows(db, "SELECT kcal, title, portion FROM denge_meals WHERE id = 'b'")[0];
+  assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_meals')[0].n, 3);
+  const b = rows(db, "SELECT kcal, title, portion FROM weightplan_meals WHERE id = 'b'")[0];
   assert.equal(b.kcal, 1500);
   assert.equal(b.portion, 1.5);
   assert.equal(b.title, "semi;colon -- and 'quotes'\nnewline"); // quoting survives
@@ -29,15 +29,15 @@ test('the file loads, twice, and the numbers are multiplied by the portion', () 
 test('only meals with status ok carry numbers', () => {
   const db = new DatabaseSync(':memory:');
   load(db);
-  assert.equal(rows(db, "SELECT kcal FROM denge_meals WHERE id = 'c'")[0].kcal, null);
+  assert.equal(rows(db, "SELECT kcal FROM weightplan_meals WHERE id = 'c'")[0].kcal, null);
 });
 
 test('the README queries run', () => {
   const db = new DatabaseSync(':memory:');
   load(db);
-  assert.equal(rows(db, 'SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM denge_daily ORDER BY day').length, 2);
-  assert.equal(rows(db, 'SELECT day, kcal, target_kcal FROM denge_daily WHERE kcal > target_kcal')[0].day, '2026-10-06');
-  assert.equal(rows(db, "SELECT day, title, kcal FROM denge_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC").length, 1);
+  assert.equal(rows(db, 'SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM weightplan_daily ORDER BY day').length, 2);
+  assert.equal(rows(db, 'SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal')[0].day, '2026-10-06');
+  assert.equal(rows(db, "SELECT day, title, kcal FROM weightplan_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC").length, 1);
 });
 
 test('loading leaves other tables in the database alone', () => {
@@ -50,6 +50,6 @@ test('loading leaves other tables in the database alone', () => {
 test('the 7-day weight average is over the calendar days, as in the app', () => {
   const db = new DatabaseSync(':memory:');
   load(db);
-  const r = rows(db, "SELECT weight_avg7_kg FROM denge_daily WHERE day = '2026-10-07'")[0];
+  const r = rows(db, "SELECT weight_avg7_kg FROM weightplan_daily WHERE day = '2026-10-07'")[0];
   assert.equal(r.weight_avg7_kg, 85.2); // (85.4 + 85.0) / 2
 });
