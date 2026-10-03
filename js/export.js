@@ -1,8 +1,7 @@
 // SQL export: one text file that builds the app's tables in any SQLite database.
 //   sqlite3 -bail denge.db < denge-export-2026-10-03.sql
 // (-bail stops at the first error, so a failed load is rolled back instead of leaving half the tables.)
-// Loading the file again replaces the denge_* tables and views, removes the kantar_* ones an export made under the
-// app's first name may have left, and touches nothing else.
+// Loading the file again replaces the denge_* tables and views and touches nothing else.
 import { targetAt, dayKey } from './plan.js';
 
 export const EXPORT_SCHEMA = 1;
@@ -103,7 +102,7 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
     `-- Denge export, ${localTime(now.getTime())} (app version ${appVersion}, export schema ${EXPORT_SCHEMA})`,
     '-- Load it into a new or existing SQLite database:',
     `--   sqlite3 -bail denge.db < ${exportName(now)}`,
-    '-- Loading again replaces the denge_* tables and the denge_daily view (and removes kantar_* tables of an older export); nothing else in the database is touched.',
+    '-- Loading again replaces the denge_* tables and the denge_daily view; nothing else in the database is touched.',
     '-- Not included: photos, API keys, the coordinates of saved places.',
     '',
     'BEGIN TRANSACTION;',
@@ -112,12 +111,6 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
     'DROP TABLE IF EXISTS denge_meals;',
     'DROP TABLE IF EXISTS denge_days;',
     'DROP TABLE IF EXISTS denge_settings;',
-    '-- The same tables under the app\'s first name, from an older export',
-    'DROP VIEW IF EXISTS kantar_daily;',
-    'DROP TABLE IF EXISTS kantar_meal_items;',
-    'DROP TABLE IF EXISTS kantar_meals;',
-    'DROP TABLE IF EXISTS kantar_days;',
-    'DROP TABLE IF EXISTS kantar_settings;',
     SCHEMA,
   );
 

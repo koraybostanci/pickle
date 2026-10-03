@@ -25,9 +25,9 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  // Only this app's caches (kantar- was its first name): other apps on the same host share the origin
+  // Only this app's caches: other apps on the same host share the origin
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('denge-') || k.startsWith('kantar-')) && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('denge-') && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
   );
 });
 
