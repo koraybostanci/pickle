@@ -2,10 +2,7 @@
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
 export const APP_VERSION = '21'; // bump together with VERSION in sw.js
-export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file; 2 = English ids
-export const MIN_SCHEMA_VERSION = 2; // the oldest data this version can read; 1 = the first release, with Turkish ids, which can no longer be converted
-// Whether a device still holds data from before that. Entries with no stored settings can only come from a release that had not saved any yet.
-export const isLegacyData = (stored, entryCount) => (stored ? (stored.schema || 1) < MIN_SCHEMA_VERSION : entryCount > 0);
+export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 
 // ——— State ———
 // The settings of an app that has just been installed (new objects each time, so a reset never shares them)
@@ -20,7 +17,6 @@ export const freshCheck = () => ({ photos: [], note: '', busy: false, status: ''
 
 export const S = {
   tab: 'today',
-  legacy: false, // the device holds data from the first release, which can no longer be read correctly
   settings: freshSettings(),
   entries: [],
   days: {},

@@ -40,13 +40,6 @@ test('the README queries run', () => {
   assert.equal(rows(db, "SELECT day, title, kcal FROM denge_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC").length, 1);
 });
 
-test('loading removes the tables of an export made under the app\'s first name', () => {
-  const db = new DatabaseSync(':memory:');
-  db.exec('CREATE TABLE kantar_days (day TEXT); CREATE TABLE kantar_meals (id TEXT); CREATE VIEW kantar_daily AS SELECT * FROM kantar_days;');
-  load(db);
-  assert.equal(rows(db, "SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'kantar%'")[0].n, 0);
-});
-
 test('loading leaves other tables in the database alone', () => {
   const db = new DatabaseSync(':memory:');
   db.exec("CREATE TABLE mine (x TEXT); INSERT INTO mine VALUES ('keep');");

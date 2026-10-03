@@ -13,8 +13,7 @@ add the page to your phone's Home Screen, and your entries are stored on that ph
 
 "Denge" is Turkish for balance, as in *dengeli beslenme*, a balanced diet. The icon shows a level
 beam: a plate of greens on one side, a brass weight on the other, the two in balance. Throughout the
-app the brass weight is you, and the beam runs from your start weight to your target. (The app was
-first called Kantar, a steelyard. Its data, backups and exports from that time carry over.)
+app the brass weight is you, and the beam runs from your start weight to your target.
 
 ## What it does
 
@@ -161,8 +160,7 @@ sqlite3 -bail denge.db < denge-export-2026-10-12.sql
 ```
 
 `-bail` stops at the first error, so a failed load is rolled back. Loading a newer export into the
-same database replaces the `denge_*` tables and the view, with anything you added to them (and the
-`kantar_*` tables of an export made under the app's first name), and
+same database replaces the `denge_*` tables and the view, with anything you added to them, and
 leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
@@ -248,8 +246,6 @@ version is shown under Settings → "Version and updates".
 ## Limits
 
 - One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
-  Backups, and data on a device, from the first release (Turkish ids) can no longer be converted;
-  version 18 of the app (git commit `68369c1`) still does.
 - Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
   less likely, and a regular backup covers the rest.
 - This is a tracking tool, not medical or dietary advice. The example plan was written for one

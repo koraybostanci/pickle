@@ -6,7 +6,7 @@ import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listM
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, isLegacyData, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+  APP_VERSION, SCHEMA_VERSION, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -785,11 +785,7 @@ async function importBackup(file) {
 async function load() {
   const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
-  S.legacy = isLegacyData(stored, S.entries.length);
-  if (stored) {
-    S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
-    if (!stored.provider) S.settings.provider = stored.apiKey ? 'anthropic' : 'openai'; // settings saved before provider choice existed
-  }
+  if (stored) S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
   S.checks = await db.kvGet('checks', []);
 }
@@ -980,7 +976,6 @@ const ACT = {
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
-  'dismiss-legacy': async () => { S.settings.legacyDismissed = true; await saveSettings(); render(); },
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
@@ -1233,7 +1228,7 @@ const ACT = {
     try {
       // Only this app's own cache and worker: other apps on the same host share the origin
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith('denge-') || k.startsWith('kantar-')).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k.startsWith('denge-')).map((k) => caches.delete(k)));
       const here = new URL('./', location.href).href;
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.filter((r) => r.scope === here).map((r) => r.unregister()));
@@ -1273,7 +1268,7 @@ const ACT = {
     S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
-    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck(); S.legacy = false;
+    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = '';
     S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
