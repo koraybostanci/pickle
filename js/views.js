@@ -73,12 +73,37 @@ function progressSummary() {
   return { head, line, tag, a, target, source, started };
 }
 
-// A plain progress track from start weight to target weight: the fill is how far you are, the notch is today's target
-function track(a, target, started) {
+const kgLabel = (kg) => (Number.isInteger(kg) ? String(kg) : n1(kg));
+// The kilos between the start weight and the target: one per whole kilo down, then the target itself
+function kiloMarks() {
   const s = S.settings;
   const span = s.startKg - s.targetKg;
-  const pct = (kg) => Math.min(100, Math.max(0, ((s.startKg - kg) / span) * 100)).toFixed(1);
-  return `<span class="track" aria-hidden="true"><i style="width:${a ? pct(a.kg) : 0}%"></i>${started ? `<u style="left:${pct(target)}%"></u>` : ''}</span>`;
+  const marks = [];
+  for (let k = 1; k <= span + 1e-6; k++) marks.push(Math.round((s.startKg - k) * 10) / 10);
+  if (span > 0 && (!marks.length || marks[marks.length - 1] - s.targetKg > 1e-6)) marks.push(s.targetKg);
+  return marks;
+}
+
+// The beam, the app's steelyard: a graduated scale from the start weight to the target. The teal part is the
+// distance covered, the brass block is you (the 7-day average), the small mark is where your line is today.
+// big: the Progress version, with a label for each kilo.
+function beam(a, target, started, big) {
+  const s = S.settings;
+  const span = s.startKg - s.targetKg;
+  if (!(span > 0)) return '';
+  const pct = (kg) => (Math.min(100, Math.max(0, ((s.startKg - kg) / span) * 100))).toFixed(2);
+  const marks = [s.startKg, ...kiloMarks()];
+  const you = a ? pct(a.kg) : '0';
+  const bar = `<span class="beam${big ? ' beam-big' : ''}" aria-hidden="true"><span class="beam-bar"><i style="width:${you}%"></i></span>`
+    + `<span class="beam-ticks">${marks.map((kg) => `<b style="left:${pct(kg)}%"></b>`).join('')}</span>`
+    + `${started ? `<u style="left:${pct(target)}%"></u>` : ''}${a ? `<em style="left:${you}%"></em>` : ''}</span>`;
+  if (!big) return `${bar}<span class="track-ends" aria-hidden="true"><span>${esc(kgLabel(s.startKg))}</span><span>${esc(kgLabel(s.targetKg))}</span></span>`;
+  const lost = a ? s.startKg - a.kg : 0;
+  const next = marks.find((kg, i) => i > 0 && s.startKg - kg > lost + 1e-6);
+  const every = marks.length > 11 ? 2 : 1;
+  const labels = marks.map((kg, i) => (i % every && i !== marks.length - 1 ? ''
+    : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
+  return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
 const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
@@ -101,20 +126,20 @@ function weekStrip(day) {
   const done = goals.filter((g) => g.done).length;
   const run = streak();
   const dots = goals.map((g) => `<i class="${g.done ? 'on' : ''}"></i>`).join('');
-  const left = run > 0 ? `<span class="streak">${GLYPH.flame}<b>${run}</b> day streak</span>` : '<span class="streak">A day on plan starts a streak</span>';
+  const left = run > 0 ? `<span class="streak">${GLYPH.run}<b>${run}</b> ${run === 1 ? 'day' : 'days'} on plan in a row</span>` : '<span class="streak">A day on plan starts a new run</span>';
   return `<nav class="week" aria-label="Days of the week">
     <button type="button" class="week-nav" data-act="week-prev" aria-label="Previous week">${ICON.prev}</button>
     <ol>${tokens}</ol>
     <button type="button" class="week-nav" data-act="week-next" aria-label="Next week"${addDays(ws, 7) > t ? ' disabled' : ''}>${ICON.next}</button>
   </nav>
-  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}"><span class="goal-dots" aria-hidden="true">${dots}</span>${done === goals.length ? 'Perfect day' : `${done} of ${goals.length} goals`}</span></p>`;
+  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}"><span class="goal-dots" aria-hidden="true">${dots}</span>${done === goals.length ? 'All five goals' : `${done} of ${goals.length} goals`}</span></p>`;
 }
 
 const GLYPH = {
-  flame: '<svg class="glyph g-flame" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.4 1.8c.7 3 3.9 4.4 3.9 8.6a4.3 4.3 0 0 1-8.6.3c0-2.1 1-3.2 1.6-4.7.8 1 1.3 1.5 1.9 1.6-.1-2.2.1-4 1.2-5.8z"/></svg>',
-  scale: '<svg class="glyph g-scale" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="3.5"/><path d="M7 7.5a4.2 4.2 0 0 1 6 0M10 7.2v2.3"/></svg>',
+  run: '<svg class="glyph g-run" viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="2" width="16" height="16" rx="3"/><path d="m5.8 10.2 2.8 2.8 5.6-6.2"/></svg>',
+  scale: '<svg class="glyph g-scale" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6.5h15M6 6.5V8M10 6.5v2M14 6.5V8"/><rect x="11.5" y="9.5" width="5" height="7.5" rx="1"/></svg>',
   egg: '<svg class="glyph g-egg" viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="10.6" rx="6.4" ry="7.6"/><circle cx="10" cy="11.6" r="3"/></svg>',
-  steps: '<svg class="glyph g-steps" viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="6.8" cy="12.4" rx="2.9" ry="4.8" transform="rotate(-10 6.8 12.4)"/><ellipse cx="13.6" cy="7.4" rx="2.6" ry="4.4" transform="rotate(10 13.6 7.4)"/></svg>',
+  steps: '<svg class="glyph g-steps" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5h3.5V13H10V9.5h3.5V6H17"/></svg>',
   drop: '<svg class="glyph g-drop" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2c3 3.7 5.1 6.2 5.1 8.9a5.1 5.1 0 0 1-10.2 0c0-2.7 2.1-5.2 5.1-8.9z"/></svg>',
 };
 
@@ -181,16 +206,17 @@ function budgetTile(day) {
   // The verdict, in the budget's own terms
   const slack = target * (BAND.high - 1); // how far over still counts as on target
   const over = rem < -slack;
+  const wayOver = rem < -target * (BAND.near - 1); // well over: red; a little over: amber
   const rate = plannedByNow > 0 ? eaten / plannedByNow : 0;
   let tone = 'calm';
   let verdict;
   if (!isToday) {
     verdict = rem >= 0 ? `Ended ${n0(rem)} under` : `Ended ${n0(-rem)} over`;
-    tone = over ? 'bad' : meals.length ? 'good' : 'calm';
-  } else if (rem < 0) { verdict = 'Budget spent'; tone = 'bad'; }
+    tone = wayOver ? 'bad' : over ? 'warn' : meals.length ? 'good' : 'calm';
+  } else if (rem < 0) { verdict = wayOver ? 'Well over' : 'A bit over'; tone = wayOver ? 'bad' : 'warn'; }
   else if (!meals.length) verdict = plannedByNow > 0 ? 'Nothing spent yet' : 'Full budget';
   else if (plannedByNow === 0) verdict = 'Early start';
-  else if (rate > 1.25) { verdict = `Burning ${rate.toLocaleString(LOCALE, { maximumFractionDigits: 1 })}× plan`; tone = 'warn'; }
+  else if (rate > 1.25) { verdict = `${rate.toLocaleString(LOCALE, { maximumFractionDigits: 1 })}× the plan's pace`; tone = 'warn'; }
   else if (rate < 0.7) verdict = 'Under plan so far';
   else { verdict = 'On pace'; tone = 'good'; }
   const pct = Math.round((Math.max(0, rem) / target) * 100);
@@ -200,7 +226,7 @@ function budgetTile(day) {
   else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
   const forecastBad = isToday && open.length > 0 && forecast < -slack;
   const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}. ${foot}.`;
-  return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}" role="group" aria-label="${esc(label)}">
+  return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}${wayOver ? ' is-way-over' : ''}" role="group" aria-label="${esc(label)}">
     <div class="budget-head">
       <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>kcal ${rem >= 0 ? 'left' : 'over'}</span></p>
       <i class="pill pill-${tone}">${esc(verdict)}</i>
@@ -238,7 +264,7 @@ function bento(day, part) {
     weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
       ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
       <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}<em>${esc(p.tag)}</em></span>
-      ${track(p.a, p.target, p.started)}
+      ${beam(p.a, p.target, p.started)}
     </button>`;
   } else {
     weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
@@ -317,10 +343,6 @@ function dayList(day) {
   const { list, all, sg, isToday } = daySlots(day);
   const over = sg.rem < -50;
   const nextId = isToday && !over && sg.meal && sg.slot ? sg.slot.id : '';
-  let note = '';
-  if (over) note = `Over budget by ${n0(-sg.rem)} kcal.${isToday ? ' Return to the plan tomorrow and do not skip a meal to make up for it; the weekly average is what counts.' : ''}`;
-  else if (!sg.meal) note = sg.remP > 12 ? `Meals done. Protein is ${n0(sg.remP)} g short.` : 'Meals done. The day is on target.';
-  else if (sg.extra) note = `Meals done. Protein is ${n0(sg.remP)} g short; 150 g of plain skyr closes the gap and fits the budget.`;
   const now = new Date();
   const minutesNow = now.getHours() * 60 + now.getMinutes();
   const rows = [];
@@ -334,7 +356,7 @@ function dayList(day) {
       const v = eff(e);
       rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${esc(e.id)}">
         <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
-        <span class="meal-text"><b>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
+        <span class="meal-text"><b><span class="sr-only">${ok ? 'Done: ' : 'Waiting: '}</span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
         <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
       </button></li>`);
     }
@@ -345,7 +367,7 @@ function dayList(day) {
       const late = !sg.extra && sl.time && minutesNow > h * 60 + m + 120;
       rows.push(`<li class="meal is-next"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: other options`)}">
         <i class="meal-mark" aria-hidden="true"></i>
-        <span class="meal-text"><b>${sl.name}<small>${late ? 'not logged yet' : sl.time}</small></b><span>${esc(sg.meal.name)}, ${sg.meal.kcal} kcal${!sg.extra && sg.tight ? ', the lightest option' : ''}</span></span>
+        <span class="meal-text"><b><span class="sr-only">Next: </span>${sl.name}<small>${late ? 'not logged yet' : sl.time}</small></b><span>${esc(sg.meal.name)}, ${sg.meal.kcal} kcal${!sg.extra && sg.tight ? ', the lightest option' : ''}</span></span>
       </button><button type="button" class="btn btn-primary meal-log" data-act="log-plan" data-id="${sg.meal.id}" aria-label="${esc(`Log ${sg.meal.name}`)}">Log</button></li>`);
     } else if ((!entries.length || sl.id === 'workout') && options.length) {
       rows.push(`<li class="meal"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: choose a meal`)}">
@@ -359,7 +381,6 @@ function dayList(day) {
     <div class="meals-head"><h2>${isToday ? 'Today’s meals' : 'Meals'}<small>${done} of ${main}</small></h2>
       <button type="button" class="toggle" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}" aria-label="Workout day: budget ${n0(S.settings.kcalTrain)} kcal, banana and skyr added"><i aria-hidden="true"></i>Workout day</button>
     </div>
-    ${note ? `<p class="meals-note${over ? ' is-over' : ''}">${note}</p>` : ''}
     <ul class="meal-list">${rows.join('')}</ul></section>`;
 }
 
@@ -385,7 +406,7 @@ export function renderSlotSheet(slotId, day) {
   <div class="actions"><button type="button" class="btn" data-act="slot-camera">Take a photo</button><button type="button" class="btn" data-act="compose">Type it</button></div>` : ''}`;
 }
 
-// The week's treats: one small one and one flexible dinner. A coin is whole until it is spent.
+// The week's extras: one small one and one flexible dinner. A weight is whole until it is used.
 function treats(day) {
   const f = weekFlex(day);
   const row = (name, used, max) => {
@@ -394,7 +415,7 @@ function treats(day) {
     return `<li class="${state}"><i class="coin" aria-hidden="true"></i><span>${name}</span><b>${text}</b></li>`;
   };
   return `<section class="treats">
-    <h2>This week’s treats</h2>
+    <h2>This week’s extras</h2>
     <ul>
       ${row('Beer or small dessert', f.small, 1)}
       ${row('Flexible dinner', f.meal, 1)}
@@ -402,6 +423,46 @@ function treats(day) {
     </ul>
     ${day === today() ? `<div class="chips">${FLEX.map((x) => chip(x, 'log-flex')).join('')}</div>` : ''}
   </section>`;
+}
+
+// The coach line: one sentence on where today stands and one thing to do next. Calm on a bad day, never
+// shaming, never suggesting to eat less than the plan.
+const POISE = '<svg class="coach-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18M7 8v2M12 8v3M17 8v2"/><rect x="13" y="11.5" width="6" height="9" rx="1"/></svg>';
+function coachLine(day) {
+  const s = S.settings;
+  if (day < s.startDate) return '';
+  const sg = suggest(day);
+  const tot = dayTotals(day);
+  const target = dayTarget(day);
+  const rem = target - tot.kcal;
+  let head;
+  let line = '';
+  let over = false;
+  if (rem < -target * (BAND.near - 1)) {
+    over = true;
+    head = 'Over today.';
+    line = 'One day doesn’t change the trend; the weekly average is what counts. Tomorrow is a normal plan day, and there is no need to skip a meal to make up for it.';
+  } else if (rem < 0) {
+    over = true;
+    head = 'A bit over today.';
+    line = 'That’s fine. Carry on with the plan as usual tomorrow.';
+  } else if (!tot.n) {
+    head = 'A fresh day.';
+    if (sg.meal && sg.slot) line = `First up: ${sg.meal.name} at ${sg.slot.time}.`;
+  } else if (sg.extra) {
+    head = 'Meals done.';
+    line = `Protein is ${n0(sg.remP)} g short; 150 g of plain skyr closes the gap and fits the budget.`;
+  } else if (sg.meal && sg.slot) {
+    head = 'You’re on track.';
+    line = `Next: ${sg.meal.name}${sg.slot.time ? ` at ${sg.slot.time}` : ''}${sg.remP > 12 && sg.meal.p >= 15 ? ', which also helps with protein' : ''}.`;
+  } else if (sg.remP > 12) {
+    head = 'Meals done.';
+    line = `Protein is ${n0(sg.remP)} g short.`;
+  } else {
+    head = 'All meals in, on target.';
+    line = 'Nicely done.';
+  }
+  return `<section class="coach${over ? ' is-over' : ''}">${POISE}<p><b>${esc(head)}</b> ${esc(line)}</p></section>`;
 }
 
 // First use: shows the single next step; disappears when finished or hidden
@@ -441,7 +502,7 @@ export function renderToday() {
     </div>
     <div class="top-actions">${settingsButton}</div>
   </header>
-  ${isToday ? legacyNotice() + startCard() : ''}
+  ${isToday ? legacyNotice() + startCard() + coachLine(day) : ''}
   ${weekStrip(day)}
   ${bento(day, 'top')}
   ${dayList(day)}
@@ -495,7 +556,7 @@ function entryDetail(e) {
   } else if (e.status === 'error') {
     body = `<p class="status is-error">${esc(e.err || 'Analysis failed.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Try again</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
   } else {
-    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Treat</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
+    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Weekly extra</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
     const rough = e.conf > 0 && e.conf < 0.6 && !e.planId;
     const mult = e.mult || 1;
     const canReanalyse = e.src === 'photo' || e.src === 'text';
@@ -574,7 +635,7 @@ function logRow(e) {
     const notes = [`${n0(v.p)} g protein`];
     if (e.mult && e.mult !== 1) notes.push(`${multLabel(e.mult)} portion`);
     if (e.tier === 'off') notes.push('off plan');
-    else if (e.tier === 'flex') notes.push('treat');
+    else if (e.tier === 'flex') notes.push('weekly extra');
     else if (e.planId) notes.push('plan meal');
     if (e.q) notes.push('has a question');
     else if (e.conf > 0 && e.conf < 0.6 && !e.planId) notes.push('rough estimate');
@@ -743,61 +804,116 @@ export function renderCheck() {
 // ——— Progress ———
 let chartData = null;
 
+// The weight chart. Two ranges: the last two weeks, where every weigh-in can be read, and the whole plan, which
+// shows where it is going and when you arrive at this pace. Brass is you (the 7-day average), the dashed teal line
+// is your line (the schedule), grey dots are the daily weigh-ins. The height never spans less than 2 kg, so a
+// normal day-to-day wobble does not look like a cliff.
 function weightChart() {
   const s = S.settings;
+  const whole = S.chartRange === 'whole';
   const series = weightSeries();
+  const t = today();
+  const pr = projection();
   const W = 340;
-  const H = 210;
-  const m = { l: 30, r: 34, t: 16, b: 26 };
-  let x0 = s.startDate;
-  if (series.length && series[0].day < x0) x0 = diffDays(series[0].day, s.startDate) > 21 ? addDays(s.startDate, -21) : series[0].day;
-  const x1 = s.targetDate;
-  const span = diffDays(x0, x1);
+  const H = 214;
+  const m = { l: 34, r: whole ? 42 : 64, t: 14, b: 26 };
+  let x0;
+  let x1;
+  if (whole) {
+    x0 = s.startDate;
+    if (series.length && series[0].day < x0) x0 = diffDays(series[0].day, s.startDate) > 21 ? addDays(s.startDate, -21) : series[0].day;
+    x1 = s.targetDate;
+  } else {
+    x0 = addDays(t, -13);
+    x1 = t;
+  }
+  const span = Math.max(1, diffDays(x0, x1));
+  const lineAt = (d) => (d < s.startDate ? s.startKg : targetAt(d, s));
   const visible = series.filter((d) => d.day >= x0 && d.day <= x1);
-  const maxW = Math.max(s.startKg, ...visible.map((d) => d.kg));
-  const minW = Math.min(s.targetKg, ...visible.map((d) => d.kg));
-  const y1 = Math.ceil(maxW + 0.3);
-  const y0 = Math.floor(minW - 0.3);
+  const avgPoints = [];
+  const from = whole ? (visible[0] && visible[0].day) : x0;
+  if (from) for (let d = from; d <= (t < x1 ? t : x1); d = addDays(d, 1)) { const a = avg7(d); if (a) avgPoints.push({ day: d, kg: a.kg }); }
+  const end = avgPoints[avgPoints.length - 1];
+
+  // The height: everything shown, plus a little room, and at least 2 kg
+  const lineDays = [x0, x1].concat(x0 < s.startDate && s.startDate < x1 ? [s.startDate] : []);
+  const vals = visible.map((d) => d.kg).concat(avgPoints.map((p) => p.kg), lineDays.map(lineAt));
+  let lo = Math.min(...vals) - 0.3;
+  let hi = Math.max(...vals) + 0.3;
+  if (hi - lo < 2) { const c = (hi + lo) / 2; lo = c - 1; hi = c + 1; }
+  const step = hi - lo <= 3 ? 0.5 : hi - lo <= 10 ? 1 : 2;
+  lo = Math.floor(lo / step) * step;
+  hi = Math.ceil(hi / step) * step;
   const X = (day) => m.l + (diffDays(x0, day) / span) * (W - m.l - m.r);
-  const Y = (kg) => m.t + ((y1 - kg) / (y1 - y0)) * (H - m.t - m.b);
+  const Y = (kg) => m.t + ((hi - kg) / (hi - lo)) * (H - m.t - m.b);
+  const f = (n) => n.toFixed(1);
+
   let grid = '';
-  const stepY = y1 - y0 > 10 ? 2 : 1;
-  for (let k = y0; k <= y1; k += stepY) {
-    grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(k).toFixed(1)}" y2="${Y(k).toFixed(1)}" class="c-grid"/><text x="${m.l - 6}" y="${(Y(k) + 3.5).toFixed(1)}" text-anchor="end" class="c-axis">${k}</text>`;
+  for (let k = lo; k <= hi + 1e-6; k += step) {
+    grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${f(Y(k))}" y2="${f(Y(k))}" class="c-grid"/><text x="${m.l - 6}" y="${f(Y(k) + 3.5)}" text-anchor="end" class="c-axis">${esc(kgLabel(Math.round(k * 10) / 10))}</text>`;
   }
   let xTicks = '';
-  for (let i = 0; i <= span; i++) {
-    const d = addDays(x0, i);
-    if (d.endsWith('-01') || i === 0) {
-      const px = X(d);
-      if (i !== 0 && px - m.l < 26) continue;
-      xTicks += `<text x="${px.toFixed(1)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : 'middle'}" class="c-axis">${i === 0 ? esc(dTiny.format(parseDay(d))) : esc(dMonth.format(parseDay(d)))}</text>`;
+  if (whole) {
+    for (let i = 0; i <= span; i++) {
+      const d = addDays(x0, i);
+      if (d.endsWith('-01') || i === 0) {
+        const px = X(d);
+        if (i !== 0 && px - m.l < 52) continue;
+        xTicks += `<text x="${f(px)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : 'middle'}" class="c-axis">${i === 0 ? esc(dTiny.format(parseDay(d))) : esc(dMonth.format(parseDay(d)))}</text>`;
+      }
     }
+  } else {
+    xTicks = [[x0, 'start'], [addDays(x0, 7), 'middle'], [x1, 'end']]
+      .map(([d, anchor]) => `<text x="${f(X(d))}" y="${H - 8}" text-anchor="${anchor}" class="c-axis">${esc(dTiny.format(parseDay(d)))}</text>`).join('');
   }
-  const target = `<line x1="${X(s.startDate).toFixed(1)}" y1="${Y(s.startKg).toFixed(1)}" x2="${X(s.targetDate).toFixed(1)}" y2="${Y(s.targetKg).toFixed(1)}" class="c-target"/>
-    <text x="${(X(s.targetDate) + 6).toFixed(1)}" y="${(Y(s.targetKg) + 4).toFixed(1)}" class="c-label">${esc(s.targetKg)} kg</text>`;
-  const dots = visible.map((d) => `<circle cx="${X(d.day).toFixed(1)}" cy="${Y(d.kg).toFixed(1)}" r="2.2" class="c-dot"/>`).join('');
-  const avgPoints = [];
-  if (visible.length) {
-    const last = visible[visible.length - 1].day;
-    for (let d = visible[0].day; d <= last; d = addDays(d, 1)) {
-      const a = avg7(d);
-      if (a) avgPoints.push({ day: d, kg: a.kg });
+  const linePts = lineDays.slice().sort().map((d) => `${f(X(d))},${f(Y(lineAt(d)))}`).join(' ');
+  const r = whole ? 2.4 : 3.2;
+  const dots = visible.map((d) => `<circle cx="${f(X(d.day))}" cy="${f(Y(d.kg))}" r="${r}" class="c-dot"/>`).join('');
+  const path = avgPoints.map((p, i) => `${i ? 'L' : 'M'}${f(X(p.day))} ${f(Y(p.kg))}`).join(' ');
+
+  // Labels at the right end: you and your line; on the whole plan also the target and where this pace arrives
+  let labels = '';
+  let proj = '';
+  if (whole) {
+    labels += `<text x="${f(X(s.targetDate) + 6)}" y="${f(Y(s.targetKg) + 4)}" class="c-label">${esc(kgLabel(s.targetKg))} kg</text>`;
+    if (end) labels += `<text x="${f(X(end.day) + 8)}" y="${f(Y(end.kg) - 9)}" class="c-label-you">You ${esc(n1(end.kg))}</text>`;
+    if (pr && pr.eta && end && t >= x0) {
+      const stop = pr.eta < x1 ? pr.eta : x1;
+      const at = pr.now + pr.slope * diffDays(t, stop);
+      proj = `<path d="M${f(X(t))} ${f(Y(pr.now))}L${f(X(stop))} ${f(Y(at))}" class="c-proj"/>`;
+      labels += `<text x="${f(Math.min(X(stop), W - m.r - 4))}" y="${f(Math.min(Y(at) + 16, H - m.b - 4))}" text-anchor="end" class="c-label-eta">${esc(dTiny.format(parseDay(pr.eta)))} at this pace</text>`;
     }
+  } else if (end) {
+    let yy = Y(end.kg);
+    let yl = Y(lineAt(x1));
+    if (Math.abs(yy - yl) < 14) { const mid = (yy + yl) / 2; const up = end.kg >= lineAt(x1) ? -1 : 1; yy = mid + up * 7; yl = mid - up * 7; }
+    labels += `<text x="${f(X(x1) + 8)}" y="${f(yy + 4)}" class="c-label-you">You ${esc(n1(end.kg))}</text>`;
+    labels += `<text x="${f(X(x1) + 8)}" y="${f(yl + 4)}" class="c-label">Line ${esc(n1(lineAt(x1)))}</text>`;
   }
-  const path = avgPoints.map((p, i) => `${i ? 'L' : 'M'}${X(p.day).toFixed(1)} ${Y(p.kg).toFixed(1)}`).join(' ');
-  const end = avgPoints[avgPoints.length - 1];
-  const todayLine = today() >= x0 && today() <= x1 ? `<line x1="${X(today()).toFixed(1)}" x2="${X(today()).toFixed(1)}" y1="${m.t}" y2="${H - m.b}" class="c-today"/>` : '';
+  const todayLine = whole && t >= x0 && t <= x1 ? `<line x1="${f(X(t))}" x2="${f(X(t))}" y1="${m.t}" y2="${H - m.b}" class="c-today"/>` : '';
   chartData = { x0, span, m, W, H, avg: Object.fromEntries(avgPoints.map((p) => [p.day, p.kg])) };
+  const alt = end
+    ? `Weight ${whole ? 'over the whole plan' : 'over the last two weeks'}: 7-day average ${n1(end.kg)} kg, your line ${n1(lineAt(t < x1 ? t : x1))} kg${whole && pr && pr.eta ? `, at this pace you arrive on ${dShort.format(parseDay(pr.eta))}` : ''}.`
+    : `Weight chart: no weigh-ins ${whole ? 'yet' : 'in the last two weeks'}.`;
   return `<div class="chart">
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart: target line, daily weigh-ins and 7-day average">
-      ${grid}${xTicks}${todayLine}${target}${dots}
+    <div class="chart-head"><h2>Weight</h2>
+      <div class="seg" role="group" aria-label="Chart range">
+        <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!whole}">2 weeks</button>
+        <button type="button" data-act="chart-range" data-v="whole" aria-pressed="${whole}">Whole plan</button>
+      </div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(alt)}">
+      ${grid}${xTicks}${todayLine}
+      <polyline points="${linePts}" class="c-target"/>
+      ${proj}${dots}
       ${path ? `<path d="${path}" class="c-avg"/>` : ''}
-      ${end ? `<circle cx="${X(end.day).toFixed(1)}" cy="${Y(end.kg).toFixed(1)}" r="4.5" class="c-end"/>` : ''}
+      ${end ? `<circle cx="${f(X(end.day))}" cy="${f(Y(end.kg))}" r="4.5" class="c-end"/>` : ''}
+      ${labels}
       <line id="c-cross" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" class="c-cross" visibility="hidden"/>
     </svg>
     <div class="tip" id="c-tip" hidden></div>
-    <p class="legend"><span><i class="key-avg"></i>7-day average</span><span><i class="key-target"></i>target line</span><span><i class="key-dot"></i>daily weigh-in</span></p>
+    ${!end && !whole ? '<p class="note">No weigh-ins in the last two weeks.</p>' : ''}
+    <p class="legend"><span><i class="key-avg"></i>You (7-day average)</span><span><i class="key-target"></i>Your line</span><span><i class="key-dot"></i>Daily weigh-in</span>${whole && pr && pr.eta ? '<span><i class="key-proj"></i>At this pace</span>' : ''}</p>
   </div>`;
 }
 
@@ -929,8 +1045,7 @@ export function renderProgress() {
   <section class="glide">
     <p class="glide-head">${esc(head)}</p>
     <p class="glide-note">${esc(line)}</p>
-    ${track(a, target, started)}
-    <p class="track-ends"><span>${esc(s.startKg)} kg</span><span>${esc(s.targetKg)} kg</span></p>
+    ${beam(a, target, started, true)}
   </section>
   ${wins()}
   <section>
@@ -960,31 +1075,28 @@ export function renderProgress() {
   </section>`;
 }
 
-// What has been collected so far: one token per kilo, and the runs of good days
+// What has been collected so far: the kilos on the beam above, the next one by name, and the runs of days on plan
 function wins() {
   const s = S.settings;
   const a = currentAvg(today());
   const lost = a && today() >= s.startDate ? s.startKg - a.kg : 0;
-  // A token for every whole kilo down from the start weight (the same count as kilosDown), then the target itself when it is not a whole kilo away
-  const need = [];
-  for (let k = 1; k <= s.startKg - s.targetKg + 1e-6; k++) need.push(k);
-  if (!need.length || s.startKg - s.targetKg - need[need.length - 1] > 1e-6) need.push(s.startKg - s.targetKg);
-  const marks = need.map((n) => ({ n, kg: Math.round((s.startKg - n) * 10) / 10 }));
-  const got = (m) => lost >= m.n - 1e-6;
-  const reached = marks.filter(got).length;
+  const marks = kiloMarks();
+  const got = marks.filter((kg) => s.startKg - kg <= lost + 1e-6).length;
+  const next = marks.find((kg) => s.startKg - kg > lost + 1e-6);
   const h = history();
   const run = streak();
-  const label = (kg) => (Number.isInteger(kg) ? String(kg) : n1(kg));
-  const tokens = marks.map((m, i) => `<li class="${got(m) ? 'is-got' : ''}${i === marks.length - 1 ? ' is-goal' : ''}${Number.isInteger(m.kg) ? '' : ' is-frac'}"${got(m) ? '' : ' aria-label="' + label(m.kg) + ' kg, not reached yet"'}>${label(m.kg)}</li>`).join('');
+  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
+  const note = !marks.length ? '' : next == null ? 'Every kilo collected.'
+    : a ? `Next kilo at ${kgLabel(next)} kg, ${n1(a.kg - next)} kg away. A kilo is yours when the 7-day average reaches it.`
+      : 'A kilo is yours when the 7-day average reaches it.';
   return `<section class="wins" aria-labelledby="wins-title">
-    <h2 id="wins-title">${reached ? `${reached} of ${marks.length} kilos collected` : 'Kilos to collect'}</h2>
-    <p class="note">Each one is yours when the 7-day average reaches it.</p>
-    <ol class="kilos">${tokens}</ol>
+    <h2 id="wins-title">${got ? `${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'} collected` : 'Kilos to collect'}</h2>
+    ${note ? `<p class="note">${esc(note)}</p>` : ''}
     <dl class="stats">
-      <div><dt>Streak</dt><dd>${run} ${run === 1 ? 'day' : 'days'}</dd></div>
-      <div><dt>Best streak</dt><dd>${Math.max(h.best, run)} ${Math.max(h.best, run) === 1 ? 'day' : 'days'}</dd></div>
+      <div><dt>In a row</dt><dd>${days(run)}</dd></div>
+      <div><dt>Longest run</dt><dd>${days(Math.max(h.best, run))}</dd></div>
       <div><dt>On plan</dt><dd>${h.onPlan} of ${h.days}</dd></div>
-      <div><dt>Perfect days</dt><dd>${h.perfect}</dd></div>
+      <div><dt>All five goals</dt><dd>${days(h.perfect)}</dd></div>
     </dl>
   </section>`;
 }
@@ -1035,7 +1147,7 @@ export function renderPlan() {
     <h2>The rules</h2>
     ${group('Dinner rotation', `<p class="note">Fish twice and legumes twice a week.</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}
     ${group('Every day', list(RULES.daily))}
-    ${group('The week’s treats', list(RULES.weekly))}
+    ${group('The week’s extras', list(RULES.weekly))}
     ${group('Off for the whole period', list(RULES.off))}
     ${group('Training and movement', list(RULES.training))}
     ${group('Process', list(RULES.process))}

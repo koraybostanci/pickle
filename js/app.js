@@ -870,7 +870,7 @@ async function checkWins() {
   let msg = '';
   if (w) {
     if (kilos > (w.kilos || 0)) { msg = kilos === 1 ? 'First kilo down' : `${kilos} kilos down`; next.kilos = kilos; }
-    if (perfect && w.perfect !== t) { msg = msg || 'Perfect day: all five goals done'; next.perfect = t; }
+    if (perfect && w.perfect !== t) { msg = msg || 'All five goals done today'; next.perfect = t; }
     if (!msg) return;
   }
   winsBusy = true;
@@ -1072,6 +1072,7 @@ const ACT = {
     render();
     toast('Entry updated');
   },
+  'chart-range': (el) => { S.chartRange = el.dataset.v === 'whole' ? 'whole' : 'weeks'; render(); },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
   'goto-day': (el) => { if (el.dataset.day <= today()) { S.viewDay = el.dataset.day; go('today'); } },
   // Settings

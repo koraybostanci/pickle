@@ -5,10 +5,12 @@
 // A new release arrives only once the new service worker is installed.
 // List every file the app loads in SHELL, so the first launch already works offline. A listed file that
 // does not exist makes the install fail.
-const VERSION = 'kantar-v20';
+const VERSION = 'kantar-v21';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/core.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js', 'js/backup.js',
+  'fonts/ibm-plex-sans-latin.woff2', 'fonts/ibm-plex-sans-latin-ext.woff2', 'fonts/ibm-plex-mono-500-latin.woff2', 'fonts/ibm-plex-mono-500-latin-ext.woff2',
+  'fonts/space-grotesk-latin.woff2', 'fonts/space-grotesk-latin-ext.woff2',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 
