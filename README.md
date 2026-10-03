@@ -13,15 +13,15 @@ add the page to your phone's Home Screen, and your entries are stored on that ph
 
 A cucumber becomes a pickle through time and steady conditions, not one big effort. That is what
 the app asks of you: a steady average along your line, day after day. The icon shows the pickle in a
-measuring jar. Throughout the app the brass weight is you, and the beam runs from your start weight to
-your target.
+measuring jar. Throughout the app brass is you and teal is your line; on Progress the beam runs from
+your start weight to your target.
 
 ## What it does
 
 - **Today:** one line on where the day stands and what comes next (calm when the day goes over);
   the week as seven day tokens, each with a shape for how the day went, and your run of days on
   plan; the day's calories as a budget that burns down over the day, with the plan's pace beside it
-  and a forecast for where the day will end; weight on the beam against your line, protein, the
+  and a forecast for where the day will end; weight against your line, protein, the
   meals of the day with a suggestion for the next one, steps, water and the week's extras. Five
   daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
 - **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
@@ -221,7 +221,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v22'`) and `APP_VERSION` in `js/core.js` (`'22'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v23'`) and `APP_VERSION` in `js/core.js` (`'23'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,

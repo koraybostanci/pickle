@@ -15,6 +15,9 @@ const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' }
 const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
 const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+const dayWord = (n) => (n === 1 ? 'day' : 'days');
+const days = (n) => `${n} ${dayWord(n)}`;
+const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
 const ICON = {
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/></svg>',
@@ -24,6 +27,7 @@ const ICON = {
 };
 ICON.close = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
 const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
+const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l2.5 1.5"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
 
@@ -40,7 +44,6 @@ function progressSummary() {
   const endDate = dShort.format(parseDay(s.targetDate));
   const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
-  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
   const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
   let head; // the status, a few words
   let line; // the numbers behind it, one sentence
@@ -84,21 +87,20 @@ function kiloMarks() {
   return marks;
 }
 
-// The beam: a graduated scale from the start weight to the target. The teal part is the
+// The beam, on Progress: a graduated scale from the start weight to the target. The teal part is the
 // distance covered, the brass block is you (the 7-day average), the small mark is where your line is today.
-// big: the Progress version, with a label for each kilo.
-function beam(a, target, started, big) {
+function beam(a, target, started) {
   const s = S.settings;
   const span = s.startKg - s.targetKg;
   if (!(span > 0)) return '';
   const pct = (kg) => (Math.min(100, Math.max(0, ((s.startKg - kg) / span) * 100))).toFixed(2);
   const marks = [s.startKg, ...kiloMarks()];
-  const you = a ? pct(a.kg) : '0';
-  const bar = `<span class="beam${big ? ' beam-big' : ''}" aria-hidden="true"><span class="beam-bar"><i style="width:${you}%"></i></span>`
+  // Before the plan starts nothing is counted yet: the brass weight waits at the start
+  const lost = a && started ? s.startKg - a.kg : 0;
+  const you = pct(s.startKg - lost);
+  const bar = `<span class="beam" aria-hidden="true"><span class="beam-bar"><i style="width:${you}%"></i></span>`
     + `<span class="beam-ticks">${marks.map((kg) => `<b style="left:${pct(kg)}%"></b>`).join('')}</span>`
     + `${started ? `<u style="left:${pct(target)}%"></u>` : ''}${a ? `<em style="left:${you}%"></em>` : ''}</span>`;
-  if (!big) return `${bar}<span class="track-ends" aria-hidden="true"><span>${esc(kgLabel(s.startKg))}</span><span>${esc(kgLabel(s.targetKg))}</span></span>`;
-  const lost = a ? s.startKg - a.kg : 0;
   const next = marks.find((kg, i) => i > 0 && s.startKg - kg > lost + 1e-6);
   // The start and the target are always labelled; the kilos in between at the smallest regular step (every kilo,
   // every second, …) whose labels clear each other on the narrowest phone (about 250 px of beam, 7 px a character)
@@ -123,7 +125,7 @@ function beam(a, target, started, big) {
   };
   const shown = [1, 2, 5, 10].map(pick).find(fits) || pick(Infinity);
   const labels = marks.map((kg, i) => (!shown[i] ? ''
-    : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
+    : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : i === last ? 'is-goal' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
@@ -133,7 +135,7 @@ const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'p
 function weekStrip(day) {
   const t = today();
   const ws = weekStart(day);
-  const tokens = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((letter, i) => {
+  const tokens = WEEKDAYS.map((letter, i) => {
     const d = addDays(ws, i);
     // Days before the plan started only count if something was logged on them
     const raw = d > t ? 'future' : dayStatus(d);
@@ -146,23 +148,15 @@ function weekStrip(day) {
   const goals = dayGoals(day);
   const done = goals.filter((g) => g.done).length;
   const run = streak();
-  const dots = goals.map((g) => `<i class="${g.done ? 'on' : ''}"></i>`).join('');
-  const left = run > 0 ? `<span class="streak">${GLYPH.run}<b>${run}</b> ${run === 1 ? 'day' : 'days'} on plan in a row</span>` : '<span class="streak">A day on plan starts a new run</span>';
+  const left = run > 0 ? `<span><b>${days(run)}</b> on plan in a row</span>` : '<span>A day on plan starts a new run</span>';
+  const count = done === goals.length ? 'All five goals' : `${done} of ${goals.length} goals${day === t ? ' so far' : ''}`;
   return `<nav class="week" aria-label="Days of the week">
     <button type="button" class="week-nav" data-act="week-prev" aria-label="Previous week">${ICON.prev}</button>
     <ol>${tokens}</ol>
     <button type="button" class="week-nav" data-act="week-next" aria-label="Next week"${addDays(ws, 7) > t ? ' disabled' : ''}>${ICON.next}</button>
   </nav>
-  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}"><span class="goal-dots" aria-hidden="true">${dots}</span>${done === goals.length ? 'All five goals' : `${done} of ${goals.length} goals`}</span></p>`;
+  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}">${count}</span></p>`;
 }
-
-const GLYPH = {
-  run: '<svg class="glyph g-run" viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="2" width="16" height="16" rx="3"/><path d="m5.8 10.2 2.8 2.8 5.6-6.2"/></svg>',
-  scale: '<svg class="glyph g-scale" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6.5h15M6 6.5V8M10 6.5v2M14 6.5V8"/><rect x="11.5" y="9.5" width="5" height="7.5" rx="1"/></svg>',
-  egg: '<svg class="glyph g-egg" viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="10.6" rx="6.4" ry="7.6"/><circle cx="10" cy="11.6" r="3"/></svg>',
-  steps: '<svg class="glyph g-steps" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5h3.5V13H10V9.5h3.5V6H17"/></svg>',
-  drop: '<svg class="glyph g-drop" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2c3 3.7 5.1 6.2 5.1 8.9a5.1 5.1 0 0 1-10.2 0c0-2.7 2.1-5.2 5.1-8.9z"/></svg>',
-};
 
 // ——— The day's calories as a budget that burns down, the way an error budget does.
 // The solid line is what is left after each meal, the dashed line is the plan's pace,
@@ -240,17 +234,16 @@ function budgetTile(day) {
   else if (rate > 1.25) { verdict = `${rate.toLocaleString(LOCALE, { maximumFractionDigits: 1 })}× the plan's pace`; tone = 'warn'; }
   else if (rate < 0.7) verdict = 'Under plan so far';
   else { verdict = 'On pace'; tone = 'good'; }
-  const pct = Math.round((Math.max(0, rem) / target) * 100);
   let foot;
-  if (!isToday || now >= H1) foot = `${n0(eaten)} of ${n0(target)} kcal spent`;
+  if (!isToday || now >= H1) foot = ''; // "eaten" on the left says it all
   else if (!open.length) foot = rem >= 0 ? `All meals in, ${n0(rem)} kcal to spare` : `All meals in, ${n0(-rem)} kcal over`;
   else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
   const forecastBad = isToday && open.length > 0 && forecast < -slack;
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}. ${foot}.`;
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}.${foot ? ` ${foot}.` : ''}`;
   return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}${wayOver ? ' is-way-over' : ''}" role="group" aria-label="${esc(label)}">
     <div class="budget-head">
-      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>kcal ${rem >= 0 ? 'left' : 'over'}</span></p>
-      <i class="pill pill-${tone}">${esc(verdict)}</i>
+      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>${rem >= 0 ? `kcal left of ${n0(target)}` : 'kcal over'}</span></p>
+      <i class="pill pill-${tone}">${tone === 'good' ? CHECK : ''}${esc(verdict)}</i>
     </div>
     <svg class="burn" viewBox="0 0 330 92" aria-hidden="true">
       <rect x="${X0}" y="${Y0}" width="${X1 - X0}" height="${YB - Y0}" class="burn-red"/>
@@ -265,7 +258,7 @@ function budgetTile(day) {
       <text x="${X0 - 5}" y="${Y0 + 4}" text-anchor="end" class="burn-axis">0</text>
       ${[6, 12, 18, 24].map((h) => `<text x="${f(x(h))}" y="90" text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}" class="burn-axis">${String(h).padStart(2, '0')}</text>`).join('')}
     </svg>
-    <p class="budget-foot"><span>${pct}% of budget left</span><span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span></p>
+    <p class="budget-foot"><span><b>${n0(eaten)}</b> eaten</span>${foot ? `<span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span>` : ''}</p>
   </div>`;
 }
 
@@ -276,20 +269,23 @@ function bento(day, part) {
   const isToday = day === today();
   const dd = S.days[day] || {};
   const tot = dayTotals(day);
-  const top = (glyph, name, done, hint = '') => `<span class="tile-top">${glyph}<span>${name}</span>${done ? CHECK : ''}${hint ? `<em>${hint}</em>` : ''}</span>`;
+  const top = (name, done, hint = '') => `<span class="tile-top"><span>${name}</span>${done ? CHECK : ''}${hint ? `<em>${hint}</em>` : ''}</span>`;
+  const note = (text) => `<span class="tile-note">${esc(text)}</span>`;
 
   let weight;
   if (isToday) {
     const p = progressSummary();
     const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
+    // Today's weigh-in, then the 7-day average beside where you stand: "avg 85.2 · on schedule"
+    const status = dd.kg && p.a && p.started ? `avg ${n1(p.a.kg)} · ${lower(p.tag)}` : p.tag;
     weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
-      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
-      <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}<em>${esc(p.tag)}</em></span>
-      ${beam(p.a, p.target, p.started)}
+      ${top('Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
+      <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}</span>
+      ${note(status)}
     </button>`;
   } else {
     weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
-      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to add')}
+      ${top('Weight', !!dd.kg, dd.kg ? '' : 'tap to add')}
       <span class="tile-val"><b>${dd.kg ? n1(dd.kg) : '–'}</b>${dd.kg ? ' kg' : ''}</span>
     </button>`;
   }
@@ -303,26 +299,31 @@ function bento(day, part) {
   const glasses = Math.max(1, Math.min(12, Math.round(s.water / 250)));
   const full = Math.min(glasses, Math.floor(water / 250));
   const pct = (v, of) => Math.min(100, (v / of) * 100).toFixed(1);
+  const pLeft = Math.max(1, Math.ceil(s.protein - tot.p - 1e-6)); // only shown while the goal is open
+  const glassesLeft = Math.max(0, Math.ceil((s.water - water) / 250));
   if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
     ${budgetTile(day)}
     ${weight}
     <div class="tile${pDone ? ' is-done' : ''}" role="group" aria-label="Protein: ${n0(tot.p)} of ${n0(s.protein)} g">
-      ${top(GLYPH.egg, 'Protein', pDone)}
+      ${top('Protein', pDone)}
       <span class="tile-val"><b>${n0(tot.p)}</b> / ${n0(s.protein)} g</span>
       <span class="bar" style="--v:${pct(tot.p, s.protein)}%"><i></i></span>
+      ${note(pDone ? 'Enough for today' : `${n0(pLeft)} g to go`)}
     </div>
   </section>`;
   return `<section class="bento bento-more" aria-label="Steps and water">
     <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="Steps: ${steps ? n0(steps) : 'none'} of ${n0(s.steps)}. Enter">
-      ${top(GLYPH.steps, 'Steps', stepsDone)}
+      ${top('Steps', stepsDone)}
       <span class="tile-val"><b>${steps ? n0(steps) : '–'}</b> / ${n0(s.steps)}</span>
       <span class="bar" style="--v:${pct(steps, s.steps)}%"><i></i></span>
+      ${note(stepsDone ? 'Goal reached' : `${n0(s.steps - steps)} to go`)}
     </button>
     <div class="tile tile-water${waterDone ? ' is-done' : ''}">
       <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="Water: ${litres(water)} of ${litres(s.water)} litres. Add a glass">
-        ${top(GLYPH.drop, 'Water', waterDone, water ? '' : 'tap +1 glass')}
+        ${top('Water', waterDone, water ? '' : 'tap +1 glass')}
         <span class="tile-val"><b>${litres(water)}</b> / ${litres(s.water)} l</span>
         <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
+        ${note(waterDone ? 'Goal reached' : `${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'} to go`)}
       </button>
       ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
     </div>
@@ -378,7 +379,7 @@ function dayList(day) {
       rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${esc(e.id)}">
         <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
         <span class="meal-text"><b><span class="sr-only">${ok ? 'Done: ' : 'Waiting: '}</span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
-        <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
+        <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b><span class="sr-only"> kcal</span>` : esc(entryState(e))}</span>
       </button></li>`);
     }
     const options = slotOptions(sl.id, entries);
@@ -387,7 +388,7 @@ function dayList(day) {
       const [h, m] = (sl.time || '0:0').split(':').map(Number);
       const late = !sg.extra && sl.time && minutesNow > h * 60 + m + 120;
       rows.push(`<li class="meal is-next"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: other options`)}">
-        <i class="meal-mark" aria-hidden="true"></i>
+        <i class="meal-mark" aria-hidden="true">${CLOCK}</i>
         <span class="meal-text"><b><span class="sr-only">Next: </span>${sl.name}<small>${late ? 'not logged yet' : sl.time}</small></b><span>${esc(sg.meal.name)}, ${sg.meal.kcal} kcal${!sg.extra && sg.tight ? ', the lightest option' : ''}</span></span>
       </button><button type="button" class="btn btn-primary meal-log" data-act="log-plan" data-id="${sg.meal.id}" aria-label="${esc(`Log ${sg.meal.name}`)}">Log</button></li>`);
     } else if ((!entries.length || sl.id === 'workout') && options.length) {
@@ -519,7 +520,7 @@ export function renderToday() {
   <header class="top">
     <div>
       <h1>${isToday ? 'Today' : esc(dWeekday.format(parseDay(day)))}</h1>
-      <p class="sub">${esc(dShort.format(parseDay(day)))}${isToday ? '' : '. <button type="button" class="link link-inline" data-act="day-today">Back to today</button>'}</p>
+      <p class="sub">${isToday ? `${esc(dLong.format(parseDay(day)))}${day >= S.settings.startDate ? ` · day ${diffDays(S.settings.startDate, day) + 1}` : ''}` : `${esc(dShort.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">Back to today</button>`}</p>
     </div>
     <div class="top-actions">${settingsButton}</div>
   </header>
@@ -1009,8 +1010,8 @@ function calendar() {
     const dd = S.days[d] || {};
     pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
   }
-  return `<div class="calendar">
-    <div class="cal-row cal-head"><span class="cal-month"></span>${['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((x) => `<span>${x}</span>`).join('')}</div>
+  return `<div class="calendar card">
+    <div class="cal-row cal-head"><span class="cal-month"></span>${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}</div>
     ${rows}
     <p class="legend"><span><i class="cell cell-on"></i>on target</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>over</span><span><i class="cell cell-none"></i>nothing logged</span></p>
     ${pick}
@@ -1054,31 +1055,46 @@ export function renderProgress() {
     const tot = dayTotals(d.day);
     return `<tr><td>${esc(dTiny.format(parseDay(d.day)))}</td><td>${n1(d.kg)}</td><td>${avg ? n1(avg.kg) : '–'}</td><td>${d.day >= s.startDate ? n1(targetAt(d.day, s)) : '–'}</td><td>${tot.n ? n0(tot.kcal) : '–'}</td></tr>`;
   }).join('');
+  // The hero: the kilos down once there is an average to count from; until then, where things stand in words
+  let hero;
+  let note;
+  if (started && a) {
+    hero = `<p class="glide-head">${esc(n1(Math.abs(lost)))} kg ${lost < -0.05 ? '<em class="is-up">up</em>' : '<em>down</em>'}</p>`;
+    let arrive = '';
+    if (pr && pr.eta && a.kg > s.targetKg) {
+      const early = diffDays(pr.eta, s.targetDate);
+      arrive = ` At this pace you arrive on <b>${esc(dShort.format(parseDay(pr.eta)))}</b>${early > 0 ? `, ${days(early)} early` : early < 0 ? `, ${days(-early)} after the target date` : ', right on the date'}.`;
+    }
+    note = `${esc(head)}.${arrive}`;
+  } else {
+    hero = `<p class="glide-head is-words">${esc(head)}</p>`;
+    note = esc(line);
+  }
   return `
   <header class="top">
-    <div><h1>Progress</h1><p class="sub">${esc(dShort.format(parseDay(s.startDate)))} to ${esc(dShort.format(parseDay(s.targetDate)))}, ${esc(s.startKg)} kg to ${esc(s.targetKg)} kg</p></div>
+    <div><h1>Progress</h1><p class="sub">${esc(dTiny.format(parseDay(s.startDate)))} → ${esc(dTiny.format(parseDay(s.targetDate)))} · ${esc(kgLabel(s.startKg))} kg → ${esc(kgLabel(s.targetKg))} kg</p></div>
     <div class="top-actions">${settingsButton}</div>
   </header>
   ${adjustNotice()}
   <section class="glide">
-    <p class="glide-head">${esc(head)}</p>
-    <p class="glide-note">${esc(line)}</p>
-    ${beam(a, target, started, true)}
+    ${hero}
+    <p class="glide-note">${note}</p>
   </section>
-  ${wins()}
+  ${beamCard(a, target, started)}
+  ${runs(run)}
   <section>
     ${weightChart()}
-    <dl class="stats">
-      <div><dt>Lost</dt><dd>${a ? n1(Math.max(0, lost)) + ' kg' : '–'}</dd></div>
-      <div><dt>To go</dt><dd>${a ? n1(Math.max(0, a.kg - s.targetKg)) + ' kg' : n1(s.startKg - s.targetKg) + ' kg'}</dd></div>
-      <div><dt>Weekly rate</dt><dd>${pr ? n1(pr.perWeek).replace('-', '−') + ' kg' : '–'}</dd></div>
-      <div><dt>Projected arrival</dt><dd>${pr && pr.eta ? esc(dTiny.format(parseDay(pr.eta))) : '–'}</dd></div>
+    <dl class="stats stats-wide">
+      <div><dt>Lost</dt><dd>${a ? `${n1(Math.max(0, lost))}<small>kg</small>` : '–'}</dd></div>
+      <div><dt>To go</dt><dd>${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))}<small>kg</small></dd></div>
+      <div><dt>Per week</dt><dd>${pr ? `${n1(pr.perWeek).replace('-', '−')}<small>kg</small>` : '–'}</dd></div>
+      <div><dt>Arrival at this pace</dt><dd>${pr && pr.eta ? esc(dTiny.format(parseDay(pr.eta))) : '–'}</dd></div>
     </dl>
-    ${pr ? '' : '<p class="note">Weekly rate and projected arrival appear after 4 weigh-ins within the last 14 days, at least 6 days apart.</p>'}
+    ${pr ? '' : '<p class="note">The weekly rate and the arrival appear after 4 weigh-ins within the last 14 days, at least 6 days apart.</p>'}
   </section>
   <section>
     <h2>Consistency calendar</h2>
-    <p class="note">${run > 0 ? `${run} ${run === 1 ? 'day' : 'days'} on plan in a row.` : 'Days on target or close build a streak.'}</p>
+    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on target or close build a run.'}</p>
     ${calendar()}
   </section>
   <section>
@@ -1093,30 +1109,35 @@ export function renderProgress() {
   </section>`;
 }
 
-// What has been collected so far: the kilos on the beam above, the next one by name, and the runs of days on plan
-function wins() {
+// The beam in its card: every kilo between the start and the target, the ones collected, and the next one by name
+function beamCard(a, target, started) {
   const s = S.settings;
-  const a = currentAvg(today());
-  const lost = a && today() >= s.startDate ? s.startKg - a.kg : 0;
+  const lost = a && started ? s.startKg - a.kg : 0;
   const marks = kiloMarks();
+  if (!marks.length) return '';
   const got = marks.filter((kg) => s.startKg - kg <= lost + 1e-6).length;
   const next = marks.find((kg) => s.startKg - kg > lost + 1e-6);
-  const h = history();
-  const run = streak();
-  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
-  const note = !marks.length ? '' : next == null ? 'Every kilo collected.'
-    : a ? `Next kilo at ${kgLabel(next)} kg, ${n1(a.kg - next)} kg away. A kilo is yours when the 7-day average reaches it.`
+  const note = next == null ? 'Every kilo collected.'
+    : a && started ? `Next kilo at <b>${esc(kgLabel(next))}</b>, ${esc(n1(a.kg - next))} kg away.`
       : 'A kilo is yours when the 7-day average reaches it.';
-  return `<section class="wins" aria-labelledby="wins-title">
-    <h2 id="wins-title">${got ? `${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'} collected` : 'Kilos to collect'}</h2>
-    ${note ? `<p class="note">${esc(note)}</p>` : ''}
-    <dl class="stats">
-      <div><dt>In a row</dt><dd>${days(run)}</dd></div>
-      <div><dt>Longest run</dt><dd>${days(Math.max(h.best, run))}</dd></div>
-      <div><dt>On plan</dt><dd>${h.onPlan} of ${h.days}</dd></div>
-      <div><dt>All five goals</dt><dd>${days(h.perfect)}</dd></div>
-    </dl>
+  return `<section class="card beam-card" aria-labelledby="beam-title">
+    <div class="card-head"><h2 id="beam-title" class="label">The beam · 7-day average</h2><span class="label">${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'}</span></div>
+    ${beam(a, target, started)}
+    <p class="note">${note}</p>
   </section>`;
+}
+
+// The runs of days on plan, as four small cards
+function runs(run) {
+  const h = history();
+  const best = Math.max(h.best, run);
+  const d = (n) => `${n}<small>${dayWord(n)}</small>`;
+  return `<dl class="stats" aria-label="Days on plan">
+    <div><dt>In a row</dt><dd>${d(run)}</dd></div>
+    <div><dt>Longest run</dt><dd>${d(best)}</dd></div>
+    <div><dt>On plan</dt><dd>${h.onPlan}<small>/ ${h.days}</small></dd></div>
+    <div><dt>All 5 goals</dt><dd>${d(h.perfect)}</dd></div>
+  </dl>`;
 }
 
 // ——— Plan ———
@@ -1136,7 +1157,7 @@ export function renderPlan() {
     <div class="plan-row">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(`${m.name}, ${m.kcal} kcal, ${n0(m.p)} g protein. Details`)}">
         ${planPic(m.id, 'Add photo')}
         <span class="plan-name">${esc(m.name)}</span>
-        <span class="plan-meta"><b>${m.kcal}</b> kcal<i>${n0(m.p)} g protein</i></span>
+        <span class="plan-meta"><span><b>${m.kcal}</b> kcal</span> · <span>${n0(m.p)} g protein</span></span>
       </button>`).join('')}</div>
   </section>`;
   };
