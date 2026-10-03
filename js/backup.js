@@ -3,6 +3,7 @@
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanVerdict } from './ai.js';
+import { SCHEMA_VERSION, MIN_SCHEMA_VERSION } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -16,6 +17,15 @@ const isDay = (v) => typeof v === 'string' && DAY_RE.test(v) && !Number.isNaN(Da
 const isId = (v) => typeof v === 'string' && ID_RE.test(v);
 const flagList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').map((x) => x.slice(0, 20)).slice(0, 4) : []);
 const itemList = (v) => (Array.isArray(v) ? v : []).slice(0, 12).map((i) => ({ n: txt(i && i.n, 80), g: pos(i && i.g, 5000), kcal: pos(i && i.kcal, 6000), p: pos(i && i.p, 500) }));
+
+// Why a file cannot be restored, or '' when it can be tried
+export function backupProblem(data) {
+  if (!data || typeof data !== 'object' || data.app !== 'kantar' || !Array.isArray(data.entries)) return 'This is not a Kantar backup';
+  if (!Number.isInteger(data.v)) return 'This backup has no valid version number, so it cannot be restored';
+  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Kantar. Update the app first';
+  if (data.v < MIN_SCHEMA_VERSION) return 'This backup is from the first release of Kantar (Turkish ids) and can no longer be restored';
+  return '';
+}
 
 export function b64FromBuf(buf) {
   const u8 = new Uint8Array(buf);

@@ -3,10 +3,10 @@ import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
 import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
-import { cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
+import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+  APP_VERSION, SCHEMA_VERSION, isLegacyData, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -735,10 +735,8 @@ async function exportSql() {
 async function importBackup(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch { return toast('Could not read the file'); }
-  if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('This is not a Kantar backup');
-  const v = Number.isInteger(data.v) ? data.v : 1;
-  if (v > SCHEMA_VERSION) return toast('This backup is from a newer version of Kantar. Update the app first');
-  if (v < SCHEMA_VERSION) return toast('This backup is from an old version of Kantar and can no longer be restored');
+  const problem = backupProblem(data);
+  if (problem) return toast(problem);
   // Restoring adds to what is on the device; an entry or day that is in both is replaced by the backup's version.
   // Everything read from the file is checked first (see backup.js).
   let restored = 0;
@@ -786,6 +784,7 @@ async function importBackup(file) {
 async function load() {
   const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
+  S.legacy = isLegacyData(stored, S.entries.length);
   if (stored) {
     S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
     if (!stored.provider) S.settings.provider = stored.apiKey ? 'anthropic' : 'openai'; // settings saved before provider choice existed
@@ -980,6 +979,7 @@ const ACT = {
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
+  'dismiss-legacy': async () => { S.settings.legacyDismissed = true; await saveSettings(); render(); },
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture

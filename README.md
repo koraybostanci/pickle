@@ -192,11 +192,21 @@ The service worker serves the app from a versioned cache, so after the first loa
 not show up until you either bump the version (see below), use Settings → "Version and updates" →
 "Clear cache and reload", or bypass the service worker in the browser's developer tools.
 
+Tests need Node 22 or later and no dependencies:
+
+```sh
+node --test
+```
+
+They cover the calculations (`js/core.js`), the checks on backup files (`js/backup.js`), the model
+layer against a mocked `fetch` (`js/ai.js`) and the SQL export, which is loaded into Node's built-in
+SQLite and queried as in the section above. The screens and the IndexedDB code are not covered.
+
 On `localhost` the app exposes `window.__kantar` for debugging.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'kantar-v19'`) and `APP_VERSION` in `js/core.js` (`'19'`) together, then
+Bump `VERSION` in `sw.js` (`'kantar-v20'`) and `APP_VERSION` in `js/core.js` (`'20'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
@@ -224,7 +234,8 @@ version is shown under Settings → "Version and updates".
 ## Limits
 
 - One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
-  Backups from the first release (Turkish ids) can no longer be restored.
+  Backups, and data on a device, from the first release (Turkish ids) can no longer be converted;
+  version 18 of the app (git commit `68369c1`) still does.
 - Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
   less likely, and a regular backup covers the rest.
 - This is a tracking tool, not medical or dietary advice. The example plan was written for one
