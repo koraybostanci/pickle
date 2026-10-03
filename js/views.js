@@ -2,14 +2,13 @@ import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg,
-} from './app.js';
+} from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// Looked up when called: app.js and this file import each other, so its consts do not exist yet while this file loads
-const n0 = (x) => fmtInt(x);
-const n1 = (x) => fmtKg(x);
+const n0 = fmtInt;
+const n1 = fmtKg;
 const dLong = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long', weekday: 'long' });
 const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' });
 const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });

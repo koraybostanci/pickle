@@ -1,5 +1,5 @@
 // Caches the app shell so the app opens offline.
-// Bump VERSION here and APP_VERSION in js/app.js together on every release.
+// Bump VERSION here and APP_VERSION in js/core.js together on every release.
 // Files come from the versioned cache, so files of two releases never mix; only a file the cache
 // lacks (for example after the browser cleared it) goes to the network and is kept from then on.
 // A new release arrives only once the new service worker is installed.
@@ -8,7 +8,7 @@
 const VERSION = 'kantar-v18';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js', 'js/backup.js',
+  'js/app.js', 'js/core.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js', 'js/backup.js',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 
