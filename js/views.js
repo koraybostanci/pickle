@@ -226,20 +226,20 @@ function bento(day, part) {
   const isToday = day === today();
   const dd = S.days[day] || {};
   const tot = dayTotals(day);
-  const top = (glyph, name, done, extra = '') => `<span class="tile-top">${glyph}<span>${name}</span>${done ? CHECK : ''}${extra}</span>`;
+  const top = (glyph, name, done, hint = '') => `<span class="tile-top">${glyph}<span>${name}</span>${done ? CHECK : ''}${hint ? `<em>${hint}</em>` : ''}</span>`;
 
   let weight;
   if (isToday) {
     const p = progressSummary();
     const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
     weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
-      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : '<i class="pill pill-cta">Weigh in</i>')}
+      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
       <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}<em>${esc(p.tag)}</em></span>
       ${track(p.a, p.target, p.started)}
     </button>`;
   } else {
     weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
-      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : '<i class="pill pill-cta">Add</i>')}
+      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to add')}
       <span class="tile-val"><b>${dd.kg ? n1(dd.kg) : '–'}</b>${dd.kg ? ' kg' : ''}</span>
     </button>`;
   }
@@ -271,11 +271,11 @@ function bento(day, part) {
     </button>
     <div class="tile tile-water${waterDone ? ' is-done' : ''}">
       <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="Water: ${litres(water)} of ${litres(s.water)} litres. Add a glass">
-        ${top(GLYPH.drop, 'Water', waterDone)}
+        ${top(GLYPH.drop, 'Water', waterDone, water ? '' : 'tap +1 glass')}
         <span class="tile-val"><b>${litres(water)}</b> / ${litres(s.water)} l</span>
         <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
       </button>
-      ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : '<span class="tile-hint" aria-hidden="true">tap +1 glass</span>'}
+      ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
     </div>
   </section>`;
 }
@@ -285,23 +285,34 @@ function entryState(e) {
 }
 const multLabel = (m) => ({ 0.5: '½', 1.5: '1½', 2: '2' }[m] || String(m));
 
-function entryMini(e) {
-  const v = eff(e);
-  const ok = e.status === 'ok';
-  return `<button type="button" class="entry-mini${ok ? '' : ' is-pending'}" data-act="open-entry" data-id="${e.id}">
-    <span class="entry-mini-title">${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span>
-    <span class="entry-mini-meta">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
-  </button>`;
-}
-
 const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(m.name)} <span>${m.kcal}</span></button>`;
 
 // The day's meals. The next open slot carries the suggestion and the screen's one primary action.
+// Which slots a day shows, and what the plan offers in each
+function daySlots(day) {
+  const dd = S.days[day] || {};
+  const all = S.entries.filter((e) => e.day === day && e.kind === 'meal');
+  const has = (id) => all.some((e) => e.slot === id);
+  const isToday = day === today();
+  const list = [];
+  if (has('morning')) list.push({ id: 'morning', name: SLOT_NAME.morning, time: '' });
+  SLOTS.filter((x) => x.id !== 'late').forEach((x) => list.push({ id: x.id, name: x.name, time: x.time }));
+  if (dd.train || has('workout')) list.push({ id: 'workout', name: 'Workout extras', time: '', hint: 'Banana before, skyr after' });
+  // The late slot only shows once it matters: in the evening, when something is in it, or when skyr would close a protein gap
+  const sg = suggest(day);
+  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: 'After 20:00', time: '20:00', hint: 'Herbal tea; skyr if very hungry' });
+  return { list, all, sg, isToday };
+}
+const slotOptions = (id, entries) => {
+  const logged = new Set(entries.map((e) => e.planId));
+  return MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
+};
+
+// The day's meals as one short list: what is logged, what is next (with a one-tap suggestion), what is still open.
+// Tapping an open meal brings up its options in a sheet.
 function dayList(day) {
   const dd = S.days[day] || {};
-  const isToday = day === today();
-  const all = S.entries.filter((e) => e.day === day && e.kind === 'meal');
-  const sg = suggest(day);
+  const { list, all, sg, isToday } = daySlots(day);
   const over = sg.rem < -50;
   const nextId = isToday && !over && sg.meal && sg.slot ? sg.slot.id : '';
   let note = '';
@@ -311,43 +322,61 @@ function dayList(day) {
   const now = new Date();
   const minutesNow = now.getHours() * 60 + now.getMinutes();
   const rows = [];
-  const add = (id, name, time, hint) => {
-    const entries = all.filter((e) => e.slot === id).sort((x, y) => x.ts - y.ts);
-    const done = entries.some((e) => e.status === 'ok');
-    const logged = new Set(entries.map((e) => e.planId));
-    const options = MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
-    const isNext = id === nextId && (!entries.length || !!sg.extra);
-    const open = S.openSlots.has(id) ? ' open' : '';
-    let body = entries.map(entryMini).join('');
-    let late = false;
-    if (isNext) {
-      const [h, m] = time.split(':').map(Number);
-      late = !sg.extra && minutesNow > h * 60 + m + 120;
-      const others = options.filter((x) => x.id !== sg.meal.id);
-      const fit = !sg.extra && sg.tight ? ', the lightest option' : '';
-      body += `<div class="slot-next">
-        <p class="slot-suggest"><b>${esc(sg.meal.name)}</b><span>${sg.meal.kcal} kcal, ${n0(sg.meal.p)} g protein${fit}</span></p>
-        <button type="button" class="btn btn-primary btn-wide" data-act="log-plan" data-id="${sg.meal.id}">Log this meal</button>
-      </div>
-      <details class="slot-options" data-slot="${id}"${open}><summary>Something else</summary><div class="chips">${others.map((x) => chip(x)).join('')}<button type="button" class="chip chip-icon" data-act="camera">${ICON.camera}Take a photo</button></div></details>`;
-    } else if ((!entries.length || id === 'workout') && options.length) {
-      body += `<details class="slot-options" data-slot="${id}"${open}><summary>${hint || 'Show options'}</summary><div class="chips">${options.map((x) => chip(x)).join('')}</div></details>`;
+  let done = 0;
+  const main = SLOTS.filter((x) => x.id !== 'late').length;
+  for (const sl of list) {
+    const entries = all.filter((e) => e.slot === sl.id).sort((x, y) => x.ts - y.ts);
+    if (entries.some((e) => e.status === 'ok') && SLOTS.some((x) => x.id === sl.id && x.id !== 'late')) done += 1;
+    for (const e of entries) {
+      const ok = e.status === 'ok';
+      const v = eff(e);
+      rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${e.id}">
+        <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
+        <span class="meal-text"><b>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
+        <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
+      </button></li>`);
     }
-    rows.push(`<li class="slot${done ? ' is-done' : ''}${isNext ? ' is-next' : ''}">
-      <div class="slot-time">${time}</div>
-      <div class="slot-body"><h3>${name}${late ? ' <small>not logged yet</small>' : ''}</h3>${body}</div>
-    </li>`);
-  };
-  if (all.some((e) => e.slot === 'morning')) add('morning', SLOT_NAME.morning, '', '');
-  SLOTS.filter((x) => x.id !== 'late').forEach((x) => add(x.id, x.name, x.time, ''));
-  if (dd.train || all.some((e) => e.slot === 'workout')) add('workout', 'Workout extras', '', 'Banana before, skyr after');
-  add('late', 'After 20:00', '20:00', 'Herbal tea; skyr if very hungry');
+    const options = slotOptions(sl.id, entries);
+    const isNext = sl.id === nextId && (!entries.length || !!sg.extra);
+    if (isNext) {
+      const [h, m] = (sl.time || '0:0').split(':').map(Number);
+      const late = !sg.extra && sl.time && minutesNow > h * 60 + m + 120;
+      rows.push(`<li class="meal is-next"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: other options`)}">
+        <i class="meal-mark" aria-hidden="true"></i>
+        <span class="meal-text"><b>${sl.name}<small>${late ? 'not logged yet' : sl.time}</small></b><span>${esc(sg.meal.name)}, ${sg.meal.kcal} kcal${!sg.extra && sg.tight ? ', the lightest option' : ''}</span></span>
+      </button><button type="button" class="btn btn-primary meal-log" data-act="log-plan" data-id="${sg.meal.id}" aria-label="${esc(`Log ${sg.meal.name}`)}">Log</button></li>`);
+    } else if ((!entries.length || sl.id === 'workout') && options.length) {
+      rows.push(`<li class="meal"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: choose a meal`)}">
+        <i class="meal-mark" aria-hidden="true"></i>
+        <span class="meal-text"><b>${sl.name}<small>${sl.time}</small></b>${sl.hint ? `<span>${sl.hint}</span>` : ''}</span>
+        <span class="meal-add" aria-hidden="true">+</span>
+      </button></li>`);
+    }
+  }
   return `<section class="meals">
-    <div class="meals-head"><h2>${isToday ? 'Today’s meals' : 'Meals'}</h2>
+    <div class="meals-head"><h2>${isToday ? 'Today’s meals' : 'Meals'}<small>${done} of ${main}</small></h2>
       <button type="button" class="toggle" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}" aria-label="Workout day: budget ${n0(S.settings.kcalTrain)} kcal, banana and skyr added"><i aria-hidden="true"></i>Workout day</button>
     </div>
     ${note ? `<p class="meals-note${over ? ' is-over' : ''}">${note}</p>` : ''}
-    <ol class="slots">${rows.join('')}</ol></section>`;
+    <ul class="meal-list">${rows.join('')}</ul></section>`;
+}
+
+// The options for one meal, in a bottom sheet
+export function renderSlotSheet(slotId, day) {
+  const { list, all, sg, isToday } = daySlots(day);
+  const sl = list.find((x) => x.id === slotId) || { id: slotId, name: SLOT_NAME[slotId] || 'Meal', time: '' };
+  const options = slotOptions(slotId, all.filter((e) => e.slot === slotId));
+  const suggested = sg.meal && sg.slot && sg.slot.id === slotId ? sg.meal.id : '';
+  const ordered = options.slice().sort((a, b) => (a.id === suggested ? -1 : b.id === suggested ? 1 : 0));
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${sl.name}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
+  <p class="note">${sl.hint ? sl.hint + '. ' : ''}Tap what you ${isToday ? 'are having' : 'had'}.</p>
+  <ul class="meal-list option-list">${ordered.map((m) => `<li class="meal"><button type="button" class="meal-main" data-act="log-plan" data-id="${m.id}">
+      <span class="meal-text"><b>${esc(m.name)}${m.id === suggested ? '<small>suggested</small>' : ''}</b><span>${n0(m.p)} g protein</span></span>
+      <span class="meal-kcal"><b>${m.kcal}</b> kcal</span>
+    </button></li>`).join('')}</ul>
+  ${isToday ? `<p class="note">Something that is not on the plan:</p>
+  <div class="actions"><button type="button" class="btn" data-act="slot-camera">Take a photo</button><button type="button" class="btn" data-act="compose">Type it</button></div>` : ''}`;
 }
 
 // The week's treats: one small one and one flexible dinner. A coin is whole until it is spent.
@@ -383,7 +412,7 @@ function startCard() {
   if (!n) return '';
   const step = {
     1: ['Enter your first weigh-in', 'Tap “Weigh in” below. Progress and forecasts are calculated from your weigh-ins.', ''],
-    2: ['Log your first meal', 'Tap “Log this meal” under Today’s meals. No key needed.', ''],
+    2: ['Log your first meal', 'Tap “Log” next to the suggested meal under Today’s meals. No key needed.', ''],
     3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
   }[n];
