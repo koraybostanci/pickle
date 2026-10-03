@@ -6,7 +6,7 @@ import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listM
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, isLegacyData, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -708,7 +708,7 @@ async function deliverFile(name, content, type) {
 
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
-  const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
+  const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
   // The plan's pictures always travel with the backup; photos of logged meals only when asked for.
   // They are read one at a time, so the photos that are left out are never loaded.
   const planIds = new Set(Object.values(S.settings.planPhotos || {}));
@@ -718,7 +718,7 @@ async function exportBackup(withPhotos) {
     if (p) content.push((content.length > 1 ? ',' : '') + JSON.stringify({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, b64: b64FromBuf(p.buf) }));
   }
   content.push(']}');
-  const done = await deliverFile(`kantar-backup-${today()}.json`, content, 'application/json');
+  const done = await deliverFile(`pickle-backup-${today()}.json`, content, 'application/json');
   if (!done) return;
   S.settings.lastBackup = Date.now();
   await saveSettings();
@@ -785,11 +785,7 @@ async function importBackup(file) {
 async function load() {
   const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
-  S.legacy = isLegacyData(stored, S.entries.length);
-  if (stored) {
-    S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
-    if (!stored.provider) S.settings.provider = stored.apiKey ? 'anthropic' : 'openai'; // settings saved before provider choice existed
-  }
+  if (stored) S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
   S.checks = await db.kvGet('checks', []);
 }
@@ -870,7 +866,7 @@ async function checkWins() {
   let msg = '';
   if (w) {
     if (kilos > (w.kilos || 0)) { msg = kilos === 1 ? 'First kilo down' : `${kilos} kilos down`; next.kilos = kilos; }
-    if (perfect && w.perfect !== t) { msg = msg || 'Perfect day: all five goals done'; next.perfect = t; }
+    if (perfect && w.perfect !== t) { msg = msg || 'All five goals done today'; next.perfect = t; }
     if (!msg) return;
   }
   winsBusy = true;
@@ -980,7 +976,6 @@ const ACT = {
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
-  'dismiss-legacy': async () => { S.settings.legacyDismissed = true; await saveSettings(); render(); },
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
@@ -1072,6 +1067,7 @@ const ACT = {
     render();
     toast('Entry updated');
   },
+  'chart-range': (el) => { S.chartRange = el.dataset.v === 'whole' ? 'whole' : 'weeks'; render(); },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
   'goto-day': (el) => { if (el.dataset.day <= today()) { S.viewDay = el.dataset.day; go('today'); } },
   // Settings
@@ -1232,7 +1228,7 @@ const ACT = {
     try {
       // Only this app's own cache and worker: other apps on the same host share the origin
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith('kantar-')).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k.startsWith(`${APP_ID}-`)).map((k) => caches.delete(k)));
       const here = new URL('./', location.href).href;
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.filter((r) => r.scope === here).map((r) => r.unregister()));
@@ -1272,7 +1268,7 @@ const ACT = {
     S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
-    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck(); S.legacy = false;
+    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = '';
     S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
@@ -1454,7 +1450,7 @@ window.addEventListener('online', resumePending);
 })();
 
 // For tests and debugging
-if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, dayVerdict, verdictText, reviewBrief, autoReview, checkBrief };
+if (location.hostname === 'localhost') window.__app = { S, parseLocal, render, submitPhotos, dayVerdict, verdictText, reviewBrief, autoReview, checkBrief };
 
 // Keep the composer above the on-screen keyboard
 if (window.visualViewport) {
