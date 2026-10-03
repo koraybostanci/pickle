@@ -5,7 +5,7 @@
 // A new release arrives only once the new service worker is installed.
 // List every file the app loads in SHELL, so the first launch already works offline. A listed file that
 // does not exist makes the install fail.
-const VERSION = 'kantar-v19';
+const VERSION = 'kantar-v20';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/core.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js', 'js/backup.js',

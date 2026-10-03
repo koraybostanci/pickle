@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '19'; // bump together with VERSION in sw.js
+export const APP_VERSION = '20'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file; 2 = English ids
 export const MIN_SCHEMA_VERSION = 2; // the oldest data this version can read; 1 = the first release, with Turkish ids, which can no longer be converted
 // Whether a device still holds data from before that. Entries with no stored settings can only come from a release that had not saved any yet.
