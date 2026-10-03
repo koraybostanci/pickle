@@ -1,6 +1,6 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
-  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION,
+  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, kilosDown,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
@@ -22,36 +22,8 @@ const ICON = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg>',
   camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.4" r="3.4"/></svg>',
 };
+const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
-
-// ——— Glide ruler: start weight to target weight, with the current average and today's target ———
-function ruler(cur, target) {
-  const s = S.settings;
-  const W = 320;
-  const pad = 16;
-  const hi = Math.max(s.startKg, Math.min(Math.ceil(cur || s.startKg), s.startKg + 3));
-  const lo = s.targetKg;
-  const x = (kg) => pad + ((hi - Math.min(Math.max(kg, lo), hi)) / (hi - lo)) * (W - 2 * pad);
-  let ticks = '';
-  let labels = '';
-  for (let k = hi * 2; k >= lo * 2; k--) {
-    const kg = k / 2;
-    const major = k % 2 === 0;
-    ticks += `<line x1="${x(kg).toFixed(1)}" x2="${x(kg).toFixed(1)}" y1="${major ? 31 : 36}" y2="42" class="r-tick${major ? ' r-tick-major' : ''}"/>`;
-    if (major) labels += `<text x="${x(kg).toFixed(1)}" y="57" text-anchor="middle" class="r-label">${kg}</text>`;
-  }
-  const xc = cur ? x(cur) : null;
-  const xl = x(target);
-  const anchor = (px) => (px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle');
-  const tx = (px) => (px < 40 ? px - 6 : px > W - 40 ? px + 6 : px);
-  return `<svg class="ruler" viewBox="0 0 ${W} 62" role="img" aria-label="${esc(`Ruler from ${s.startKg} kg to ${s.targetKg} kg. ${cur ? `Your average is ${n1(cur)} kg.` : ''} Today’s target is ${n1(target)} kg.`)}">
-    <rect x="${pad}" y="26" width="${W - 2 * pad}" height="16" rx="3" class="r-track"/>
-    ${xc != null ? `<rect x="${pad}" y="26" width="${Math.max(0, xc - pad).toFixed(1)}" height="16" rx="3" class="r-fill"/>` : ''}
-    ${ticks}${labels}
-    <circle cx="${xl.toFixed(1)}" cy="34" r="4.5" class="r-line"/>
-    ${xc != null ? `<path d="M${(xc - 6).toFixed(1)} 15h12l-6 9z" class="r-current"/><text x="${tx(xc).toFixed(1)}" y="11" text-anchor="${anchor(xc)}" class="r-value">${n1(cur)}</text>` : ''}
-  </svg>`;
-}
 
 // Where the weight stands against the schedule, in plain words
 function progressSummary() {
@@ -67,58 +39,245 @@ function progressSummary() {
   const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
   const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
-  let head;
-  let sub;
-  let stats;
+  const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
+  let head; // the status, a few words
+  let line; // the numbers behind it, one sentence
+  let tag; // the status in two or three words, for the weight tile
   if (!started) {
-    head = `Starts ${dLong.format(parseDay(s.startDate))}`;
-    sub = `${n1(s.startKg)} kg down to ${s.targetKg} kg by ${endDate}, about ${n1(pace)} kg a week.`;
-    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Starts in', days(toStart)]];
+    head = toStart === 1 ? 'Starts tomorrow' : toStart <= 7 ? `Starts ${dWeekday.format(parseDay(s.startDate))}` : `Starts ${dShort.format(parseDay(s.startDate))}`;
+    line = plan;
+    tag = head;
   } else if (!a) {
-    head = 'Enter your first weigh-in';
-    sub = `The target is ${s.targetKg} kg by ${endDate}.`;
-    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Days left', String(Math.max(0, left))]];
+    head = 'No weigh-in yet';
+    line = plan;
+    tag = `${toLose} to lose`;
   } else {
     const diff = a.kg - target;
-    if (a.kg <= s.targetKg) head = `You reached ${s.targetKg} kg`;
-    else if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
-    else if (Math.abs(diff) <= 0.2) head = 'On schedule';
-    else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
-    else head = `${n1(diff)} kg behind schedule`;
-    sub = `${source} ${n1(a.kg)} kg; today’s target is ${n1(target)} kg.`;
     const change = s.startKg - a.kg;
-    stats = [[change < -0.05 ? 'Gained' : 'Lost', `${n1(Math.abs(change))} kg`], ['To go', toLose], ['Days left', String(Math.max(0, left))]];
+    const moved = `${n1(Math.abs(change))} kg ${change < -0.05 ? 'up' : 'down'}`;
+    if (a.kg <= s.targetKg) {
+      head = `You reached ${s.targetKg} kg`;
+      line = `${moved} since ${dShort.format(parseDay(s.startDate))}.`;
+      tag = 'Target reached';
+    } else {
+      if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
+      else if (Math.abs(diff) <= 0.2) head = 'On schedule';
+      else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
+      else head = `${n1(diff)} kg behind schedule`;
+      line = `${moved}, ${toLose} to go${left > 0 ? `, ${days(left)} left` : ''}.`;
+      tag = left <= 0 ? `${toLose} to go` : Math.abs(diff) <= 0.2 ? 'On schedule' : `${n1(Math.abs(diff))} kg ${diff < 0 ? 'ahead' : 'behind'}`;
+    }
   }
-  return { head, sub, stats, a, target, source, started };
+  return { head, line, tag, a, target, source, started };
 }
 
-// Top of Today: where you stand, the ruler, three numbers and today's weigh-in
-function glide() {
-  const p = progressSummary();
-  const kg = (S.days[today()] || {}).kg;
-  const duplicatesStartCard = p.started && !p.a && startStep() === 1;
-  return `<section class="glide" aria-label="Progress towards the target">
-    ${duplicatesStartCard ? '' : `<p class="glide-head">${esc(p.head)}</p>`}
-    ${ruler(p.a ? p.a.kg : null, p.target)}
-    <p class="legend">${p.a ? `<span><i class="key-current"></i>${esc(lower(p.source))} ${n1(p.a.kg)} kg</span>` : ''}<span><i class="key-line"></i>${p.started ? 'today’s target' : 'start'} ${n1(p.target)} kg</span></p>
-    <dl class="stats stats-3">${p.stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
-    <button type="button" class="row-field" data-act="num" data-kind="kg"><span>Today’s weigh-in</span><b>${kg ? n1(kg) + ' kg' : '–'}</b><i>${kg ? 'Change' : 'Enter'}</i></button>
-  </section>`;
+// A plain progress track from start weight to target weight: the fill is how far you are, the notch is today's target
+function track(a, target, started) {
+  const s = S.settings;
+  const span = s.startKg - s.targetKg;
+  const pct = (kg) => Math.min(100, Math.max(0, ((s.startKg - kg) / span) * 100)).toFixed(1);
+  return `<span class="track" aria-hidden="true"><i style="width:${a ? pct(a.kg) : 0}%"></i>${started ? `<u style="left:${pct(target)}%"></u>` : ''}</span>`;
 }
 
-function gauge(label, val, target, unit, step, lowerIsGood) {
-  const max = target * 1.25;
-  const v = Math.min(100, (val / max) * 100);
-  const over = lowerIsGood && val > target * 1.07;
-  const done = !lowerIsGood && val >= target;
-  let note;
-  if (lowerIsGood) note = val > target ? `${n0(val - target)} ${unit} over` : `${n0(target - val)} ${unit} left`;
-  else note = done ? 'Target reached' : `${n0(target - val)} ${unit} to go`;
-  return `<div class="gauge${over ? ' is-over' : ''}${done ? ' is-done' : ''}">
-    <div class="gauge-head"><h2>${label}</h2><p><b>${n0(val)}</b> / ${n0(target)}${unit === 'g' ? ' g' : ''}</p></div>
-    <div class="tape" role="img" aria-label="${label}: ${n0(val)} of ${n0(target)} ${unit}" style="--v:${v.toFixed(1)}%;--tick:${((step / max) * 100).toFixed(3)}%"><i></i><b></b></div>
-    <p class="gauge-note">${note}</p>
+const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
+
+// ——— Week strip: the seven days of the week as tokens. The colour is how the day went; tap one to open it. ———
+function weekStrip(day) {
+  const t = today();
+  const ws = weekStart(day);
+  const tokens = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((letter, i) => {
+    const d = addDays(ws, i);
+    // Days before the plan started only count if something was logged on them
+    const raw = d > t ? 'future' : dayStatus(d);
+    const st = raw === 'none' && d < S.settings.startDate ? 'before' : raw;
+    const perfect = d <= t && isPerfect(d);
+    const cls = `day day-${st}${perfect ? ' is-perfect' : ''}${d === t ? ' is-today' : ''}${d === day ? ' is-selected' : ''}`;
+    const label = `${dLong.format(parseDay(d))}: ${perfect ? 'all goals done' : STATUS_LABEL[st]}`;
+    return `<li><button type="button" class="${cls}" data-act="goto-day" data-day="${d}" aria-label="${esc(label)}"${d === day ? ' aria-current="date"' : ''}${d > t ? ' disabled' : ''}><span>${letter}</span><b>${parseDay(d).getDate()}</b></button></li>`;
+  }).join('');
+  const goals = dayGoals(day);
+  const done = goals.filter((g) => g.done).length;
+  const run = streak();
+  const dots = goals.map((g) => `<i class="${g.done ? 'on' : ''}"></i>`).join('');
+  const left = run > 0 ? `<span class="streak">${GLYPH.flame}<b>${run}</b> day streak</span>` : '<span class="streak">A day on plan starts a streak</span>';
+  return `<nav class="week" aria-label="Days of the week">
+    <button type="button" class="week-nav" data-act="week-prev" aria-label="Previous week">${ICON.prev}</button>
+    <ol>${tokens}</ol>
+    <button type="button" class="week-nav" data-act="week-next" aria-label="Next week"${addDays(ws, 7) > t ? ' disabled' : ''}>${ICON.next}</button>
+  </nav>
+  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}"><span class="goal-dots" aria-hidden="true">${dots}</span>${done === goals.length ? 'Perfect day' : `${done} of ${goals.length} goals`}</span></p>`;
+}
+
+const GLYPH = {
+  flame: '<svg class="glyph g-flame" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.4 1.8c.7 3 3.9 4.4 3.9 8.6a4.3 4.3 0 0 1-8.6.3c0-2.1 1-3.2 1.6-4.7.8 1 1.3 1.5 1.9 1.6-.1-2.2.1-4 1.2-5.8z"/></svg>',
+  scale: '<svg class="glyph g-scale" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="3.5"/><path d="M7 7.5a4.2 4.2 0 0 1 6 0M10 7.2v2.3"/></svg>',
+  egg: '<svg class="glyph g-egg" viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="10.6" rx="6.4" ry="7.6"/><circle cx="10" cy="11.6" r="3"/></svg>',
+  steps: '<svg class="glyph g-steps" viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="6.8" cy="12.4" rx="2.9" ry="4.8" transform="rotate(-10 6.8 12.4)"/><ellipse cx="13.6" cy="7.4" rx="2.6" ry="4.4" transform="rotate(10 13.6 7.4)"/></svg>',
+  drop: '<svg class="glyph g-drop" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2c3 3.7 5.1 6.2 5.1 8.9a5.1 5.1 0 0 1-10.2 0c0-2.7 2.1-5.2 5.1-8.9z"/></svg>',
+};
+
+// ——— The day's calories as a budget that burns down, the way an error budget does.
+// The solid line is what is left after each meal, the dashed line is the plan's pace,
+// and from "now" the forecast runs on with the meals still to come. ———
+function budgetTile(day) {
+  const isToday = day === today();
+  const target = dayTarget(day);
+  const meals = mealsOf(day).slice().sort((a, b) => a.ts - b.ts);
+  const eaten = meals.reduce((a, e) => a + eff(e).kcal, 0);
+  const rem = target - eaten;
+  const hourOf = (ts) => { const d = new Date(ts); return d.getHours() + d.getMinutes() / 60; };
+  const H0 = 6;
+  const H1 = 24;
+  const now = isToday ? Math.min(H1, Math.max(H0, hourOf(Date.now()))) : H1;
+
+  // The plan's pace: each slot spends its average plan meal, scaled so the day ends at zero
+  const slots = SLOTS.filter((x) => x.id !== 'late').map((x) => {
+    const options = MEALS.filter((m) => m.slot === x.id);
+    const [h, m] = x.time.split(':').map(Number);
+    return { id: x.id, at: h + m / 60, kcal: options.reduce((a, o) => a + o.kcal, 0) / (options.length || 1) };
+  });
+  const scale = target / (slots.reduce((a, x) => a + x.kcal, 0) || 1);
+  slots.forEach((x) => { x.kcal *= scale; });
+  const plannedByNow = slots.filter((x) => x.at <= now).reduce((a, x) => a + x.kcal, 0);
+  const logged = new Set(meals.map((e) => e.slot));
+  const open = isToday ? slots.filter((x) => !logged.has(x.id)) : [];
+  const forecast = rem - open.reduce((a, x) => a + x.kcal, 0);
+
+  // Geometry
+  const X0 = 30;
+  const X1 = 322;
+  const YT = 8;
+  const Y0 = 66;
+  const YB = 78;
+  const x = (h) => X0 + ((Math.min(H1, Math.max(H0, h)) - H0) / (H1 - H0)) * (X1 - X0);
+  const y = (v) => (v >= 0 ? YT + ((target - Math.min(v, target)) / target) * (Y0 - YT) : Y0 + Math.min(1, -v / (target * 0.25)) * (YB - Y0));
+  const f = (n) => n.toFixed(1);
+  let plan = `M${f(x(H0))} ${f(y(target))}`;
+  let left = target;
+  for (const sl of slots) { plan += `H${f(x(sl.at))}`; left -= sl.kcal; plan += `V${f(y(left))}`; }
+  plan += `H${f(x(H1))}`;
+  let actual = `M${f(x(H0))} ${f(y(target))}`;
+  let r = target;
+  let dots = '';
+  for (const e of meals) {
+    const t = Math.min(now, Math.max(H0, hourOf(e.ts)));
+    actual += `H${f(x(t))}`;
+    r -= eff(e).kcal;
+    actual += `V${f(y(r))}`;
+    dots += `<circle cx="${f(x(t))}" cy="${f(y(r))}" r="2.6" class="burn-dot"/>`;
+  }
+  actual += `H${f(x(now))}`;
+  const area = `${actual}V${f(Y0)}H${f(x(H0))}Z`;
+  let ahead = '';
+  if (isToday && now < H1) {
+    ahead = `M${f(x(now))} ${f(y(rem))}`;
+    let v = rem;
+    for (const sl of open) { ahead += `H${f(x(Math.max(now, sl.at)))}`; v -= sl.kcal; ahead += `V${f(y(v))}`; }
+    ahead += `H${f(x(H1))}`;
+  }
+
+  // The verdict, in the budget's own terms
+  const over = rem < -target * 0.07;
+  const rate = plannedByNow > 0 ? eaten / plannedByNow : 0;
+  let tone = 'calm';
+  let verdict;
+  if (!isToday) {
+    verdict = rem >= 0 ? `Ended ${n0(rem)} under` : `Ended ${n0(-rem)} over`;
+    tone = over ? 'bad' : meals.length ? 'good' : 'calm';
+  } else if (rem < 0) { verdict = 'Budget spent'; tone = 'bad'; }
+  else if (!meals.length) verdict = plannedByNow > 0 ? 'Nothing spent yet' : 'Full budget';
+  else if (plannedByNow === 0) verdict = 'Early start';
+  else if (rate > 1.25) { verdict = `Burning ${rate.toLocaleString(LOCALE, { maximumFractionDigits: 1 })}× plan`; tone = 'warn'; }
+  else if (rate < 0.7) verdict = 'Under plan so far';
+  else { verdict = 'On pace'; tone = 'good'; }
+  const pct = Math.round((Math.max(0, rem) / target) * 100);
+  let foot;
+  if (!isToday || now >= H1) foot = `${n0(eaten)} of ${n0(target)} kcal spent`;
+  else if (!open.length) foot = rem >= 0 ? `All meals in, ${n0(rem)} kcal to spare` : `All meals in, ${n0(-rem)} kcal over`;
+  else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
+  const forecastBad = isToday && open.length > 0 && forecast < -target * 0.07;
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}. ${foot}.`;
+  return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}" role="group" aria-label="${esc(label)}">
+    <div class="budget-head">
+      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>kcal ${rem >= 0 ? 'left' : 'over'}</span></p>
+      <i class="pill pill-${tone}">${esc(verdict)}</i>
+    </div>
+    <svg class="burn" viewBox="0 0 330 92" aria-hidden="true">
+      <rect x="${X0}" y="${Y0}" width="${X1 - X0}" height="${YB - Y0}" class="burn-red"/>
+      <path d="${area}" class="burn-area"/>
+      <path d="${plan}" class="burn-plan"/>
+      <path d="M${X0} ${Y0}H${X1}" class="burn-zero"/>
+      ${ahead ? `<path d="${ahead}" class="burn-ahead${forecastBad ? ' is-bad' : ''}"/>` : ''}
+      <path d="${actual}" class="burn-line"/>
+      ${dots}
+      ${isToday && now < H1 ? `<path d="M${f(x(now))} ${YT - 4}V${YB}" class="burn-now"/><circle cx="${f(x(now))}" cy="${f(y(rem))}" r="4.5" class="burn-head"/>` : ''}
+      <text x="${X0 - 5}" y="${YT + 4}" text-anchor="end" class="burn-axis">${target >= 1000 ? (target / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 2 }) + 'k' : n0(target)}</text>
+      <text x="${X0 - 5}" y="${Y0 + 4}" text-anchor="end" class="burn-axis">0</text>
+      ${[6, 12, 18, 24].map((h) => `<text x="${f(x(h))}" y="90" text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}" class="burn-axis">${String(h).padStart(2, '0')}</text>`).join('')}
+    </svg>
+    <p class="budget-foot"><span>${pct}% of budget left</span><span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span></p>
   </div>`;
+}
+
+// ——— The day at a glance: the calorie budget with weight and protein beside it. Steps and water, which fill up
+// over the day, come as a second pair after the meals. ———
+function bento(day, part) {
+  const s = S.settings;
+  const isToday = day === today();
+  const dd = S.days[day] || {};
+  const tot = dayTotals(day);
+  const top = (glyph, name, done, extra = '') => `<span class="tile-top">${glyph}<span>${name}</span>${done ? CHECK : ''}${extra}</span>`;
+
+  let weight;
+  if (isToday) {
+    const p = progressSummary();
+    const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
+    weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
+      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : '<i class="pill pill-cta">Weigh in</i>')}
+      <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}<em>${esc(p.tag)}</em></span>
+      ${track(p.a, p.target, p.started)}
+    </button>`;
+  } else {
+    weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
+      ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : '<i class="pill pill-cta">Add</i>')}
+      <span class="tile-val"><b>${dd.kg ? n1(dd.kg) : '–'}</b>${dd.kg ? ' kg' : ''}</span>
+    </button>`;
+  }
+
+  const pGoal = Math.min(s.proteinMin || s.protein, s.protein);
+  const pDone = tot.p >= pGoal;
+  const steps = dd.steps || 0;
+  const stepsDone = steps >= s.steps;
+  const water = dd.water || 0;
+  const waterDone = water >= s.water;
+  const litres = (ml) => (ml / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
+  const glasses = Math.max(1, Math.min(12, Math.round(s.water / 250)));
+  const full = Math.min(glasses, Math.floor(water / 250));
+  const pct = (v, of) => Math.min(100, (v / of) * 100).toFixed(1);
+  if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
+    ${budgetTile(day)}
+    ${weight}
+    <div class="tile${pDone ? ' is-done' : ''}" role="group" aria-label="Protein: ${n0(tot.p)} of ${n0(s.protein)} g">
+      ${top(GLYPH.egg, 'Protein', pDone)}
+      <span class="tile-val"><b>${n0(tot.p)}</b> / ${n0(s.protein)} g</span>
+      <span class="bar" style="--v:${pct(tot.p, s.protein)}%"><i></i></span>
+    </div>
+  </section>`;
+  return `<section class="bento bento-more" aria-label="Steps and water">
+    <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="Steps: ${steps ? n0(steps) : 'none'} of ${n0(s.steps)}. Enter">
+      ${top(GLYPH.steps, 'Steps', stepsDone)}
+      <span class="tile-val"><b>${steps ? n0(steps) : '–'}</b> / ${n0(s.steps)}</span>
+      <span class="bar" style="--v:${pct(steps, s.steps)}%"><i></i></span>
+    </button>
+    <div class="tile tile-water${waterDone ? ' is-done' : ''}">
+      <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="Water: ${litres(water)} of ${litres(s.water)} litres. Add a glass">
+        ${top(GLYPH.drop, 'Water', waterDone)}
+        <span class="tile-val"><b>${litres(water)}</b> / ${litres(s.water)} l</span>
+        <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
+      </button>
+      ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : '<span class="tile-hint" aria-hidden="true">tap +1 glass</span>'}
+    </div>
+  </section>`;
 }
 
 function entryState(e) {
@@ -131,7 +290,7 @@ function entryMini(e) {
   const ok = e.status === 'ok';
   return `<button type="button" class="entry-mini${ok ? '' : ' is-pending'}" data-act="open-entry" data-id="${e.id}">
     <span class="entry-mini-title">${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span>
-    <span class="entry-mini-meta">${ok ? `${n0(v.kcal)} kcal, ${n0(v.p)} g protein` : esc(entryState(e))}</span>
+    <span class="entry-mini-meta">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
   </button>`;
 }
 
@@ -183,42 +342,29 @@ function dayList(day) {
   SLOTS.filter((x) => x.id !== 'late').forEach((x) => add(x.id, x.name, x.time, ''));
   if (dd.train || all.some((e) => e.slot === 'workout')) add('workout', 'Workout extras', '', 'Banana before, skyr after');
   add('late', 'After 20:00', '20:00', 'Herbal tea; skyr if very hungry');
-  return `<section class="meals"><h2>${isToday ? 'Today’s meals' : 'Meals'}</h2>
-    <button type="button" class="switch" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}">
-      <i aria-hidden="true"></i><span>Workout day</span><small>${dd.train ? `target ${n0(S.settings.kcalTrain)} kcal, banana and skyr added` : `target ${n0(S.settings.kcalRest)} kcal`}</small>
-    </button>
+  return `<section class="meals">
+    <div class="meals-head"><h2>${isToday ? 'Today’s meals' : 'Meals'}</h2>
+      <button type="button" class="toggle" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}" aria-label="Workout day: budget ${n0(S.settings.kcalTrain)} kcal, banana and skyr added"><i aria-hidden="true"></i>Workout day</button>
+    </div>
     ${note ? `<p class="meals-note${over ? ' is-over' : ''}">${note}</p>` : ''}
     <ol class="slots">${rows.join('')}</ol></section>`;
 }
 
-function counters(day) {
-  const dd = S.days[day] || {};
-  const water = dd.water || 0;
-  const litres = (ml) => (ml / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 2 });
-  return `<section class="counters" aria-label="Steps and water">
-    <button type="button" class="row-field" data-act="num" data-kind="steps">
-      <span>Steps</span><b>${dd.steps ? n0(dd.steps) : '–'}</b><small>/ ${n0(S.settings.steps)}</small><i>${dd.steps ? 'Change' : 'Enter'}</i>
-    </button>
-    <div class="row-field">
-      <span id="water-label">Water</span><b>${litres(water)} l</b><small>/ ${litres(S.settings.water)} l</small>
-      <div class="stepper" role="group" aria-labelledby="water-label">
-        <button type="button" data-act="water" data-v="-250" aria-label="Remove 250 ml"${water ? '' : ' disabled'}>−</button>
-        <button type="button" data-act="water" data-v="250" aria-label="Add 250 ml">+</button>
-      </div>
-    </div>
-  </section>`;
-}
-
-function flexBlock(day) {
+// The week's treats: one small one and one flexible dinner. A coin is whole until it is spent.
+function treats(day) {
   const f = weekFlex(day);
-  const pips = (n, max) => Array.from({ length: Math.max(max, n) }, (_, i) => `<i class="${i < n ? (i < max ? 'on' : 'on over') : ''}"></i>`).join('');
-  return `<section class="flex">
-    <h2>This week’s flex budget</h2>
-    <dl>
-      <div><dt>Beer or small dessert</dt><dd><span class="pips">${pips(f.small, 1)}</span>${f.small} / 1</dd></div>
-      <div><dt>Flexible dinner</dt><dd><span class="pips">${pips(f.meal, 1)}</span>${f.meal} / 1</dd></div>
-      ${f.off ? `<div><dt>Off-plan entries</dt><dd>${f.off}</dd></div>` : ''}
-    </dl>
+  const row = (name, used, max) => {
+    const state = used > max ? 'is-over' : used >= max ? 'is-used' : '';
+    const text = used > max ? `${used - max} over` : used >= max ? 'Used' : `${max - used} left`;
+    return `<li class="${state}"><i class="coin" aria-hidden="true"></i><span>${name}</span><b>${text}</b></li>`;
+  };
+  return `<section class="treats">
+    <h2>This week’s treats</h2>
+    <ul>
+      ${row('Beer or small dessert', f.small, 1)}
+      ${row('Flexible dinner', f.meal, 1)}
+      ${f.off ? `<li class="is-over"><i class="coin" aria-hidden="true"></i><span>Off-plan entries</span><b>${f.off}</b></li>` : ''}
+    </ul>
     ${day === today() ? `<div class="chips">${FLEX.map((x) => chip(x, 'log-flex')).join('')}</div>` : ''}
   </section>`;
 }
@@ -236,7 +382,7 @@ function startCard() {
   const n = startStep();
   if (!n) return '';
   const step = {
-    1: ['Enter your first weigh-in', 'Progress and forecasts are calculated from your weigh-ins.', '<button type="button" class="btn btn-primary" data-act="num" data-kind="kg">Enter weight</button>'],
+    1: ['Enter your first weigh-in', 'Tap “Weigh in” below. Progress and forecasts are calculated from your weigh-ins.', ''],
     2: ['Log your first meal', 'Tap “Log this meal” under Today’s meals. No key needed.', ''],
     3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
@@ -252,31 +398,20 @@ function startCard() {
 export function renderToday() {
   const day = S.viewDay;
   const isToday = day === today();
-  const tot = dayTotals(day);
-  const dd = S.days[day] || {};
   return `
   <header class="top">
     <div>
-      <h1>${isToday ? 'Today' : esc(dShort.format(parseDay(day)))}</h1>
-      <p class="sub">${isToday ? esc(dLong.format(parseDay(day))) : `${esc(dWeekday.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">Back to today</button>`}</p>
+      <h1>${isToday ? 'Today' : esc(dWeekday.format(parseDay(day)))}</h1>
+      <p class="sub">${esc(dShort.format(parseDay(day)))}${isToday ? '' : '. <button type="button" class="link link-inline" data-act="day-today">Back to today</button>'}</p>
     </div>
-    <div class="top-actions">
-      <button type="button" class="icon-btn" data-act="day-prev" aria-label="Previous day">${ICON.prev}</button>
-      <button type="button" class="icon-btn" data-act="day-next" aria-label="Next day"${isToday ? ' disabled' : ''}>${ICON.next}</button>
-      ${settingsButton}
-    </div>
+    <div class="top-actions">${settingsButton}</div>
   </header>
   ${isToday ? startCard() : ''}
-  ${isToday ? glide() : `<section class="glide"><button type="button" class="row-field" data-act="num" data-kind="kg"><span>Weigh-in for this day</span><b>${dd.kg ? n1(dd.kg) + ' kg' : 'None'}</b><i>${dd.kg ? 'Change' : 'Enter'}</i></button></section>`}
-  <section class="budget" aria-label="Daily budget">
-    <div class="budget-grid">
-      ${gauge('Calories', tot.kcal, dayTarget(day), 'kcal', 100, true)}
-      ${gauge('Protein', tot.p, S.settings.protein, 'g', 10, false)}
-    </div>
-  </section>
+  ${weekStrip(day)}
+  ${bento(day, 'top')}
   ${dayList(day)}
-  ${counters(day)}
-  ${flexBlock(day)}`;
+  ${bento(day, 'more')}
+  ${treats(day)}`;
 }
 
 // ——— Bottom sheets ———
@@ -554,7 +689,6 @@ export function attachChart(root) {
   svg.addEventListener('pointerleave', hide);
 }
 
-const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged' };
 
 function calendar() {
   const s = S.settings;
@@ -618,7 +752,7 @@ function adjustNotice() {
 
 export function renderProgress() {
   const s = S.settings;
-  const { head, sub, a, target } = progressSummary();
+  const { head, line, a, target, started } = progressSummary();
   const pr = projection();
   const series = weightSeries();
   const lost = a ? s.startKg - a.kg : 0;
@@ -636,9 +770,11 @@ export function renderProgress() {
   ${adjustNotice()}
   <section class="glide">
     <p class="glide-head">${esc(head)}</p>
-    ${ruler(a ? a.kg : null, target)}
-    <p class="glide-note">${esc(sub)}</p>
+    <p class="glide-note">${esc(line)}</p>
+    ${track(a, target, started)}
+    <p class="track-ends"><span>${s.startKg} kg</span><span>${s.targetKg} kg</span></p>
   </section>
+  ${wins()}
   <section>
     ${weightChart()}
     <dl class="stats">
@@ -663,6 +799,31 @@ export function renderProgress() {
       <summary>Weigh-in table</summary>
       ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Target</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
     </details>
+  </section>`;
+}
+
+// What has been collected so far: one token per kilo, and the runs of good days
+function wins() {
+  const s = S.settings;
+  const a = avg7(today());
+  const marks = [];
+  for (let k = Math.ceil(s.startKg) - 1; k >= Math.ceil(s.targetKg); k--) marks.push(k);
+  if (!Number.isInteger(s.targetKg)) marks.push(s.targetKg);
+  const got = (kg) => !!a && today() >= s.startDate && a.kg <= kg + 1e-6;
+  const reached = marks.filter(got).length;
+  const h = history();
+  const run = streak();
+  const tokens = marks.map((kg, i) => `<li class="${got(kg) ? 'is-got' : ''}${i === marks.length - 1 ? ' is-goal' : ''}"${got(kg) ? '' : ' aria-label="' + kg + ' kg, not reached yet"'}>${kg}</li>`).join('');
+  return `<section class="wins" aria-labelledby="wins-title">
+    <h2 id="wins-title">${reached ? `${reached} of ${marks.length} kilos collected` : 'Kilos to collect'}</h2>
+    <p class="note">Each one is yours when the 7-day average reaches it.</p>
+    <ol class="kilos">${tokens}</ol>
+    <dl class="stats">
+      <div><dt>Streak</dt><dd>${run} ${run === 1 ? 'day' : 'days'}</dd></div>
+      <div><dt>Best streak</dt><dd>${Math.max(h.best, run)} ${Math.max(h.best, run) === 1 ? 'day' : 'days'}</dd></div>
+      <div><dt>On plan</dt><dd>${h.onPlan} of ${h.days}</dd></div>
+      <div><dt>Perfect days</dt><dd>${h.perfect}</dd></div>
+    </dl>
   </section>`;
 }
 

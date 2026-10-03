@@ -8,7 +8,7 @@ import {
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '11'; // bump together with VERSION in sw.js
+export const APP_VERSION = '13'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -72,6 +72,45 @@ export function dayStatus(day) {
   if (t.kcal <= target * 1.07 && t.kcal >= target * 0.75 && t.p >= S.settings.proteinMin && !hasOff) return 'on';
   if (t.kcal <= target * 1.15) return 'near';
   return 'over';
+}
+
+// The five things a day can get right. Calories count once enough is logged and the total is within budget.
+export function dayGoals(day) {
+  const dd = S.days[day] || {};
+  const t = dayTotals(day);
+  const target = dayTarget(day);
+  const s = S.settings;
+  return [
+    { id: 'weigh', name: 'Weigh-in', done: !!dd.kg },
+    { id: 'kcal', name: 'Calories', done: t.n > 0 && t.kcal >= target * 0.75 && t.kcal <= target * 1.07 },
+    { id: 'protein', name: 'Protein', done: t.p >= Math.min(s.proteinMin || s.protein, s.protein) },
+    { id: 'steps', name: 'Steps', done: (dd.steps || 0) >= s.steps },
+    { id: 'water', name: 'Water', done: (dd.water || 0) >= s.water },
+  ];
+}
+export const isPerfect = (day) => dayGoals(day).every((g) => g.done);
+
+// Whole kilos lost since the start, by the 7-day average
+export function kilosDown(day = today()) {
+  const a = avg7(day);
+  if (!a || day < S.settings.startDate) return 0;
+  return Math.max(0, Math.floor(S.settings.startKg - a.kg + 1e-6));
+}
+
+// Looking back over the plan so far: days on plan, the longest run, perfect days
+export function history() {
+  const s = S.settings;
+  const t = today();
+  let onPlan = 0;
+  let best = 0;
+  let run = 0;
+  let perfect = 0;
+  for (let d = s.startDate; d <= t; d = addDays(d, 1)) {
+    const st = dayStatus(d);
+    if (st === 'on' || st === 'near') { onPlan += 1; run += 1; best = Math.max(best, run); } else if (d !== t) run = 0;
+    if (isPerfect(d)) perfect += 1;
+  }
+  return { onPlan, best, perfect, days: Math.max(0, diffDays(s.startDate, t) + 1) };
 }
 
 export function avg7(day) {
@@ -619,12 +658,51 @@ function render() {
   renderFavorites();
   hydratePhotos();
   if (S.tab === 'progress') attachChart(v);
+  checkWins();
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
     if (html) { $('#sheet-body').innerHTML = html; hydratePhotos(); } else closeSheet();
   }
+}
+
+// ——— Small celebrations: a kilo milestone, a day with all five goals done ———
+function celebrate() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  box.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('i');
+    p.className = 'c' + (i % 4);
+    p.style.setProperty('--x', `${Math.round((Math.random() * 2 - 1) * 44)}vw`);
+    p.style.setProperty('--r', `${Math.round(Math.random() * 720 - 360)}deg`);
+    p.style.setProperty('--d', `${(Math.random() * 0.2).toFixed(2)}s`);
+    box.append(p);
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), 1900);
+}
+let winsBusy = false;
+async function checkWins() {
+  if (winsBusy) return;
+  const t = today();
+  const kilos = kilosDown(t);
+  const perfect = isPerfect(t);
+  const w = S.settings.wins;
+  // First run with this feature: note where things stand without celebrating the past
+  const next = w ? { ...w } : { kilos, perfect: perfect ? t : '' };
+  let msg = '';
+  if (w) {
+    if (kilos > (w.kilos || 0)) { msg = kilos === 1 ? 'First kilo down' : `${kilos} kilos down`; next.kilos = kilos; }
+    if (perfect && w.perfect !== t) { msg = msg || 'Perfect day: all five goals done'; next.perfect = t; }
+    if (!msg) return;
+  }
+  winsBusy = true;
+  S.settings.wins = next;
+  try { await saveSettings(); } finally { winsBusy = false; }
+  if (msg) { celebrate(); toast(msg); }
 }
 
 function renderFavorites() {
@@ -703,8 +781,8 @@ const ACT = {
   'tab': (el) => go(el.dataset.tab),
   'settings': (el) => openSettings(el && el.dataset.sec),
   'close-sheet': () => closeSheet(),
-  'day-prev': () => { S.viewDay = addDays(S.viewDay, -1); render(); },
-  'day-next': () => { if (S.viewDay < today()) { S.viewDay = addDays(S.viewDay, 1); render(); } },
+  'week-prev': () => { S.viewDay = addDays(S.viewDay, -7); render(); },
+  'week-next': () => { const d = addDays(S.viewDay, 7); S.viewDay = d > today() ? today() : d; render(); },
   'day-today': () => { S.viewDay = today(); render(); },
   'log-plan': (el) => logMeal(MEAL_BY_ID[el.dataset.id], 'plan'),
   'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'flex' }, 'flex', today()); },
@@ -734,9 +812,12 @@ const ACT = {
   },
   'train': async (el) => { await saveDay(S.viewDay, { train: el.dataset.v === '1' }); render(); },
   'water': async (el) => {
-    const cur = (S.days[S.viewDay] && S.days[S.viewDay].water) || 0;
-    await saveDay(S.viewDay, { water: Math.max(0, cur + Number(el.dataset.v)) });
+    const day = S.viewDay;
+    const cur = (S.days[day] && S.days[day].water) || 0;
+    const next = Math.max(0, cur + Number(el.dataset.v));
+    await saveDay(day, { water: next });
     render();
+    if (next > cur) toast('A glass of water added', { label: 'Undo', fn: async () => { await saveDay(day, { water: cur }); render(); } });
   },
   'mult': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
@@ -796,7 +877,7 @@ const ACT = {
     toast('Entry updated');
   },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
-  'goto-day': (el) => { S.viewDay = el.dataset.day; go('today'); },
+  'goto-day': (el) => { if (el.dataset.day <= today()) { S.viewDay = el.dataset.day; go('today'); } },
   // Settings
   'save-key': async () => {
     if (S.settings.provider === 'openai') {
