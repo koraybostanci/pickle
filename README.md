@@ -14,14 +14,17 @@ shows one: food in the pan, the weight on the beam, the two in balance.
 
 ## What it does
 
-- **Today:** where you stand against the schedule, the day's calorie and protein budget, the meals
-  of the day with a suggestion for the next one, steps, water and a weekly budget for treats.
+- **Today:** the week as seven day tokens with your streak; the day's calories as a budget that
+  burns down over the day, with the plan's pace beside it and a forecast for the evening; weight
+  against the schedule, protein, the meals of the day with a suggestion for the next one, steps,
+  water and the week's treats. Five daily goals (weigh-in, calories, protein, steps, water) make a
+  perfect day.
 - **Log:** everything you sent, one line per entry. Take a photo, choose photos from the library, or
   type. A model estimates calories and macros and lists each item with its amount and calories,
   including what it had to assume ("falafel, assumed fried"). Tell it in a few words what the photo
   does not show and it revises the items; you can also correct the portion, the numbers or the time.
-- **Progress:** weight chart with a 7-day average, projected arrival date, a consistency calendar
-  and checkpoints.
+- **Progress:** one token for every kilo collected, streaks and perfect days, the weight chart with
+  a 7-day average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** the meal options with ingredients and amounts, and the rules of the plan.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
