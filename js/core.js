@@ -1,11 +1,11 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '20'; // bump together with VERSION in sw.js
-export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file; 2 = English ids
-export const MIN_SCHEMA_VERSION = 2; // the oldest data this version can read; 1 = the first release, with Turkish ids, which can no longer be converted
-// Whether a device still holds data from before that. Entries with no stored settings can only come from a release that had not saved any yet.
-export const isLegacyData = (stored, entryCount) => (stored ? (stored.schema || 1) < MIN_SCHEMA_VERSION : entryCount > 0);
+export const APP_VERSION = '21'; // bump together with VERSION in sw.js
+export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
+// The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
+// never follows the app's name (Pickle), so a rename touches only what people see and never the data.
+export const APP_ID = 'weightplan';
 
 // ——— State ———
 // The settings of an app that has just been installed (new objects each time, so a reset never shares them)
@@ -20,7 +20,6 @@ export const freshCheck = () => ({ photos: [], note: '', busy: false, status: ''
 
 export const S = {
   tab: 'today',
-  legacy: false, // the device holds data from the first release, which can no longer be read correctly
   settings: freshSettings(),
   entries: [],
   days: {},
@@ -36,6 +35,7 @@ export const S = {
   persisted: null,
   storage: null,
   calPick: null,
+  chartRange: 'weeks', // the weight chart: the last two weeks, or the whole plan
   sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num'|'slot'|'plan'|'plan-frame', ...}
   openSetting: '', // expanded section in Settings
 };
@@ -158,7 +158,7 @@ export function projection() {
   const slope = den ? num / den : 0;
   // Where the fitted line stands today; the 7-day average lags it by about three days on a steady loss
   const now = my + slope * (diffDays(w[0].day, today()) - mx);
-  const out = { slope, perWeek: slope * 7 };
+  const out = { slope, perWeek: slope * 7, now }; // now: where the fitted line stands today
   if (slope < -0.005) {
     const daysLeft = Math.ceil((now - S.settings.targetKg) / -slope - 1e-6); // the 1e-6 keeps float noise from adding a day
     out.eta = daysLeft > 0 && daysLeft < 730 ? addDays(today(), daysLeft) : null;
@@ -257,7 +257,7 @@ export function dayVerdict(day) {
 }
 export const VERDICT = {
   open: 'In progress', thin: 'Too little logged', on: 'In line', near: 'Mostly in line',
-  under: 'Under target', over: 'Slightly over', back: 'Set you back',
+  under: 'Under target', over: 'A bit over', back: 'Well over',
 };
 // The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
 export function verdictText(v) {

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
-  fmtKg, isLegacyData, freshSettings, freshCheck, today, SCHEMA_VERSION, MIN_SCHEMA_VERSION,
+  fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION,
 } from '../js/core.js';
 import { addDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -84,15 +84,6 @@ test('weights never print as -0.0', () => {
 test('hhmm takes a Date or a timestamp', () => {
   assert.equal(hhmm(new Date(2026, 0, 1, 7, 5)), '07:05');
   assert.equal(hhmm(new Date(2026, 0, 1, 7, 5).getTime()), '07:05');
-});
-
-test('data from the first release is recognised, current data and a fresh install are not', () => {
-  assert.equal(isLegacyData({ schema: 1 }, 5), true);
-  assert.equal(isLegacyData({}, 5), true); // settings saved before the version was stamped
-  assert.equal(isLegacyData(null, 5), true); // entries but no settings
-  assert.equal(isLegacyData({ schema: SCHEMA_VERSION }, 5), false);
-  assert.equal(isLegacyData(null, 0), false); // a fresh install
-  assert.ok(MIN_SCHEMA_VERSION <= SCHEMA_VERSION);
 });
 
 test('a food added to the plan without a short name does not put "undefined" in the model digest', () => {
