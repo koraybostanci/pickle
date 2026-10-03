@@ -5,7 +5,7 @@
 const VERSION = 'kantar-v15';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js',
+  'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 

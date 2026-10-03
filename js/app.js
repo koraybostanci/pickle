@@ -1,12 +1,13 @@
 import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
+import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
 import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
-import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
 export const APP_VERSION = '15'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
@@ -448,16 +449,76 @@ async function storePlanPhoto(mealId, blob, w, h) {
   await saveSettings();
   if (old) { await db.del('photos', old); const u = S.urls.get(old); if (u) { URL.revokeObjectURL(u); S.urls.delete(old); } }
 }
-async function setPlanPhoto(mealId, file) {
+// Framing step: the photo is opened with the house treatment applied, the person centres the plate in the
+// circle, and only that square is stored. The original never touches the database.
+let frame = null; // { id, src, zoom, cx, cy }
+const frameCanvas = () => document.getElementById('frame-canvas');
+function paintFrame() {
+  const c = frameCanvas();
+  if (c && frame) picture.drawFrame(c, frame.src, frame.zoom, frame.cx, frame.cy);
+}
+function moveFrame(dxCss, dyCss) {
+  const c = frameCanvas();
+  if (!c || !frame) return;
+  const { side } = picture.frameRect(frame.src, frame.zoom, frame.cx, frame.cy);
+  const perCss = side / c.getBoundingClientRect().width; // source pixels per CSS pixel
+  const half = side / 2;
+  frame.cx = Math.min(frame.src.width - half, Math.max(half, frame.cx - dxCss * perCss));
+  frame.cy = Math.min(frame.src.height - half, Math.max(half, frame.cy - dyCss * perCss));
+  paintFrame();
+}
+function zoomFrame(z) {
+  if (!frame) return;
+  frame.zoom = Math.min(3, Math.max(1, z));
+  moveFrame(0, 0); // keeps the centre inside the photo at the new zoom
+  const r = document.getElementById('frame-zoom');
+  if (r && Math.abs(Number(r.value) - frame.zoom) > 0.005) r.value = String(frame.zoom);
+}
+async function openFrame(mealId, file) {
   if (!MEAL_BY_ID[mealId]) return;
+  let src;
+  try { src = await picture.prepare(file); } catch (err) { return toast('Could not open that photo'); }
+  frame = { id: mealId, src, zoom: 1, cx: src.width / 2, cy: src.height / 2 };
+  openSheet(renderFrameSheet(mealId), { type: 'plan-frame', id: mealId });
+  paintFrame();
+  const c = frameCanvas();
+  const pts = new Map();
+  let pinch = 0;
+  c.addEventListener('pointerdown', (ev) => { c.setPointerCapture(ev.pointerId); pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY }); pinch = 0; });
+  c.addEventListener('pointermove', (ev) => {
+    const p = pts.get(ev.pointerId);
+    if (!p) return;
+    if (pts.size === 1) moveFrame(ev.clientX - p.x, ev.clientY - p.y);
+    pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pts.size === 2) {
+      const [a, b] = Array.from(pts.values());
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch) zoomFrame(frame.zoom * (dist / pinch));
+      pinch = dist;
+    }
+  });
+  const end = (ev) => { pts.delete(ev.pointerId); pinch = 0; };
+  c.addEventListener('pointerup', end);
+  c.addEventListener('pointercancel', end);
+}
+async function saveFrame() {
+  if (!frame) return;
+  const { id, src, zoom, cx, cy } = frame;
   try {
-    const small = await shrink(file);
-    await storePlanPhoto(mealId, small.blob, small.w, small.h);
+    await storePlanPhoto(id, await picture.render(src, zoom, cx, cy), picture.PICTURE_SIZE, picture.PICTURE_SIZE);
   } catch (err) {
-    return toast('Could not open that photo');
+    return toast('Could not save the picture');
   }
+  frame = null;
+  openSheet(renderPlanSheet(id), { type: 'plan', id });
   render();
-  toast('Photo added to the plan');
+  toast('Picture saved');
+}
+function cancelFrame() {
+  const id = frame ? frame.id : S.sheet && S.sheet.id;
+  frame = null;
+  if (id) openSheet(renderPlanSheet(id), { type: 'plan', id }); else closeSheet();
+  hydratePhotos();
 }
 async function removePlanPhoto(mealId) {
   const id = (S.settings.planPhotos || {})[mealId];
@@ -511,8 +572,10 @@ async function analyzeEntry(id, opts = {}) {
         });
         // A plan meal without a picture takes this photo as its own
         if (blobs[0] && !(S.settings.planPhotos || {})[plan.id]) {
-          const src = await db.get('photos', (e.photoIds || [])[0]);
-          await storePlanPhoto(plan.id, blobs[0], (src && src.w) || 0, (src && src.h) || 0);
+          try {
+            const src = await picture.prepare(blobs[0]);
+            await storePlanPhoto(plan.id, await picture.render(src), picture.PICTURE_SIZE, picture.PICTURE_SIZE);
+          } catch (err) { /* the picture is optional; the entry itself is fine */ }
         }
       } else {
         const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String(i.n || ''), g: +i.g || 0, kcal: +i.kcal || 0, p: +i.p || 0 })) : [];
@@ -806,6 +869,7 @@ function openSheet(html, state, focusSel, keepFocus) {
 function closeSheet() {
   $('#sheet').hidden = true;
   S.sheet = null;
+  frame = null; // a photo being framed is dropped with the sheet
   document.body.classList.remove('sheet-open');
   if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
   sheetOpener = null;
@@ -853,6 +917,8 @@ const ACT = {
   'plan-photo-cam': (el) => { photoTarget = el.dataset.id; $('#f-cam').click(); },
   'plan-photo-lib': (el) => { photoTarget = el.dataset.id; $('#f-lib').click(); },
   'plan-photo-remove': (el) => removePlanPhoto(el.dataset.id),
+  'frame-save': () => saveFrame(),
+  'frame-cancel': () => cancelFrame(),
   'log-plan-today': (el) => { closeSheet(); return logMeal(MEAL_BY_ID[el.dataset.id], 'plan', today()); },
   'hint': (el) => {
     const inp = $('#composer-input');
@@ -1106,6 +1172,9 @@ document.addEventListener('click', (ev) => {
   if (ACT[act]) { ev.preventDefault(); ACT[act](el); }
 });
 
+// The zoom slider of the framing step
+document.addEventListener('input', (ev) => { if (ev.target.id === 'frame-zoom') zoomFrame(Number(ev.target.value)); });
+
 document.addEventListener('change', async (ev) => {
   const el = ev.target;
   if (el.id === 'f-cam' || el.id === 'f-lib') {
@@ -1114,7 +1183,7 @@ document.addEventListener('change', async (ev) => {
     // A photo asked for from the Plan screen becomes that meal's picture and is not logged
     const target = photoTarget;
     photoTarget = null;
-    if (target) { if (files.length) setPlanPhoto(target, files[0]); return; }
+    if (target) { if (files.length) openFrame(target, files[0]); return; }
     const note = $('#composer-input').value.trim();
     if (files.length) { $('#composer-input').value = ''; submitPhotos(files, note); }
     return;

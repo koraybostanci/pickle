@@ -912,6 +912,18 @@ export function renderPlan() {
   </section>`;
 }
 
+// Framing a new plan picture: the photo already has the house treatment; the circle shows what will be kept
+export function renderFrameSheet(id) {
+  const m = MEALS.find((x) => x.id === id);
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">Frame the picture</h2><button type="button" class="btn" data-act="frame-cancel">Cancel</button></header>
+  <p class="note">${esc(m ? m.name : '')}. Drag until the plate sits in the circle, zoom until it fills it.</p>
+  <div class="frame-stage"><canvas id="frame-canvas" width="640" height="640" aria-label="Preview of the picture. Drag to move."></canvas><span class="frame-ring" aria-hidden="true"></span></div>
+  <label class="frame-zoom" for="frame-zoom">Zoom<input id="frame-zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
+  <p class="note">Light and colour are evened out so all plan pictures match. Only this framed picture is stored, not the original photo.</p>
+  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="frame-save">Use this picture</button></div>`;
+}
+
 // One plan meal: its picture, what goes into it, and a button to log it
 export function renderPlanSheet(id) {
   const m = MEALS.find((x) => x.id === id);

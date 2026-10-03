@@ -27,7 +27,9 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   a 7-day average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
   and the rules of the plan. The pictures are your own photos: add one from the meal's card, or let
-  the first logged photo that matches a plan meal fill it in.
+  the first logged photo that matches a plan meal fill it in. Every picture gets the same treatment,
+  so the plan looks like one set: you frame the plate in a circle, and light, colour and contrast are
+  evened out. Only that finished picture is stored, never the original photo.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
 water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
@@ -39,6 +41,9 @@ on the device.
   sent to a server of this project, because there is none.
 - Photo and free-text analysis goes straight from your phone to the model provider you choose,
   with your own API key. Photos are downscaled to 768 px first.
+- Photos are never stored as taken. Logged photos are kept as a 768 px copy, plan pictures as a
+  640 px framed and colour-corrected one. Both are re-encoded, which drops the location, capture
+  time and camera details that the original file carried.
 - The API key is stored only on the device and is never written to a backup file.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
@@ -160,6 +165,7 @@ data is kept. The running version is shown under Settings → "Version and updat
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
 - `js/exif.js`: reads capture time and location from a photo
 - `js/db.js`: IndexedDB
+- `js/picture.js`: the treatment every plan picture gets (framing, white balance, exposure)
 - `js/export.js`: the SQL export
 - `sw.js`: offline cache and updates
 - `icons/`: `icon.svg` is the source; the PNG files are rendered from it for the Home Screen and
