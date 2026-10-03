@@ -103,6 +103,8 @@ export const MEALS = TEMPLATES.map((t) => ({
 }));
 
 export const MEAL_BY_ID = Object.fromEntries(MEALS.map((m) => [m.id, m]));
+// Own keys only: a lookup with text from outside must not find "constructor" or "__proto__"
+export const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
 export const SLOTS = [
   { id: 'lunch', name: 'Lunch', time: '12:00' },
@@ -208,6 +210,11 @@ export const addDays = (s, n) => {
   return dayKey(d);
 };
 export const diffDays = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000);
+// HH:MM of a Date or a timestamp
+export const hhmm = (t) => {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 
 // Value of the target line on a given day (start weight before the start, target weight after the end)
 export function targetAt(day, s) {
@@ -225,8 +232,9 @@ const SHORT = {
   almonds: 'almonds', cottage: 'cottage cheese', chicken: 'chicken breast', mince: 'meatballs',
   beef: 'red meat', salmon: 'salmon', ovenVeg: 'oven vegetables', bulgur: 'bulgur', lentils: 'lentils',
 };
+const short = (k) => SHORT[k] || FOODS[k].name; // a food you add needs no entry in SHORT
 // The foods the plan is built from, for requests that only need the gist of it
-export const planFoods = () => Array.from(new Set(Object.values(SHORT))).join(', ');
+export const planFoods = () => Array.from(new Set(Object.keys(FOODS).map(short))).join(', ');
 export function planDigest() {
-  return MEALS.map((m) => `${m.id}: ${m.ingredients.map(([k, g]) => `${SHORT[k]} ${g}g`).join(', ')} = ${m.kcal} kcal, ${Math.round(m.p)}p`).join('\n');
+  return MEALS.map((m) => `${m.id}: ${m.ingredients.map(([k, g]) => `${short(k)} ${g}g`).join(', ')} = ${m.kcal} kcal, ${Math.round(m.p)}p`).join('\n');
 }

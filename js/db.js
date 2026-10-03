@@ -17,27 +17,46 @@ function open() {
       if (!db.objectStoreNames.contains('days')) db.createObjectStore('days', { keyPath: 'day' });
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'k' });
     };
-    rq.onsuccess = () => res(rq.result);
-    rq.onerror = () => rej(rq.error);
+    rq.onsuccess = () => {
+      const db = rq.result;
+      // The browser may close the connection (iOS does after a long time in the background): open a new one next time
+      db.onclose = () => { dbp = null; };
+      db.onversionchange = () => { db.close(); dbp = null; };
+      res(db);
+    };
+    rq.onerror = () => { dbp = null; rej(rq.error); };
   });
   return dbp;
 }
 
-async function tx(store, mode, fn) {
+async function tx(store, mode, fn, again = true) {
   const db = await open();
   return new Promise((res, rej) => {
-    const t = db.transaction(store, mode);
+    let t;
+    try {
+      t = db.transaction(store, mode);
+    } catch (err) {
+      if (again && err && err.name === 'InvalidStateError') { dbp = null; res(tx(store, mode, fn, false)); } else rej(err);
+      return;
+    }
     const s = t.objectStore(store);
     let out;
-    Promise.resolve(fn(s)).then((v) => { out = v; });
+    try {
+      Promise.resolve(fn(s)).then((v) => { out = v; }, rej);
+    } catch (err) {
+      t.abort(); // nothing of a half-built batch is kept
+      rej(err);
+      return;
+    }
     t.oncomplete = () => res(out);
-    t.onerror = () => rej(t.error);
+    t.onerror = (ev) => rej((ev.target && ev.target.error) || t.error);
     t.onabort = () => rej(t.error);
   });
 }
 const rq = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 
 export const all = (store) => tx(store, 'readonly', (s) => rq(s.getAll()));
+export const keys = (store) => tx(store, 'readonly', (s) => rq(s.getAllKeys()));
 export const get = (store, key) => tx(store, 'readonly', (s) => rq(s.get(key)));
 export const put = (store, val) => tx(store, 'readwrite', (s) => rq(s.put(val)));
 export const del = (store, key) => tx(store, 'readwrite', (s) => rq(s.delete(key)));

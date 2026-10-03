@@ -117,8 +117,10 @@ export async function prepare(file) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(w0 * k));
   canvas.height = Math.max(1, Math.round(h0 * k));
-  canvas.getContext('2d', { willReadFrequently: true }).drawImage(bmp, 0, 0, canvas.width, canvas.height);
-  if (bmp.close) bmp.close();
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; // a transparent PNG would turn black as a JPEG
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  try { ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height); } finally { if (bmp.close) bmp.close(); }
   tone(canvas);
   return canvas;
 }
@@ -156,6 +158,7 @@ export async function render(src, zoom = 1, cx = src.width / 2, cy = src.height 
   out.height = PICTURE_SIZE;
   drawFrame(out, src, zoom, cx, cy);
   const blob = await new Promise((res) => out.toBlob(res, 'image/jpeg', 0.86));
+  out.width = 0; // gives the canvas memory back: Safari limits the total
   if (!blob) throw new Error('Could not save the picture');
   return blob;
 }
