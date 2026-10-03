@@ -447,6 +447,8 @@ input[type="text"], input[type="password"], input[type="time"], input[type="date
 .c-label { font: 600 11px var(--txt); fill: var(--good); }
 .c-label-you { font: 600 11px var(--txt); fill: var(--ink); }
 .c-label-eta { font: 600 11px var(--txt); fill: var(--tape-ink); }
+/* A halo in the card's colour, so a label stays readable where it crosses a line or a dot */
+.c-label, .c-label-you, .c-label-eta { paint-order: stroke; stroke: var(--raised); stroke-width: 3px; stroke-linejoin: round; }
 .c-target { fill: none; stroke: var(--c-line); stroke-width: 2; stroke-dasharray: 5 4; }
 .c-proj { fill: none; stroke: var(--c-you); stroke-width: 2; stroke-dasharray: 1.5 4; stroke-linecap: round; }
 .c-dot { fill: var(--c-dot); }
