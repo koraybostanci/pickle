@@ -129,7 +129,7 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .day-partial b { border-color: var(--ink3); }
 .day-near b { background: var(--good-soft); color: var(--ink); }
 .day-on b { background: var(--good); color: var(--on); }
-.day-over b { background: var(--over-track); color: var(--ink); }
+.day-over b { background: var(--over-track); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--over); } /* a ring as well as a colour, so it reads without telling pink from green */
 .day-future b { color: var(--ink3); opacity: .6; }
 .day-before b { color: var(--ink3); }
 .day:disabled { opacity: 1; }

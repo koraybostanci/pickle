@@ -6,7 +6,8 @@
 export const PICTURE_SIZE = 640; // stored edge, px
 const WORK_EDGE = 1280; // working copy; large enough to zoom in on
 
-async function decode(file) {
+// Opens a photo file as something that can be drawn, with its orientation applied
+export async function decode(file) {
   try {
     return await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {

@@ -2,6 +2,7 @@
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
 import { planDigest, planFoods, RULES, SLOTS, hhmm } from './plan.js';
+import { decode } from './picture.js';
 
 export const MODELS = {
   'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
@@ -58,18 +59,7 @@ const SCHEMA = {
 
 // Shrinks the photo on the device; this copy is what gets sent (and, for logged meals, stored).
 export async function shrink(file, edge = IMG_EDGE) {
-  let bmp;
-  try {
-    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    bmp = await new Promise((res, rej) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => { URL.revokeObjectURL(url); res(img); };
-      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Could not open the image')); };
-      img.src = url;
-    });
-  }
+  const bmp = await decode(file);
   const w0 = bmp.naturalWidth || bmp.width;
   const h0 = bmp.naturalHeight || bmp.height;
   const k = Math.min(1, edge / Math.max(w0, h0));
@@ -464,21 +454,23 @@ export function costUSD(model, usage) {
   return m ? (usage.in * m.inp + usage.out * m.out) / 1e6 : 0;
 }
 
+// What went wrong, in words that fit anywhere. Where an entry is parked because of it, the app adds WAITING.
 export const AI_ERRORS = {
-  no_key: 'No API key. Add one in Settings; the entry is waiting.',
+  no_key: 'No API key. Add one in Settings.',
   bad_key: 'The API key was rejected. Check it in Settings.',
-  offline: 'No internet. The entry is waiting; tap “Analyse” once you are back online.',
-  net: 'Could not reach the server; the entry is waiting. If you are online, this provider may not allow calls from a browser.',
-  timeout: 'The provider took too long to answer; the entry is waiting. Tap “Analyse” to try again.',
+  offline: 'No internet.',
+  net: 'Could not reach the server. If you are online, this provider may not allow calls from a browser.',
+  timeout: 'The provider took too long to answer.',
   truncated: 'The answer was cut off before it was complete. Try again, or add a short note.',
-  rate: 'Too many requests or the quota is used up; the entry is waiting. Tap “Analyse” a little later.',
-  no_quota: 'This model has no quota on your plan; the entry is waiting. Pick another model in Settings.',
-  no_credit: 'The provider says the account has no credit; the entry is waiting. Add credit or pick another provider in Settings.',
-  needs_billing: 'The provider wants billing enabled on this account before it answers; the entry is waiting. Enable it with the provider or pick another one in Settings.',
+  rate: 'Too many requests or the quota is used up.',
+  no_quota: 'This model has no quota on your plan. Pick another model in Settings.',
+  no_credit: 'The provider says the account has no credit. Add credit or pick another provider in Settings.',
+  needs_billing: 'The provider wants billing enabled on this account before it answers. Enable it with the provider or pick another one in Settings.',
   no_vision: 'This model does not accept photos. Pick a model with image support in Settings.',
   bad_model: 'Model not found. Check the model name in Settings.',
-  server: 'The provider is busy right now; the entry is waiting. Tap “Analyse” a little later.',
+  server: 'The provider is busy right now.',
   bad_request: 'The request was rejected.',
   empty: 'The model could not interpret this input. Add a short note and try again.',
   http: 'The request failed.',
 };
+export const WAITING = ' The entry is waiting; tap “Analyse” to try again.';

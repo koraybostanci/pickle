@@ -4,7 +4,7 @@ import {
   dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
+import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // Looked up when called: app.js and this file import each other, so its consts do not exist yet while this file loads
@@ -302,9 +302,10 @@ function daySlots(day) {
   if (dd.train || has('workout')) list.push({ id: 'workout', name: 'Workout extras', time: '', hint: 'Banana before, skyr after' });
   // The late slot only shows once it matters: in the evening, when something is in it, or when skyr would close a protein gap
   const sg = suggest(day);
-  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: 'After 20:00', time: '20:00', hint: 'Herbal tea; skyr if very hungry' });
+  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: lateName(), time: SLOTS.find((x) => x.id === 'late').time, hint: 'Herbal tea; skyr if very hungry' });
   return { list, all, sg, isToday };
 }
+const lateName = () => `After ${SLOTS.find((x) => x.id === 'late').time}`;
 const slotOptions = (id, entries) => {
   const logged = new Set(entries.map((e) => e.planId));
   return MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
@@ -495,7 +496,7 @@ function entryDetail(e) {
   } else if (e.status === 'error') {
     body = `<p class="status is-error">${esc(e.err || 'Analysis failed.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Try again</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
   } else {
-    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Flex budget</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
+    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Treat</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
     const rough = e.conf > 0 && e.conf < 0.6 && !e.planId;
     const mult = e.mult || 1;
     const canReanalyse = e.src === 'photo' || e.src === 'text';
@@ -574,7 +575,7 @@ function logRow(e) {
     const notes = [`${n0(v.p)} g protein`];
     if (e.mult && e.mult !== 1) notes.push(`${multLabel(e.mult)} portion`);
     if (e.tier === 'off') notes.push('off plan');
-    else if (e.tier === 'flex') notes.push('flex budget');
+    else if (e.tier === 'flex') notes.push('treat');
     else if (e.planId) notes.push('plan meal');
     if (e.q) notes.push('has a question');
     else if (e.conf > 0 && e.conf < 0.6 && !e.planId) notes.push('rough estimate');
@@ -642,7 +643,7 @@ export function renderLog() {
       <ul class="log-list">${entries.map(logRow).join('')}</ul>
     </section>`;
   }).join('');
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>Photo and free-text analysis needs a model key. Plan meals, weight and steps work without one.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>Photo and free-text analysis needs an API key. Plan meals, weight and steps work without one.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
   const pendingNotice = pending.length && hasKey() ? `<div class="notice"><p>${pending.length === 1 ? '1 entry is' : `${pending.length} entries are`} waiting for analysis.</p><button type="button" class="btn" data-act="analyze-all">Analyse all</button></div>` : '';
   return `
   <header class="top">
@@ -703,7 +704,7 @@ export function renderCheck() {
   const photos = c.photos.length
     ? `<ul class="check-photos">${c.photos.map((p, i) => `<li><img src="${p.url}" alt="Photo ${i + 1} for this check"><button type="button" data-act="check-photo-remove" data-id="${p.id}" aria-label="Remove photo ${i + 1}">${ICON.close}</button></li>`).join('')}</ul>`
     : '';
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs a model key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs an API key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
   const earlier = S.checks.filter((x) => !rec || x.id !== rec.id);
   const history = earlier.length ? `<section class="check-history">
     <h2>${rec ? 'Other checks' : 'Earlier checks'}</h2>
@@ -897,7 +898,7 @@ function adjustNotice() {
   const b = avg7(addDays(t, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
   if (a.kg - targetAt(t, s) > 0.7 && b.kg - targetAt(addDays(t, -7), s) > 0.7) {
-    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(1500, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
+    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(KCAL_FLOOR, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
   }
   return '';
 }
@@ -1017,12 +1018,14 @@ export function renderPlan() {
     <li>Protein <b>${esc(s.protein)}</b> g</li>
     <li>Fibre <b>${esc(s.fiber)}</b> g</li>
   </ul>
-  ${slot('lunch', 'Lunch', '12:00', 'The first meal of the day.')}
-  ${slot('snack1', 'Snack 1', '14:30', 'A protein snack: 250 g of skyr.')}
-  ${slot('snack2', 'Snack 2', '16:00', 'On meatball or salmon days, cottage cheese tops up the protein.')}
-  ${slot('dinner', 'Dinner', '18:00', 'Meat, chicken and fish by raw weight.')}
+  ${Object.entries({
+    lunch: 'The first meal of the day.',
+    snack1: 'A protein snack: 250 g of skyr.',
+    snack2: 'On meatball or salmon days, cottage cheese tops up the protein.',
+    dinner: 'Meat, chicken and fish by raw weight.',
+  }).map(([id, note]) => { const x = SLOTS.find((y) => y.id === id); return slot(id, x.name, x.time, note); }).join('')}
   ${slot('workout', 'Workout-day extras', '', 'Only on workout days; together about 200 kcal.')}
-  ${slot('late', 'After 20:00', '', 'Herbal tea by default.')}
+  ${slot('late', lateName(), '', 'Herbal tea by default.')}
   <section class="plan-rules">
     <h2>The rules</h2>
     ${group('Dinner rotation', `<p class="note">Fish twice and legumes twice a week.</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}

@@ -149,10 +149,15 @@ export const DEFAULTS = {
   model: 'claude-haiku-4-5-20251001',
 };
 
+// Numbers that the rules text, the checks and the screens must agree on
+export const KCAL_FLOOR = 1500; // daily calories are never set or advised below this
+export const SMALL_TREAT_KCAL = 250; // a flex entry up to this size (or any alcohol) is a "small" treat, not the weekly flexible dinner
+const num = (x) => x.toLocaleString(LOCALE);
+
 export const RULES = {
   daily: [
     'At least 2 to 2.5 litres of water a day.',
-    '8,000 steps a day. With a desk job this is the cheapest part of the deficit.',
+    `${num(DEFAULTS.steps)} steps a day. With a desk job this is the cheapest part of the deficit.`,
     'Meat, chicken and fish are weighed raw.',
     'Cooking and salad oil is measured: 1 tsp of olive oil is about 45 kcal.',
     'Nuts are raw and unsalted, 20 to 25 g, and weighed. Walnuts, almonds, hazelnuts and peanuts follow the same rule.',
@@ -162,7 +167,7 @@ export const RULES = {
   ],
   weekly: [
     'One flexible dinner (eating out or off plan), around 700 kcal.',
-    'One beer (0.33 l) or one small dessert up to 200 kcal. No crisps, peanuts or fried food with it.',
+    `One beer (0.33 l) or one small dessert up to ${SMALL_TREAT_KCAL} kcal. No crisps, peanuts or fried food with it.`,
   ],
   off: [
     'Sugary drinks: cola, soda, fruit juice.',
@@ -174,13 +179,13 @@ export const RULES = {
   training: [
     'Three workouts a week: spinning, or kettlebell (swing, halo) plus core.',
     'At least two fixed kettlebell days. Resistance training is what protects muscle in a deficit.',
-    'Workout days are 1,750 kcal: add a banana before and 150 g of skyr after.',
+    `Workout days are ${num(DEFAULTS.kcalTrain)} kcal: add a banana before and 150 g of skyr after.`,
   ],
   process: [
     'Weigh in every morning under the same conditions. Read the 7-day average, not a single day.',
     'If the average sits more than 0.7 kg above the line two weeks in a row: cut 100 kcal or add 2,000 steps.',
-    'Do not go below 1,500 kcal.',
-    'On reaching 78 kg, raise calories to maintenance gradually over 2 to 3 weeks.',
+    `Do not go below ${num(KCAL_FLOOR)} kcal.`,
+    `On reaching ${DEFAULTS.targetKg} kg, raise calories to maintenance gradually over 2 to 3 weeks.`,
   ],
   rotation: [
     ['Monday', 'Chicken and oven vegetables'],

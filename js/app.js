@@ -2,11 +2,11 @@ import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import { cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
-  slotByTime, dayKey, parseDay, addDays, diffDays, targetAt, hhmm, has,
+  slotByTime, dayKey, parseDay, addDays, diffDays, targetAt, hhmm, has, KCAL_FLOOR, SMALL_TREAT_KCAL,
 } from './plan.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -180,7 +180,7 @@ export function weekFlex(day) {
     if (e.kind !== 'meal' || e.status !== 'ok' || e.day < ws || e.day > we) continue;
     if (e.tier === 'off') r.off += 1;
     else if (e.tier === 'flex') {
-      if ((e.flags || []).includes('alcohol') || eff(e).kcal <= 250) r.small += 1;
+      if ((e.flags || []).includes('alcohol') || eff(e).kcal <= SMALL_TREAT_KCAL) r.small += 1;
       else r.meal += 1;
     }
   }
@@ -307,6 +307,9 @@ async function saveEntry(e) {
 let toastTimer;
 export function toast(msg, action) {
   const el = $('#toast');
+  const live = $('#toast-live');
+  live.textContent = '';
+  setTimeout(() => { live.textContent = action ? `${msg}. ${action.label} is available.` : msg; }, 50); // a change after a pause is announced even when the text repeats
   el.innerHTML = '';
   const sp = document.createElement('span');
   sp.textContent = msg;
@@ -600,15 +603,13 @@ function reviewBrief(day) {
 
 function modelFailure(err, what = 'review') {
   const code = err && err.code;
-  if (code === 'no_key') return `Add a model key in Settings to get a ${what}.`;
-  if (code === 'no_vision') return 'This model does not accept photos. Pick a model with image support in Settings.';
-  if (code === 'no_credit' || code === 'needs_billing') return `${code === 'no_credit' ? 'The provider says the account has no credit.' : 'The provider wants billing enabled before it answers.'} ${errorDetail(err, 120)}`.trim();
-  if (code === 'bad_key') return 'The API key was rejected. Check it in Settings.';
-  if (code === 'offline' || code === 'net') return 'No connection. Try again when you are online.';
-  if (code === 'timeout') return 'The provider took too long to answer. Try again.';
-  if (code === 'rate' || code === 'no_quota' || code === 'server') return `The provider is busy or the quota is used up. Try again a little later. ${errorDetail(err, 120)}`.trim();
+  if (code === 'no_key') return `Add an API key in Settings to get a ${what}.`;
   if (code === 'empty') return 'The model sent nothing usable. Try again.';
-  return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
+  if (!AI_ERRORS[code]) return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
+  // The same wording as for an entry, plus what the provider said where that explains it
+  const later = code === 'offline' || code === 'net' ? ' Try again when you are online.' : ['rate', 'no_quota', 'server', 'timeout'].includes(code) ? ' Try again a little later.' : '';
+  const said = ['rate', 'no_quota', 'server', 'no_credit', 'needs_billing'].includes(code) ? ` ${errorDetail(err, 120)}` : '';
+  return `${AI_ERRORS[code]}${later}${said}`.trim();
 }
 
 async function runReview(day, auto) {
@@ -935,7 +936,7 @@ async function analyzeEntry(id, opts = {}) {
     const waiting = ['no_key', 'offline', 'net', 'timeout', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     const detail = ['bad_request', 'http', 'bad_model', 'server', 'rate', 'no_quota', 'no_credit', 'needs_billing'].includes(code) ? ' ' + errorDetail(err, 140) : '';
     if (settled) failure = modelFailure(err, 'new estimate');
-    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + detail });
+    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + (waiting ? WAITING : '') + detail });
   }
   S.busy.delete(id);
   S.retry.delete(id);
@@ -986,14 +987,29 @@ function migrateSettings(st) {
 // Returns false when the person cancelled.
 async function deliverFile(name, content, type) {
   const blob = new Blob(Array.isArray(content) ? content : [content], { type });
+  const file = new File([blob], name, { type });
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
   try {
-    const file = new File([blob], name, { type });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (canShare) {
       await navigator.share({ files: [file], title: name });
       return true;
     }
   } catch (err) {
     if (err && err.name === 'AbortError') return false;
+    // Safari only opens the share sheet shortly after a tap, and a big file takes longer to build than that:
+    // ask for a new tap instead of falling back to a download that a Home Screen app may ignore
+    if (err && err.name === 'NotAllowedError') {
+      return new Promise((res) => {
+        const timer = setTimeout(() => res(false), 7000);
+        toast('The file is ready', {
+          label: 'Save',
+          fn: () => {
+            clearTimeout(timer);
+            navigator.share({ files: [file], title: name }).then(() => res(true), () => res(false));
+          },
+        });
+      });
+    }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1409,7 +1425,7 @@ const ACT = {
     const gemini = cfg.provider === 'openai' && /generativelanguage\.googleapis\.com/.test(cfg.base || '');
     const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? ' Your plan and limits: aistudio.google.com/rate-limit' : '');
     const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? ` ${d}` : ` The provider said: “${d}”`; };
-    const why = (err) => `${(AI_ERRORS[err.code] || 'Failed.').replace('; the entry is waiting', '').replace(' Tap “Analyse” a little later.', '')}${said(err)}${limitsHint(err)}`;
+    const why = (err) => `${AI_ERRORS[err.code] || 'Failed.'}${said(err)}${limitsHint(err)}`;
     out.textContent = 'Testing text…';
     let textLine;
     try {
@@ -1487,8 +1503,8 @@ const ACT = {
       startKg: num('#set-startkg'), targetKg: num('#set-endkg'),
       kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), protein: Math.round(num('#set-prot')),
     };
-    if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= 1200) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
-      return toast('Check the values: the end must be after the start, the target weight below the start weight, and calories at least 1,200');
+    if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= KCAL_FLOOR) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
+      return toast(`Check the values: the end must be after the start, the target weight below the start weight, and calories at least ${fmtInt(KCAL_FLOOR)}, as the plan's rules say`);
     }
     S.settings = { ...S.settings, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
     await saveSettings();
@@ -1498,7 +1514,7 @@ const ACT = {
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
   'review-day': (el) => {
-    if (!hasKey()) return toast('Add a model key in Settings to get a review');
+    if (!hasKey()) return toast('Add an API key in Settings to get a review');
     if (navigator.onLine === false) return toast('No connection. Try again when you are online');
     queueReview(el.dataset.day);
   },
@@ -1549,7 +1565,14 @@ const ACT = {
     if (!window.confirm('All entries, their photos, weigh-ins and checks on this device will be deleted. Do you have a backup? Continue?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
-    for (const p of await db.all('photos')) if (!keep.has(p.id)) await db.del('photos', p.id);
+    for (const id of await db.keys('photos')) {
+      if (keep.has(id)) continue;
+      await db.del('photos', id);
+      const u = S.urls.get(id);
+      if (u) { URL.revokeObjectURL(u); S.urls.delete(id); }
+    }
+    delete S.settings.wins; // the next kilo or perfect day is celebrated again
+    await saveSettings();
     S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
     closeSheet();
     render();
@@ -1671,14 +1694,21 @@ document.addEventListener('keydown', (ev) => {
 
 // If the app stayed open past midnight, move on to the new day
 let lastToday = today();
+function newDay() {
+  const t = today();
+  if (t === lastToday) return false;
+  if (S.viewDay === lastToday) S.viewDay = t;
+  lastToday = t;
+  return true;
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  const t = today();
-  if (lastToday !== t && S.viewDay === lastToday) S.viewDay = t;
-  lastToday = t;
+  newDay();
   render();
   autoReview();
 });
+// ...and when it stays open and in front through midnight
+setInterval(() => { if (document.visibilityState === 'visible' && newDay()) { render(); autoReview(); } }, 60000);
 
 // ——— Updates ———
 // When a new service worker takes control the page is still running old files, so it reloads.

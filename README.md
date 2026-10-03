@@ -39,7 +39,7 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   and the rules of the plan. The pictures are your own photos: add one from the meal's card, or let
   the first logged photo that matches a plan meal fill it in. Every picture gets the same treatment,
   so the plan looks like one set: you frame the plate in a circle, and light, colour and contrast are
-  evened out. Only that finished picture is stored, never the original photo.
+  evened out.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
 water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
@@ -119,8 +119,9 @@ The repository ships with one example plan: about 1,550 kcal on rest days and 1,
 workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
 - **Targets** (dates, weights, calories, protein) are changed in the app under Settings → Targets.
-  The goals for steps, water and fibre come from `DEFAULTS` in `js/plan.js` and apply only before
-  the app is first opened on a device.
+  Daily calories below `KCAL_FLOOR` (1,500) are refused, as the plan's rules say. The goals for
+  steps, water and fibre come from `DEFAULTS` in `js/plan.js` and apply only before the app is first
+  opened on a device.
 - **Meals and rules** live in `js/plan.js`:
   - `FOODS`: nutrition per 100 g, as `[kcal, protein, carbs, fat, fibre]`.
   - `TEMPLATES`: the meal options. Each has an id, a slot and a list of `[food, grams, measure]`.
@@ -132,9 +133,10 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
   The model receives a short digest of the plan with every request, so it follows your changes
   to meals and foods without further setup. Two things are not generated from the file: the numbers
-  in `RULES` are plain text (1,750 kcal, 78 kg, 8,000 steps), so edit them when you change Targets;
-  and the meal slots are also named in `SLOT_NAME`, `slotByTime`, the prompt in `js/ai.js` and the
-  Plan tab in `js/views.js`, so changing the slots means editing those too.
+  in `RULES` come from `DEFAULTS`, `KCAL_FLOOR` and `SMALL_TREAT_KCAL`, not from what you saved in
+  Settings → Targets, so keep them in step; and the meal slots are also named in `SLOT_NAME`,
+  `slotByTime`, the prompt in `js/ai.js` and the notes on the Plan tab in `js/views.js`, so
+  changing the slots means editing those too.
 
 The app uses kilograms, kilocalories and English (`en-GB` number and date formats).
 
