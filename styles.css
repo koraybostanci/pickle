@@ -141,7 +141,7 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .bento { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .tile { position: relative; display: grid; align-content: start; gap: 6px; min-width: 0; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 18px; background: var(--raised); text-align: left; }
 .tile-top { display: flex; align-items: center; gap: 6px; min-height: 22px; font-size: 13.5px; color: var(--ink2); }
-.tile-top .pill { margin-left: auto; }
+.tile-top em { margin-left: auto; font-style: normal; font-size: 11.5px; color: var(--ink3); white-space: nowrap; }
 .tile-val { display: flex; align-items: baseline; gap: 4px; font: 500 13px var(--num); color: var(--ink2); white-space: nowrap; }
 .tile-val b { font: 700 21px/1.1 var(--num); color: var(--ink); letter-spacing: -.01em; }
 .tile-val em { margin-left: auto; font-style: normal; font-size: 12.5px; }
@@ -155,7 +155,6 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .g-drop { fill: var(--blue); }
 .tick { width: 14px; height: 14px; fill: none; stroke: var(--good); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 11px; background: var(--bg); color: var(--ink2); font: 600 12px/1 var(--txt); font-style: normal; white-space: nowrap; }
-.pill-cta { background: var(--ink); color: var(--bg); }
 .pill-good { background: var(--good-soft); color: var(--ink); }
 .pill-warn { background: var(--tape); color: #1B2317; }
 .pill-bad { background: var(--over); color: #fff; }
@@ -169,7 +168,6 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .tile-water { padding: 0; }
 .tile-main { display: grid; gap: 6px; width: 100%; padding: 10px 12px 12px; border-radius: 18px; text-align: left; }
 .tile-minus { position: absolute; top: 0; right: 0; width: 44px; height: 44px; border-radius: 0 18px 0 14px; font-size: 22px; line-height: 1; color: var(--ink2); }
-.tile-hint { position: absolute; top: 13px; right: 12px; font-size: 11.5px; color: var(--ink3); pointer-events: none; }
 
 /* Calorie budget: what is left, and how it burned down over the day */
 .tile-budget { grid-column: 1 / -1; gap: 2px; padding: 12px 14px 10px; }
@@ -194,8 +192,9 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .burn-head { transform-box: fill-box; transform-origin: center; animation: burn-pulse 2.6s ease-in-out infinite; }
 @keyframes burn-pulse { 50% { transform: scale(1.3); } }
 /* Things you can press give a little */
-button.tile, .tile-main, .day b, .chip, .btn, .log-row, .entry-mini { transition: transform .12s ease; }
-button.tile:active, .tile-main:active, .chip:active, .btn:active, .entry-mini:active { transform: scale(.975); }
+button.tile, .tile-main, .day b, .chip, .btn, .log-row, .meal-main { transition: transform .12s ease; }
+button.tile:active, .tile-main:active, .chip:active, .btn:active { transform: scale(.975); }
+.meal-main:active { transform: scale(.99); }
 .day:active b { transform: scale(.92); }
 .burn-axis { font: 500 9.5px var(--num); fill: var(--ink3); }
 .budget-foot { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink2); }
@@ -227,36 +226,33 @@ button.tile:active, .tile-main:active, .chip:active, .btn:active, .entry-mini:ac
 .start-note { color: var(--ink2); font-size: 14.5px; margin-top: 4px; }
 .start .btn { margin-top: 12px; }
 
-/* Meal timeline */
-.slots { margin-top: 6px; }
-.slot { display: grid; grid-template-columns: 50px 1fr; gap: 0 10px; position: relative; padding-bottom: 12px; }
-.slot::before { content: ""; position: absolute; left: 50px; top: 16px; bottom: -6px; width: 1px; background: var(--line); margin-left: 4.5px; }
-.slot:last-child::before { display: none; }
-.slot:last-child { padding-bottom: 0; }
-.slot-time { font: 600 13px/22px var(--num); color: var(--ink3); text-align: right; padding-right: 2px; }
-.slot-body { position: relative; padding-left: 22px; min-width: 0; }
-.slot-body::before { content: ""; position: absolute; left: 0; top: 6px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink3); background: var(--bg); }
-.is-done > .slot-body::before { background: var(--good); border-color: var(--good); }
-.is-next > .slot-body::before { border-color: var(--ink); box-shadow: 0 0 0 3px var(--tape); }
-.slot-options summary { list-style: none; display: inline-flex; align-items: center; min-height: 44px; color: var(--ink2); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.slot-options summary::-webkit-details-marker { display: none; }
-.slot-options[open] summary { text-decoration: none; }
-.slot-options .chips { margin-top: 0; }
-.slot h3 { line-height: 22px; }
-.slot h3 small { font-weight: 400; font-size: 13px; color: var(--ink2); margin-left: 6px; }
-/* The next open slot: the suggestion and the screen's one primary action */
-.slot-next { margin-top: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); }
-.slot-suggest { display: grid; gap: 2px; }
-.slot-suggest b { font: 700 18px/1.25 var(--num); text-wrap: balance; }
-.slot-suggest span { color: var(--ink2); font-size: 14px; }
-.slot-next .btn-wide { margin-top: 12px; }
+/* The day's meals: one list. Logged, next, still open. */
+.meals-head h2 small { margin-left: 8px; font: 500 13px var(--num); color: var(--ink2); }
+.meal-list { margin-top: 8px; border: 1px solid var(--line); border-radius: 18px; background: var(--raised); overflow: hidden; }
+.meal { display: flex; align-items: center; }
+.meal + .meal { border-top: 1px solid var(--line); }
+.meal-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 14px; text-align: left; }
+.meal-mark { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--ink3); }
+.meal-mark .tick { width: 13px; height: 13px; stroke: #fff; stroke-width: 2.8; }
+.meal.is-done .meal-mark { background: var(--good); border-color: var(--good); }
+.meal.is-pending .meal-mark { border-style: dashed; }
+.meal.is-next { background: color-mix(in srgb, var(--tape-track) 55%, var(--raised)); }
+.meal.is-next .meal-mark { border-color: var(--ink); box-shadow: 0 0 0 3px var(--tape); }
+.meal-text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.meal-text b { font: 600 15.5px/1.25 var(--txt); }
+.meal-text small { margin-left: 8px; font: 500 12.5px var(--num); color: var(--ink3); }
+.meal-text span { color: var(--ink2); font-size: 13.5px; line-height: 1.3; }
+.meal.is-done .meal-text b { font-weight: 500; font-size: 13px; color: var(--ink2); }
+.meal.is-done .meal-text span { color: var(--ink); font-size: 15.5px; font-weight: 600; }
+.meal-kcal { flex: none; font: 500 12.5px var(--num); color: var(--ink2); white-space: nowrap; }
+.meal-kcal b { font: 700 16px var(--num); color: var(--ink); }
+.meal-add { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--bg); color: var(--ink2); font-size: 20px; line-height: 1; }
+.meal-log { flex: none; margin-right: 12px; min-width: 64px; border-radius: 22px; }
+.option-list .meal-main { min-height: 56px; }
+.option-list .meal-text small { color: var(--good); font-weight: 600; }
+
 .meals-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--tape-track); font-size: 14.5px; }
 .meals-note.is-over { background: var(--over-track); }
-.entry-mini { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; text-align: left; margin-top: 6px; padding: 6px 12px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); }
-.entry-mini-title { font-weight: 600; font-size: 15px; line-height: 1.25; }
-.entry-mini-meta { flex: none; color: var(--ink2); font: 500 12.5px var(--num); white-space: nowrap; }
-.entry-mini-meta b { font: 700 15px var(--num); color: var(--ink); }
-.entry-mini.is-pending { border-style: dashed; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .chip {
   display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 22px;
@@ -522,7 +518,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 
 @media (prefers-reduced-motion: reduce) {
   .burn-head { animation: none; }
-  button.tile, .tile-main, .day b, .chip, .btn, .log-row, .entry-mini { transition: none; }
+  button.tile, .tile-main, .day b, .chip, .btn, .log-row, .meal-main { transition: none; }
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }
   .toggle i, .toggle i::after, .setting summary::after { transition: none; }
 }

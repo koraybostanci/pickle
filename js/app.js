@@ -6,9 +6,9 @@ import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
-import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '13'; // bump together with VERSION in sw.js
+export const APP_VERSION = '14'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -30,7 +30,6 @@ export const S = {
   storage: null,
   calPick: null,
   sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num', ...}
-  openSlots: new Set(), // meal options left expanded on Today
   openSetting: '', // expanded section in Settings
 };
 
@@ -784,7 +783,10 @@ const ACT = {
   'week-prev': () => { S.viewDay = addDays(S.viewDay, -7); render(); },
   'week-next': () => { const d = addDays(S.viewDay, 7); S.viewDay = d > today() ? today() : d; render(); },
   'day-today': () => { S.viewDay = today(); render(); },
-  'log-plan': (el) => logMeal(MEAL_BY_ID[el.dataset.id], 'plan'),
+  'log-plan': (el) => { if (S.sheet && S.sheet.type === 'slot') closeSheet(); return logMeal(MEAL_BY_ID[el.dataset.id], 'plan'); },
+  'slot': (el) => openSheet(renderSlotSheet(el.dataset.slot, S.viewDay), { type: 'slot', slot: el.dataset.slot }),
+  'slot-camera': () => { closeSheet(); $('#f-cam').click(); },
+  'compose': () => { closeSheet(); const inp = $('#composer-input'); inp.focus(); },
   'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'flex' }, 'flex', today()); },
   'log-favorite': (el) => { const f = (S.settings.favorites || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'favorite', today()); },
   'open-entry': (el) => {
@@ -1097,7 +1099,6 @@ document.addEventListener('submit', (ev) => {
 document.addEventListener('toggle', (ev) => {
   const d = ev.target;
   if (!d.matches) return;
-  if (d.matches('details.slot-options')) { if (d.open) S.openSlots.add(d.dataset.slot); else S.openSlots.delete(d.dataset.slot); }
   if (d.matches('details.setting')) {
     if (d.open) {
       S.openSetting = d.dataset.sec;
