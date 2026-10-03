@@ -665,42 +665,6 @@ async function analyzeEntry(id, opts = {}) {
   render();
 }
 
-// ——— Migration from the original Turkish ids (schema 1) ———
-const V1_SLOT = { sabah: 'morning', ogle: 'lunch', ara1: 'snack1', ara2: 'snack2', aksam: 'dinner', gece: 'late', ant: 'workout' };
-const V1_TIER = { esnek: 'flex', yok: 'off' };
-const V1_PLACE = { Ev: 'Home', Ofis: 'Office', 'dışarı': 'out' };
-const V1_FLEX = { 'Bira 0,33 l': 'Beer 0.33 l', 'Bira 0,5 l': 'Beer 0.5 l' };
-
-function migrateEntry(e) {
-  const out = { ...e };
-  if (V1_SLOT[out.slot]) out.slot = V1_SLOT[out.slot];
-  if (V1_TIER[out.tier]) out.tier = V1_TIER[out.tier];
-  if (V1_PLACE[out.place]) out.place = V1_PLACE[out.place];
-  if (Array.isArray(out.flags)) out.flags = out.flags.map((f) => (f === 'alkol' ? 'alcohol' : f));
-  if (out.src === 'fav') out.src = 'favorite';
-  const plan = out.planId && MEAL_BY_ID[out.planId];
-  if (plan) { out.title = plan.name; out.items = plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })); }
-  if (V1_FLEX[out.title]) out.title = V1_FLEX[out.title];
-  if (out.kind === 'weight' && out.kg) out.title = weightTitle(out.kg);
-  if (out.kind === 'steps' && out.steps) out.title = stepsTitle(out.steps);
-  if (out.title === 'Fotoğraf') out.title = 'Photo';
-  if (out.status !== 'ok' && out.err) out.err = ''; // stale message in the old language
-  return out;
-}
-function migrateSettings(st) {
-  const out = { ...st };
-  if (Array.isArray(out.favs)) {
-    out.favorites = out.favs.map((f) => {
-      const { ad, ...rest } = f;
-      return { ...rest, name: V1_FLEX[f.name || ad] || f.name || ad, tier: V1_TIER[f.tier] || f.tier, flags: (f.flags || []).map((x) => (x === 'alkol' ? 'alcohol' : x)) };
-    });
-    delete out.favs;
-  }
-  if (Array.isArray(out.places)) out.places = out.places.map((p) => ({ ...p, name: V1_PLACE[p.name] || p.name }));
-  out.schema = SCHEMA_VERSION;
-  return out;
-}
-
 // ——— Backup ———
 // Hands a file to the share sheet where that is possible (Save to Files on iOS), otherwise downloads it.
 // content: a string, or a list of strings that are joined without ever being one big string.
@@ -774,6 +738,7 @@ async function importBackup(file) {
   if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('This is not a Kantar backup');
   const v = Number.isInteger(data.v) ? data.v : 1;
   if (v > SCHEMA_VERSION) return toast('This backup is from a newer version of Kantar. Update the app first');
+  if (v < SCHEMA_VERSION) return toast('This backup is from an old version of Kantar and can no longer be restored');
   // Restoring adds to what is on the device; an entry or day that is in both is replaced by the backup's version.
   // Everything read from the file is checked first (see backup.js).
   let restored = 0;
@@ -783,16 +748,16 @@ async function importBackup(file) {
       const photo = cleanPhoto(p); // photos go in one at a time: a damaged one is skipped, and the others are not held in memory together
       if (photo) await db.put('photos', photo); else skipped += 1;
     }
-    const entries = data.entries.map((e) => cleanEntry(v < SCHEMA_VERSION ? migrateEntry(e) : e)).filter(Boolean);
+    const entries = data.entries.map(cleanEntry).filter(Boolean);
     skipped += data.entries.length - entries.length;
     restored = entries.length;
     await db.putMany('entries', entries);
     await db.putMany('days', (Array.isArray(data.days) ? data.days : []).map(cleanDay).filter(Boolean));
     if (data.settings && typeof data.settings === 'object') {
       const before = Object.values(S.settings.planPhotos || {});
-      const incoming = cleanSettings(v < SCHEMA_VERSION ? migrateSettings(data.settings) : data.settings);
+      const incoming = cleanSettings(data.settings);
       if (incoming.planPhotos) incoming.planPhotos = { ...(S.settings.planPhotos || {}), ...incoming.planPhotos }; // pictures are added to, not replaced
-      S.settings = { ...S.settings, ...incoming, schema: SCHEMA_VERSION };
+      S.settings = { ...S.settings, ...incoming };
       await saveSettings();
       // A plan picture that the backup replaces is no longer referred to by anything
       const now = new Set(Object.values(S.settings.planPhotos || {}));
@@ -821,17 +786,9 @@ async function importBackup(file) {
 async function load() {
   const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
-  // Entries without stored settings can only come from a release that had not saved any yet, so they are checked too
-  const needsMigration = stored ? (stored.schema || 1) < SCHEMA_VERSION : S.entries.length > 0;
   if (stored) {
-    const st = needsMigration ? migrateSettings(stored) : stored;
-    S.settings = { ...S.settings, ...st, usage: { ...S.settings.usage, ...(st.usage || {}) } };
+    S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
     if (!stored.provider) S.settings.provider = stored.apiKey ? 'anthropic' : 'openai'; // settings saved before provider choice existed
-  }
-  if (needsMigration) {
-    S.entries = S.entries.map(migrateEntry);
-    await db.putMany('entries', S.entries);
-    await saveSettings();
   }
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
   S.checks = await db.kvGet('checks', []);
@@ -1470,7 +1427,7 @@ window.addEventListener('online', resumePending);
 })();
 
 // For tests and debugging
-if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings, dayVerdict, verdictText, reviewBrief, autoReview, checkBrief };
+if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, dayVerdict, verdictText, reviewBrief, autoReview, checkBrief };
 
 // Keep the composer above the on-screen keyboard
 if (window.visualViewport) {

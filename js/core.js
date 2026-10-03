@@ -2,13 +2,13 @@
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
 export const APP_VERSION = '18'; // bump together with VERSION in sw.js
-export const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
+export const SCHEMA_VERSION = 2; // version of the backup file; 2 = English ids (older backups can no longer be restored)
 
 // ——— State ———
 export const S = {
   tab: 'today',
   settings: {
-    ...DEFAULTS, schema: SCHEMA_VERSION,
+    ...DEFAULTS,
     provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
     useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
     usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,

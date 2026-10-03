@@ -224,6 +224,7 @@ version is shown under Settings → "Version and updates".
 ## Limits
 
 - One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
+  Backups from the first release (Turkish ids) can no longer be restored.
 - Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
   less likely, and a regular backup covers the rest.
 - This is a tracking tool, not medical or dietary advice. The example plan was written for one
