@@ -1,6 +1,7 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, kilosDown,
+  dayVerdict, verdictText, reviewState, VERDICT,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
@@ -589,6 +590,37 @@ function logRow(e) {
   </button></li>`;
 }
 
+// The day's review: the verdict worked out from the numbers, then what the model wrote about the day
+function reviewBlock(day) {
+  const v = dayVerdict(day);
+  if (!v) return '';
+  const pill = { on: 'pill-good', near: 'pill-warn', under: 'pill-warn', over: 'pill-warn', back: 'pill-bad' }[v.level] || 'pill-plain';
+  const r = S.days[day] && S.days[day].review;
+  const busy = S.reviewing.has(day);
+  const err = S.reviewErr.get(day);
+  const wait = '<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing the review…</p>';
+  const ask = (label) => `<button type="button" class="link" data-act="review-day" data-day="${day}">${label}</button>`;
+  let ai = '';
+  if (r) {
+    const open = S.reviewOpen.has(day) ? S.reviewOpen.get(day) : day >= addDays(today(), -1);
+    const rows = [['Helped', r.good || []], ['Cost most', r.cut || []], ['Next', r.next ? [r.next] : []]].filter(([, list]) => list.length);
+    const made = new Date(r.ts);
+    const when = dayKey(made) === today() ? hhmm(r.ts) : dTiny.format(made);
+    const stale = reviewState(day) === 'stale';
+    ai = `<details class="review-ai" data-day="${day}"${open ? ' open' : ''}>
+      <summary>${esc(r.head)}</summary>
+      ${rows.length ? `<dl>${rows.map(([k, list]) => `<div><dt>${k}</dt>${list.map((x) => `<dd>${esc(x)}</dd>`).join('')}</div>`).join('')}</dl>` : ''}
+      ${busy ? wait : `<p class="review-foot">${stale ? (r.live && !v.live ? 'Written before the day ended.' : 'The log changed after this review.') : `AI review, ${when}.`} ${hasKey() ? ask(stale ? 'Update the review' : 'Review again') : ''}</p>`}
+    </details>`;
+  } else if (busy) ai = wait;
+  else if (hasKey()) ai = `<p class="review-foot">${ask(v.live ? 'Review the day so far' : 'Review this day')}</p>`;
+  return `<div class="review">
+    <p class="review-verdict"><i class="pill ${pill}">${VERDICT[v.level]}</i><span>${esc(verdictText(v).join(' '))}</span></p>
+    ${ai}
+    ${err && !busy ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}
+  </div>`;
+}
+
 export function renderLog() {
   const pending = S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id));
   const byDay = new Map();
@@ -606,6 +638,7 @@ export function renderLog() {
     return `<section class="log-day">
       <header><h2>${esc(dayName(d))}</h2><p>${tot.n ? `<b>${n0(tot.kcal)}</b> / ${n0(target)} kcal, ${n0(tot.p)} g protein` : ''}</p></header>
       ${tot.n ? `<div class="log-tape${st === 'on' ? ' is-on' : st === 'over' ? ' is-over' : ''}" style="--v:${fill}%" aria-hidden="true"><i></i></div>` : ''}
+      ${reviewBlock(d)}
       <ul class="log-list">${entries.map(logRow).join('')}</ul>
     </section>`;
   }).join('');
@@ -613,7 +646,7 @@ export function renderLog() {
   const pendingNotice = pending.length && hasKey() ? `<div class="notice"><p>${pending.length === 1 ? '1 entry is' : `${pending.length} entries are`} waiting for analysis.</p><button type="button" class="btn" data-act="analyze-all">Analyse all</button></div>` : '';
   return `
   <header class="top">
-    <div><h1>Log</h1><p class="sub">Everything you sent, newest first. Tap an entry to correct it.</p></div>
+    <div><h1>Log</h1><p class="sub">Everything you sent, newest first, with a review of each day. Tap an entry to correct it.</p></div>
     <div class="top-actions">${settingsButton}</div>
   </header>
   ${keyNotice}${pendingNotice}
@@ -990,6 +1023,8 @@ export function renderSettings() {
     <select id="set-model">${Object.entries(MODELS).map(([k, m]) => `<option value="${k}"${s.model === k ? ' selected' : ''}>${m.name}</option>`).join('')}</select>
     <div class="actions"><button type="button" class="btn btn-primary" data-act="test-key">Save and test</button><button type="button" class="btn" data-act="save-key">Save only</button></div>
     <p class="note pre" id="key-test" role="status"></p>`}
+    <label class="check"><input type="checkbox" data-act="review-toggle"${s.autoReview === false ? '' : ' checked'}> Review each finished day by itself</label>
+    <p class="note">One short text request a day, sent when you open the app: the day’s meals and numbers, no photos. Switched off, a review is written only when you ask for it in the Log.</p>
     <p class="note">So far ${n0(u.calls)} calls, ${n0(u.in)} input and ${n0(u.out)} output tokens.${openai ? '' : ` Estimated cost $${u.usd.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}.`}</p>`;
 
   const targets = `

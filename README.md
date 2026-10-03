@@ -23,6 +23,10 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   type. A model estimates calories and macros and lists each item with its amount and calories,
   including what it had to assume ("falafel, assumed fried"). Tell it in a few words what the photo
   does not show and it revises the items; you can also correct the portion, the numbers or the time.
+  Every day carries a review. The verdict is worked out on the device: in line, slightly over or a
+  setback, and what a surplus costs on the schedule ("491 kcal over target: about 0.06 kg, 69% of
+  what the day was meant to lose"). The model then writes a short note on what helped, what cost
+  the most and what would have reduced it, and one thing to do next.
 - **Progress:** one token for every kilo collected, streaks and perfect days, the weight chart with
   a 7-day average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
@@ -44,6 +48,8 @@ on the device.
 - Photos are never stored as taken. Logged photos are kept as a 768 px copy, plan pictures as a
   640 px framed and colour-corrected one. Both are re-encoded, which drops the location, capture
   time and camera details that the original file carried.
+- The day's review sends text only: that day's meals with their numbers, your targets, the weight
+  schedule and where you stand against it. No photos.
 - The API key is stored only on the device and is never written to a backup file.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
@@ -75,6 +81,11 @@ Optional. In Settings → "Photo and text analysis", choose a provider and enter
 
 If the provider is busy, the app retries and, where a preset lists them, falls back to other
 models. If that also fails, the entry waits and is analysed later; nothing you sent is lost.
+
+The last finished day is reviewed by itself when you open the app: one short text request a day.
+Any other day, including today so far, is reviewed when you ask for it in the Log. The automatic
+review can be switched off in the same Settings section; the verdict from the numbers needs no
+model and is always shown.
 
 Estimates from a photo are rough. Treat them as a starting point and correct the portion when
 it is off.

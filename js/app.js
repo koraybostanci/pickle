@@ -2,14 +2,14 @@ import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
-  slotByTime, dayKey, parseDay, addDays, diffDays,
+  slotByTime, dayKey, parseDay, addDays, diffDays, targetAt,
 } from './plan.js';
 import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '15'; // bump together with VERSION in sw.js
+export const APP_VERSION = '16'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -18,7 +18,7 @@ export const S = {
   settings: {
     ...DEFAULTS, schema: SCHEMA_VERSION,
     provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
-    useLocation: false, places: [], favorites: [], hideStart: false,
+    useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
     usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
   },
   entries: [],
@@ -26,6 +26,9 @@ export const S = {
   viewDay: dayKey(new Date()),
   busy: new Set(),
   retry: new Map(), // status note shown while an analysis is retrying
+  reviewing: new Set(), // days whose review is being written
+  reviewErr: new Map(), // day → why the last review failed
+  reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
   urls: new Map(),
   persisted: null,
   storage: null,
@@ -199,6 +202,69 @@ export function suggest(day) {
   const pool = fit.length ? fit : options.slice().sort((a, b) => a.kcal - b.kcal).slice(0, 1);
   const meal = pool.slice().sort((a, b) => b.p - a.p)[0];
   return { rem, remP, meal, slot: next, tight: !fit.length };
+}
+
+// ——— The day against the plan ———
+const KCAL_PER_KG = 7700; // roughly a kilo of body fat
+// What the schedule asks of one day, in kg and in kcal
+export function planRate() {
+  const s = S.settings;
+  const days = diffDays(s.startDate, s.targetDate);
+  const kg = days > 0 ? Math.max(0, (s.startKg - s.targetKg) / days) : 0;
+  return { kg, kcal: kg * KCAL_PER_KG };
+}
+
+// How a day compares with the plan and what it did to the schedule. Worked out on the device, no model involved.
+// level: 'open' (today, still within budget), 'thin' (too little logged to judge), 'on', 'near' (calories fine, something else is not),
+// 'under', 'over' (slightly) or 'back' (clearly over)
+export function dayVerdict(day) {
+  const t = dayTotals(day);
+  if (!t.n) return null;
+  const s = S.settings;
+  const target = dayTarget(day);
+  const delta = Math.round(t.kcal - target);
+  const live = day === today();
+  const proteinGap = Math.max(0, Math.round(Math.min(s.proteinMin || s.protein, s.protein) - t.p));
+  const off = mealsOf(day).filter((e) => e.tier === 'off').length;
+  let level;
+  if (delta > target * 0.15) level = 'back';
+  else if (delta > target * 0.07) level = 'over';
+  else if (live) level = 'open';
+  else if (t.kcal < target * 0.6) level = 'thin';
+  else if (t.kcal < target * 0.75) level = 'under';
+  else level = proteinGap || off ? 'near' : 'on';
+  const rate = planRate();
+  return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
+}
+export const VERDICT = {
+  open: 'In progress', thin: 'Too little logged', on: 'In line', near: 'Mostly in line',
+  under: 'Under target', over: 'Slightly over', back: 'Set you back',
+};
+// The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
+export function verdictText(v) {
+  const out = [];
+  const kcal = fmtInt(Math.abs(v.delta));
+  const judged = v.level !== 'thin' && v.level !== 'open';
+  if (v.level === 'thin') out.push(`Only ${fmtInt(v.kcal)} kcal logged, too little to judge the day.`);
+  else if (v.level === 'open') out.push(v.delta < -25 ? `${kcal} kcal left for today.` : 'The budget for today is used up.');
+  else if (v.delta > 25) {
+    const kg = v.kg >= 0.005 ? `: about ${v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '';
+    const cost = !kg || v.share <= 0 ? '' : v.share >= 1.5 ? `, ${v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} days of the schedule`
+      : v.share >= 0.95 ? ', all of what the day was meant to lose' : `, ${Math.round(v.share * 100)}% of what the day was meant to lose`;
+    out.push(`${kcal} kcal over target${kg}${cost}.`);
+  } else if (v.delta < -25) out.push(`${kcal} kcal under target${v.level === 'under' ? '; check that everything is logged' : ''}.`);
+  else out.push('On target.');
+  if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short.`);
+  if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
+  return out;
+}
+
+// A review belongs to the log it was written for: it goes stale when the day's meals change, or when it was written before the day ended
+export const reviewSig = (day) => `${dayTarget(day)}|${mealsOf(day).map((e) => `${e.id}:${Math.round(eff(e).kcal)}`).sort().join(',')}`;
+export function reviewState(day) {
+  const r = S.days[day] && S.days[day].review;
+  if (!r) return 'none';
+  return r.sig !== reviewSig(day) || (r.live && day !== today()) ? 'stale' : 'fresh';
 }
 
 // ——— Formatting ———
@@ -437,6 +503,105 @@ function queueAnalyze(id, opts) {
   render();
   chain = chain.then(() => analyzeEntry(id, opts)).catch(() => {});
   return chain;
+}
+
+// ——— The day's review, written by the model ———
+// The day in plain lines: what the model gets to read. Text only, a few hundred tokens.
+function reviewBrief(day) {
+  const s = S.settings;
+  const dd = S.days[day] || {};
+  const t = dayTotals(day);
+  const v = dayVerdict(day);
+  const r = (x) => Math.round(x);
+  const clock = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const date = (d) => new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(parseDay(d));
+  const meals = mealsOf(day).sort((a, b) => a.ts - b.ts);
+  const lines = [
+    `Day: ${date(day)}, ${dd.train ? 'workout day' : 'rest day'}, ${v.live ? `still in progress, now ${clock(Date.now())}` : 'finished'}.`,
+    `Targets: ${v.target} kcal, protein ${s.protein} g (at least ${Math.min(s.proteinMin || s.protein, s.protein)}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
+    `Eaten: ${r(t.kcal)} kcal, protein ${r(t.p)} g, carbs ${r(t.c)} g, fat ${r(t.f)} g, fibre ${r(t.fib)} g.`,
+    'Meals:',
+  ];
+  for (const e of meals) {
+    const x = eff(e);
+    const m = e.mult || 1;
+    const kind = e.planId ? 'plan meal' : e.tier === 'off' ? 'off plan' : e.tier === 'flex' ? 'weekly flex' : 'fits the plan';
+    const items = e.planId ? '' : (e.items || []).slice(0, 6).map((i) => `${i.n}${i.g ? ` ${r(i.g * m)} g` : ''} ${r((i.kcal || 0) * m)} kcal`).join('; ');
+    lines.push(`- ${clock(e.ts)} ${(SLOT_NAME[e.slot] || '').toLowerCase()}: ${e.title}, ${r(x.kcal)} kcal, ${r(x.p)} g protein, ${kind}`
+      + `${(e.flags || []).includes('alcohol') ? ', alcohol' : ''}${e.place ? `, ${e.place === 'out' ? 'eaten out' : `at ${e.place}`}` : ''}${items ? ` [${items}]` : ''}`);
+  }
+  const logged = new Set(meals.map((e) => e.slot));
+  const open = SLOTS.filter((x) => x.id !== 'late' && !logged.has(x.id)).map((x) => x.name.toLowerCase());
+  if (open.length) lines.push(`${v.live ? 'Not eaten yet' : 'Nothing logged for'}: ${open.join(', ')}.`);
+  const waiting = S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status !== 'ok').length;
+  if (waiting) lines.push(`${waiting} more ${waiting === 1 ? 'entry is' : 'entries are'} not analysed yet and not counted.`);
+  lines.push(`Steps: ${dd.steps ? r(dd.steps) : 'not logged'}. Water: ${dd.water ? `${(dd.water / 1000).toFixed(1)} l` : 'not logged'}. Weigh-in: ${dd.kg ? `${dd.kg} kg` : 'none'}.`);
+  const rate = planRate();
+  let goal = `Goal: ${s.startKg} kg on ${s.startDate} to ${s.targetKg} kg on ${s.targetDate}, which needs about ${rate.kg.toFixed(2)} kg (${r(rate.kcal / 10) * 10} kcal) a day.`;
+  const avg = avg7(day);
+  if (day < s.startDate) goal += ' On this day the plan had not started yet.';
+  else if (avg) {
+    const sched = targetAt(day, s);
+    const gap = avg.kg - sched;
+    goal += ` Schedule for this day ${sched.toFixed(1)} kg; 7-day average ${avg.kg.toFixed(1)} kg, ${Math.abs(gap) < 0.15 ? 'on the schedule' : `${Math.abs(gap).toFixed(1)} kg ${gap > 0 ? 'above' : 'below'} the schedule`}.`;
+  }
+  lines.push(goal);
+  const f = weekFlex(day);
+  lines.push(`This week: beer or small dessert ${f.small} of 1, flexible dinner ${f.meal} of 1, off-plan entries ${f.off}.`);
+  lines.push(`App verdict: ${VERDICT[v.level].toLowerCase()}. ${verdictText(v).join(' ')}`);
+  return lines.join('\n');
+}
+
+function reviewFailure(err) {
+  const code = err && err.code;
+  if (code === 'no_key') return 'Add a model key in Settings to get a review.';
+  if (code === 'bad_key') return 'The API key was rejected. Check it in Settings.';
+  if (code === 'offline' || code === 'net') return 'No connection. Try again when you are online.';
+  if (code === 'rate' || code === 'no_quota' || code === 'server') return `The provider is busy or the quota is used up. Try again a little later. ${errorDetail(err, 120)}`.trim();
+  if (code === 'empty') return 'The model sent nothing usable. Try again.';
+  return `The review failed. ${errorDetail(err, 120)}`.trim();
+}
+
+async function runReview(day, auto) {
+  try {
+    const sig = reviewSig(day);
+    const live = day === today();
+    const { data, usage, model } = await review({ cfg: aiCfg(), brief: reviewBrief(day) });
+    const u = S.settings.usage;
+    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
+    await saveSettings();
+    // The day may have been wiped while the request was out
+    if (dayTotals(day).n) await saveDay(day, { review: { ...data, ts: Date.now(), sig, live, model } });
+    S.reviewErr.delete(day);
+  } catch (err) {
+    if (!auto) S.reviewErr.set(day, reviewFailure(err)); // an automatic review that fails just leaves the button
+  }
+  S.reviewing.delete(day);
+  render();
+}
+function queueReview(day, auto = false) {
+  if (S.reviewing.has(day) || !dayVerdict(day)) return;
+  S.reviewing.add(day);
+  S.reviewErr.delete(day);
+  render();
+  chain = chain.then(() => runReview(day, auto)).catch(() => {});
+}
+
+// The last finished day is reviewed by itself, once: one small text request a day
+const autoTried = new Set();
+function autoReview() {
+  if (S.settings.autoReview === false || !hasKey() || navigator.onLine === false) return;
+  const t = today();
+  for (let i = 1; i <= 3; i++) {
+    const day = addDays(t, -i);
+    const v = dayVerdict(day);
+    if (!v) continue;
+    if (autoTried.has(day)) return;
+    const r = S.days[day] && S.days[day].review;
+    const waiting = S.entries.some((e) => e.day === day && e.kind === 'meal' && e.status === 'pending');
+    if (v.level !== 'thin' && !waiting && (!r || r.live)) { autoTried.add(day); queueReview(day, true); }
+    return;
+  }
 }
 
 // ——— Pictures of the plan's meals: the person's own photos, kept apart from the log ———
@@ -1107,6 +1272,12 @@ const ACT = {
     toast('Targets saved');
   },
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
+  'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
+  'review-day': (el) => {
+    if (!hasKey()) return toast('Add a model key in Settings to get a review');
+    if (navigator.onLine === false) return toast('No connection. Try again when you are online');
+    queueReview(el.dataset.day);
+  },
   'loc-save': async (el) => {
     const out = $('#loc-out');
     out.textContent = 'Getting your location…';
@@ -1190,6 +1361,7 @@ document.addEventListener('change', async (ev) => {
   }
   if (el.id === 'set-import') { if (el.files[0]) importBackup(el.files[0]); el.value = ''; return; }
   if (el.dataset.act === 'loc-toggle') return ACT['loc-toggle'](el);
+  if (el.dataset.act === 'review-toggle') return ACT['review-toggle'](el);
   if (el.dataset.chg === 'provider') { S.settings.provider = el.value; await saveSettings(); render(); return openSettings(); }
   if (el.dataset.chg === 'preset') {
     const p = PRESETS.find((x) => x.id === el.value);
@@ -1228,6 +1400,7 @@ document.addEventListener('toggle', (ev) => {
       document.querySelectorAll('details.setting[open]').forEach((o) => { if (o !== d) o.open = false; });
     } else if (S.openSetting === d.dataset.sec) S.openSetting = '';
   }
+  if (d.matches('details.review-ai')) S.reviewOpen.set(d.dataset.day, d.open);
 }, true);
 
 // Tapping an example chip must not take focus away from the composer input
@@ -1260,6 +1433,7 @@ document.addEventListener('visibilitychange', () => {
   if (lastToday !== t && S.viewDay === lastToday) S.viewDay = t;
   lastToday = t;
   render();
+  autoReview();
 });
 
 // ——— Updates ———
@@ -1294,10 +1468,11 @@ function setupUpdates() {
   setupUpdates();
   // Unfinished analyses resume when there is a key and a connection
   if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
+  autoReview();
 })();
 
 // For tests and debugging
-if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings };
+if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings, dayVerdict, verdictText, reviewBrief, autoReview };
 
 // Keep the composer above the on-screen keyboard
 if (window.visualViewport) {
