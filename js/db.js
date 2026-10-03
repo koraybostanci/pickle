@@ -1,5 +1,7 @@
 // Local data layer: everything lives in IndexedDB on this device.
-const NAME = 'denge';
+import { APP_ID } from './core.js';
+
+const NAME = APP_ID;
 const VER = 1;
 let dbp;
 

@@ -3,6 +3,9 @@ import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, 
 
 export const APP_VERSION = '21'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
+// The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
+// never follows the app's name (Pickle), so a rename touches only what people see and never the data.
+export const APP_ID = 'weightplan';
 
 // ——— State ———
 // The settings of an app that has just been installed (new objects each time, so a reset never shares them)

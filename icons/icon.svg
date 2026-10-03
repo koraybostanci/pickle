@@ -1,18 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <title>Denge: a level beam in balance, a plate of greens on one side and a brass weight on the other</title>
+  <title>Pickle: a pickle in a measuring jar with a brass lid. Good things take time.</title>
   <rect width="512" height="512" rx="112" fill="#15201B"/>
-  <g id="art" transform="translate(0 -26)">
-    <!-- The plate, with food in it -->
-    <path d="M84 226h144a72 50 0 0 1-144 0z" fill="#ECEFE8"/>
-    <circle cx="124" cy="212" r="26" fill="#2BB596"/>
-    <circle cx="166" cy="204" r="30" fill="#D9A23A"/>
-    <circle cx="200" cy="218" r="20" fill="#2BB596"/>
-    <!-- The brass weight -->
-    <rect x="320" y="196" width="100" height="94" rx="14" fill="#D9A23A"/>
-    <!-- The beam, level, with its graduations -->
-    <rect x="62" y="290" width="388" height="28" rx="6" fill="#ECEFE8"/>
-    <path d="M318 330v18M360 330v18M402 330v18" stroke="#9BA39C" stroke-width="10"/>
-    <!-- The point it balances on -->
-    <path d="M256 318 206 418h100z" fill="#ECEFE8"/>
-  </g>
+  <!-- The jar: brine, a pickle taking its time, measuring marks, the brass lid -->
+  <g id="art"><defs><clipPath id="g"><rect x="128" y="148" width="256" height="280" rx="54"/></clipPath></defs><rect x="118" y="214" width="276" height="224" fill="#22382B" clip-path="url(#g)"/><g transform="translate(262 300) rotate(12)"><rect x="-9.9" y="-125.6" width="19.8" height="22.3" rx="5.0" fill="#D9A23A"/><g fill="#8DBA4A"><path d="M62.0 0.0 L62.3 11.0 L62.0 21.9 L61.1 32.5 L59.5 42.9 L57.3 52.8 L54.4 62.2 L51.0 71.1 L46.9 79.2 L42.4 86.6 L37.3 93.1 L31.8 98.8 L25.9 103.5 L19.7 107.2 L13.3 109.8 L6.7 111.5 L0.0 112.0 L-6.7 111.5 L-13.3 109.8 L-19.7 107.2 L-25.9 103.5 L-31.8 98.8 L-37.3 93.1 L-42.4 86.6 L-46.9 79.2 L-51.0 71.1 L-54.4 62.2 L-57.3 52.8 L-59.5 42.9 L-61.1 32.5 L-62.0 21.9 L-62.3 11.0 L-62.0 0.0 L-61.1 -11.0 L-59.6 -21.9 L-57.6 -32.5 L-55.1 -42.9 L-52.1 -52.8 L-48.7 -62.2 L-44.9 -71.1 L-40.7 -79.2 L-36.3 -86.6 L-31.6 -93.1 L-26.6 -98.8 L-21.5 -103.5 L-16.3 -107.2 L-10.9 -109.8 L-5.5 -111.5 L-0.0 -112.0 L5.5 -111.5 L10.9 -109.8 L16.3 -107.2 L21.5 -103.5 L26.6 -98.8 L31.6 -93.1 L36.3 -86.6 L40.7 -79.2 L44.9 -71.1 L48.7 -62.2 L52.1 -52.8 L55.1 -42.9 L57.6 -32.5 L59.6 -21.9 L61.1 -11.0Z"/><circle cx="60.3" cy="17.0" r="7.5"/><circle cx="56.0" cy="49.3" r="7.5"/><circle cx="45.5" cy="76.8" r="7.5"/><circle cx="29.7" cy="96.8" r="7.5"/><circle cx="10.3" cy="107.3" r="7.5"/><circle cx="-10.3" cy="107.3" r="7.5"/><circle cx="-29.7" cy="96.8" r="7.5"/><circle cx="-45.5" cy="76.8" r="7.5"/><circle cx="-56.0" cy="49.3" r="7.5"/><circle cx="-60.3" cy="17.0" r="7.5"/><circle cx="-58.5" cy="-17.0" r="7.5"/><circle cx="-51.2" cy="-49.3" r="7.5"/><circle cx="-39.5" cy="-76.8" r="7.5"/><circle cx="-24.9" cy="-96.8" r="7.5"/><circle cx="-8.5" cy="-107.3" r="7.5"/><circle cx="8.5" cy="-107.3" r="7.5"/><circle cx="24.9" cy="-96.8" r="7.5"/><circle cx="39.5" cy="-76.8" r="7.5"/><circle cx="51.2" cy="-49.3" r="7.5"/><circle cx="58.5" cy="-17.0" r="7.5"/></g><path d="M-34.1 -39.2Q-44.6 11.2 -31.0 50.4" fill="none" stroke="#B5D77A" stroke-width="9.9" stroke-linecap="round"/><g fill="#5F8A2C"><circle cx="-21.7" cy="-61.60000000000001" r="8.06"/><circle cx="18.599999999999998" cy="-28.0" r="8.680000000000001"/><circle cx="-18.599999999999998" cy="5.6000000000000005" r="7.4399999999999995"/><circle cx="19.84" cy="36.96" r="8.680000000000001"/><circle cx="-15.5" cy="67.2" r="7.4399999999999995"/></g></g><rect x="118" y="138" width="276" height="300" rx="64" fill="none" stroke="#ECEFE8" stroke-width="20"/><path d="M128 236h30M128 296h20M128 356h30" stroke="#9BA39C" stroke-width="10"/><rect x="158" y="78" width="196" height="56" rx="12" fill="#D9A23A"/></g>
 </svg>

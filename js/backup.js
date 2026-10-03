@@ -3,7 +3,7 @@
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanVerdict } from './ai.js';
-import { SCHEMA_VERSION } from './core.js';
+import { SCHEMA_VERSION, APP_ID } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -20,9 +20,9 @@ const itemList = (v) => (Array.isArray(v) ? v : []).slice(0, 12).map((i) => ({ n
 
 // Why a file cannot be restored, or '' when it can be tried
 export function backupProblem(data) {
-  if (!data || typeof data !== 'object' || data.app !== 'denge' || !Array.isArray(data.entries)) return 'This is not a Denge backup';
+  if (!data || typeof data !== 'object' || data.app !== APP_ID || !Array.isArray(data.entries)) return 'This is not a Pickle backup';
   if (!Number.isInteger(data.v)) return 'This backup has no valid version number, so it cannot be restored';
-  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Denge. Update the app first';
+  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Pickle. Update the app first';
   return '';
 }
 
