@@ -1,7 +1,7 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, kilosDown,
-  dayVerdict, verdictText, reviewState, VERDICT,
+  dayVerdict, verdictText, reviewState, VERDICT, checkReady,
 } from './app.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
@@ -23,6 +23,7 @@ const ICON = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg>',
   camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.4" r="3.4"/></svg>',
 };
+ICON.close = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
 const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
@@ -653,6 +654,91 @@ export function renderLog() {
   ${groups || `<div class="empty"><p>Nothing logged yet.</p><p>Everything you send lands here: photos, meals you type, weigh-ins, steps.</p>
     <div class="actions"><button type="button" class="btn btn-primary" data-act="camera">Take a photo</button><button type="button" class="btn" data-act="library">Choose from library</button></div>
     <p>Typing works too. Tap the box below to see examples.</p></div>`}`;
+}
+
+// ——— Check: a verdict before ordering or buying ———
+const FIT = { good: ['Good choice', 'pill-good'], ok: ['With care', 'pill-warn'], avoid: ['Leave it', 'pill-bad'] };
+const CHECK_KIND = { menu: 'Menu', product: 'Product', dish: 'Dish' };
+const checkWhen = (ts) => (dayKey(new Date(ts)) === today() ? hhmm(ts) : dTiny.format(new Date(ts)));
+
+function checkOption(rec, o, i, rem) {
+  const [label, pill] = FIT[o.fit] || FIT.ok;
+  const dots = [1, 2, 3, 4, 5].map((k) => `<i${k <= o.rating ? ' class="on"' : ''}></i>`).join('');
+  const nums = o.kcal
+    ? `<b>${n0(o.kcal)}</b> kcal${o.p ? `, ${n0(o.p)} g protein` : ''}${o.portion ? `<small>${esc(o.portion)}</small>` : ''}`
+    : esc(o.portion);
+  // What the portion does to today's budget: for food eaten now, not for shopping, and only on the day of the check
+  let budget = '';
+  if (rec.kind !== 'product' && o.kcal && rem != null) {
+    budget = o.kcal <= rem ? `Leaves ${n0(rem - o.kcal)} kcal of today’s budget.` : rem > 0 ? `${n0(o.kcal - rem)} kcal more than is left today.` : 'Today’s budget is already used up.';
+  }
+  return `<li class="option">
+    <div class="option-head"><h3>${esc(o.name)}</h3><i class="pill ${pill}">${label}</i></div>
+    <p class="option-nums"><span class="rating" role="img" aria-label="Quality ${o.rating} of 5"><em>Quality</em>${dots}</span><span class="option-kcal">${nums}</span></p>
+    ${o.why ? `<p class="option-why">${esc(o.why)}</p>` : ''}
+    ${o.tip ? `<p class="option-tip"><b>${o.fit === 'avoid' ? 'Instead' : rec.kind === 'menu' ? 'Order it like this' : 'Make it fit'}:</b> ${esc(o.tip)}</p>` : ''}
+    ${o.facts ? `<p class="option-facts">${esc(o.facts)}</p>` : ''}
+    ${budget || o.kcal ? `<div class="option-foot"><span>${budget}</span>${o.kcal ? `<button type="button" class="btn btn-small" data-act="check-log" data-id="${rec.id}" data-i="${i}">Log this</button>` : ''}</div>` : ''}
+  </li>`;
+}
+
+function checkResult(rec, rem) {
+  const sameDay = dayKey(new Date(rec.ts)) === today();
+  return `<section class="verdict" id="check-result" aria-label="Verdict">
+    <header><h2>${esc(rec.title || CHECK_KIND[rec.kind] || 'Verdict')}</h2><p>${CHECK_KIND[rec.kind] || 'Check'}, ${checkWhen(rec.ts)}</p></header>
+    <p class="verdict-answer">${esc(rec.answer)}</p>
+    ${rec.note ? `<p class="note">Your note: ${esc(rec.note)}</p>` : ''}
+    <ol class="options">${rec.options.map((o, i) => checkOption(rec, o, i, sameDay ? rem : null)).join('')}</ol>
+    <p class="review-foot">From ${rec.photos ? `${rec.photos} ${rec.photos === 1 ? 'photo' : 'photos'}` : 'your note'}; the photos were not kept. Numbers are estimates. <button type="button" class="link" data-act="check-remove" data-id="${rec.id}">Remove this check</button></p>
+  </section>`;
+}
+
+export function renderCheck() {
+  const c = S.check;
+  const t = today();
+  const tot = dayTotals(t);
+  const rem = Math.round(dayTarget(t) - tot.kcal);
+  const remP = Math.max(0, Math.round(S.settings.protein - tot.p));
+  const rec = S.checks.find((x) => x.id === c.openId) || null;
+  const full = c.photos.length >= 4;
+  const photos = c.photos.length
+    ? `<ul class="check-photos">${c.photos.map((p, i) => `<li><img src="${p.url}" alt="Photo ${i + 1} for this check"><button type="button" data-act="check-photo-remove" data-id="${p.id}" aria-label="Remove photo ${i + 1}">${ICON.close}</button></li>`).join('')}</ul>`
+    : '';
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs a model key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const earlier = S.checks.filter((x) => !rec || x.id !== rec.id);
+  const history = earlier.length ? `<section class="check-history">
+    <h2>${rec ? 'Other checks' : 'Earlier checks'}</h2>
+    <ul class="log-list">${earlier.map((x) => {
+      const best = x.options.find((o) => o.fit === 'good') || x.options[0];
+      return `<li><button type="button" class="log-row" data-act="check-open" data-id="${x.id}">
+        <span class="log-time">${checkWhen(x.ts)}</span>
+        <span class="log-main"><span class="log-title">${esc(x.title || CHECK_KIND[x.kind])}</span><span class="log-meta">${CHECK_KIND[x.kind] || 'Check'}${best ? `, ${best.fit === 'avoid' ? 'leave' : best.fit === 'good' ? 'best' : 'with care'}: ${esc(best.name)}` : ''}</span></span>
+      </button></li>`;
+    }).join('')}</ul>
+  </section>` : '';
+  return `
+  <header class="top">
+    <div><h1>Check</h1><p class="sub">Before you order or buy: photograph the menu, the dish or the product and get a verdict against your plan.</p></div>
+    <div class="top-actions">${settingsButton}</div>
+  </header>
+  ${keyNotice}
+  <section class="check-new" aria-label="New check">
+    <p class="check-budget">${rem > 0 ? `Left today: <b>${n0(rem)}</b> kcal${remP ? `, <b>${n0(remP)}</b> g protein to go` : ''}.` : `Today’s budget is used up${rem < -10 ? `, by <b>${n0(-rem)}</b> kcal` : ''}.`}</p>
+    ${photos}
+    <div class="actions">
+      <button type="button" class="btn" data-act="check-cam"${full || c.busy ? ' disabled' : ''}>${ICON.camera}Take a photo</button>
+      <button type="button" class="btn" data-act="check-lib"${full || c.busy ? ' disabled' : ''}>Choose photos</button>
+    </div>
+    <p class="note">${c.photos.length ? `${c.photos.length} of 4 photos. ` : 'Up to 4 photos: both pages of a menu, or the front and the nutrition table of a product. '}They are sent for this check and not kept.</p>
+    <label class="sr-only" for="check-note">A note for this check</label>
+    <input id="check-note" type="text" enterkeyhint="go" maxlength="300" placeholder="Add a note: “dinner, very hungry”" value="${esc(c.note)}"${c.busy ? ' disabled' : ''}>
+    <button type="button" class="btn btn-primary btn-wide" data-act="check-run"${checkReady() ? '' : ' disabled'}>${c.busy ? '<span class="spin" aria-hidden="true"></span>Checking…' : 'Check against my plan'}</button>
+    ${c.busy && c.status ? `<p class="note" role="status">${esc(c.status)}</p>` : ''}
+    ${c.err ? `<p class="note is-error" role="alert">${esc(c.err)}</p>` : ''}
+  </section>
+  ${rec ? checkResult(rec, rem) : ''}
+  ${history}
+  ${!rec && !earlier.length ? `<div class="empty check-empty"><p>What a check tells you</p><p>How good the food is in general, whether it fits your plan and what is left of today, and how to order it so that it does.</p><p>It works for a restaurant menu, a dish in front of you, a product on the shelf, or two products side by side.</p></div>` : ''}`;
 }
 
 // ——— Progress ———

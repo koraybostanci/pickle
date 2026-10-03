@@ -2,14 +2,14 @@ import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, review, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays, targetAt,
 } from './plan.js';
-import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '16'; // bump together with VERSION in sw.js
+export const APP_VERSION = '17'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -29,6 +29,8 @@ export const S = {
   reviewing: new Set(), // days whose review is being written
   reviewErr: new Map(), // day → why the last review failed
   reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
+  check: { photos: [], note: '', busy: false, status: '', err: '', openId: null }, // the check being put together; its photos live in memory only
+  checks: [], // earlier verdicts, newest first, without photos
   urls: new Map(),
   persisted: null,
   storage: null,
@@ -320,7 +322,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
     planId: src === 'plan' ? tpl.id : '', title: tpl.name,
     items: (tpl.items || []).map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
     kcal: tpl.kcal, p: tpl.p, c: tpl.c, f: tpl.f, fib: tpl.fib,
-    tier: tpl.tier || 'plan', flags: tpl.flags || [], conf: 1, q: '', mult: 1,
+    tier: tpl.tier || 'plan', flags: tpl.flags || [], conf: tpl.conf || 1, q: '', mult: 1,
     photoIds: [], timeSrc: day === today() ? 'now' : 'manual', place: null,
   };
   await saveEntry(e);
@@ -552,14 +554,16 @@ function reviewBrief(day) {
   return lines.join('\n');
 }
 
-function reviewFailure(err) {
+function modelFailure(err, what = 'review') {
   const code = err && err.code;
-  if (code === 'no_key') return 'Add a model key in Settings to get a review.';
+  if (code === 'no_key') return `Add a model key in Settings to get a ${what}.`;
+  if (code === 'no_vision') return 'This model does not accept photos. Pick a model with image support in Settings.';
+  if (code === 'no_credit' || code === 'needs_billing') return `${code === 'no_credit' ? 'The provider says the account has no credit.' : 'The provider wants billing enabled before it answers.'} ${errorDetail(err, 120)}`.trim();
   if (code === 'bad_key') return 'The API key was rejected. Check it in Settings.';
   if (code === 'offline' || code === 'net') return 'No connection. Try again when you are online.';
   if (code === 'rate' || code === 'no_quota' || code === 'server') return `The provider is busy or the quota is used up. Try again a little later. ${errorDetail(err, 120)}`.trim();
   if (code === 'empty') return 'The model sent nothing usable. Try again.';
-  return `The review failed. ${errorDetail(err, 120)}`.trim();
+  return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
 }
 
 async function runReview(day, auto) {
@@ -574,7 +578,7 @@ async function runReview(day, auto) {
     if (dayTotals(day).n) await saveDay(day, { review: { ...data, ts: Date.now(), sig, live, model } });
     S.reviewErr.delete(day);
   } catch (err) {
-    if (!auto) S.reviewErr.set(day, reviewFailure(err)); // an automatic review that fails just leaves the button
+    if (!auto) S.reviewErr.set(day, modelFailure(err)); // an automatic review that fails just leaves the button
   }
   S.reviewing.delete(day);
   render();
@@ -602,6 +606,120 @@ function autoReview() {
     if (v.level !== 'thin' && !waiting && (!r || r.live)) { autoTried.add(day); queueReview(day, true); }
     return;
   }
+}
+
+// ——— Check before ordering or buying ———
+const CHECK_PHOTOS = '__check'; // marks the photo picker as opened from the Check screen
+const CHECK_MAX = 4; // photos per check
+const CHECK_KEEP = 30; // verdicts kept
+export const checkReady = () => !S.check.busy && (S.check.photos.length > 0 || S.check.note.trim().length > 2);
+
+async function addCheckPhotos(files) {
+  const room = CHECK_MAX - S.check.photos.length;
+  for (const f of files.slice(0, room)) {
+    try {
+      const { blob } = await shrink(f, CHECK_EDGE);
+      S.check.photos.push({ id: db.uid(), blob, url: URL.createObjectURL(blob) });
+    } catch { toast('Could not open that photo'); }
+  }
+  if (files.length > room) toast(`A check takes up to ${CHECK_MAX} photos`);
+  S.check.err = '';
+  render();
+}
+function removeCheckPhoto(id) {
+  const p = S.check.photos.find((x) => x.id === id);
+  if (p) URL.revokeObjectURL(p.url);
+  S.check.photos = S.check.photos.filter((x) => x.id !== id);
+  render();
+}
+
+// What the model needs to judge a choice: where the day stands, the week's allowance, the goal, and the person's note
+function checkBrief(note) {
+  const s = S.settings;
+  const t = today();
+  const now = new Date();
+  const tot = dayTotals(t);
+  const target = dayTarget(t);
+  const r = (x) => Math.round(x);
+  const logged = new Set(mealsOf(t).map((e) => e.slot));
+  const open = SLOTS.filter((x) => x.id !== 'late' && !logged.has(x.id)).map((x) => x.name.toLowerCase());
+  const lines = [
+    `Time ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(now)}, a ${S.days[t] && S.days[t].train ? 'workout' : 'rest'} day.`,
+    tot.n
+      ? `Today so far: ${r(tot.kcal)} of ${target} kcal eaten, ${r(target - tot.kcal) >= 0 ? `${r(target - tot.kcal)} kcal left` : `${r(tot.kcal - target)} kcal over`}; protein ${r(tot.p)} of ${s.protein} g.${open.length ? ` Not eaten yet: ${open.join(', ')}.` : ' All meals of the day are logged.'}`
+      : `Nothing eaten yet today: the whole ${target} kcal and ${s.protein} g of protein are open. The plan's meals: ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.`,
+    `Daily targets: ${s.kcalRest} kcal on rest days, ${s.kcalTrain} on workout days, protein ${s.protein} g, fibre ${s.fiber} g.`,
+  ];
+  const f = weekFlex(t);
+  lines.push(`This week: flexible dinner ${f.meal} of 1 used, beer or small dessert ${f.small} of 1 used, off-plan entries ${f.off}.`);
+  const rate = planRate();
+  let goal = `Goal: ${s.startKg} kg to ${s.targetKg} kg by ${s.targetDate}, about ${rate.kg.toFixed(2)} kg (${r(rate.kcal / 10) * 10} kcal) a day.`;
+  const avg = avg7(t);
+  if (avg && t >= s.startDate) {
+    const gap = avg.kg - targetAt(t, s);
+    goal += ` 7-day average ${avg.kg.toFixed(1)} kg, ${Math.abs(gap) < 0.15 ? 'on the schedule' : `${Math.abs(gap).toFixed(1)} kg ${gap > 0 ? 'above' : 'below'} the schedule`}.`;
+  }
+  lines.push(goal);
+  lines.push(note ? `Note from the person: ${note}` : 'No note from the person.');
+  return lines.join('\n');
+}
+
+function showCheckResult() {
+  const el = document.getElementById('check-result');
+  if (el) el.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+
+async function runCheck() {
+  const c = S.check;
+  if (!checkReady()) return;
+  if (!hasKey()) { c.err = modelFailure({ code: 'no_key' }, 'check'); return render(); }
+  if (navigator.onLine === false) { c.err = modelFailure({ code: 'offline' }, 'check'); return render(); }
+  const note = c.note.trim().slice(0, 300);
+  const blobs = c.photos.map((p) => p.blob);
+  c.busy = true; c.err = ''; c.status = '';
+  render();
+  try {
+    const { data, usage, model } = await check({
+      cfg: aiCfg(), blobs, brief: checkBrief(note),
+      onRetry: (n, of, alt, why) => { c.status = alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`; render(); },
+    });
+    const u = S.settings.usage;
+    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
+    await saveSettings();
+    if (data.kind === 'none' || !data.options.length) {
+      // Nothing to judge: the photos stay, so one more can be added
+      c.err = data.answer || 'Nothing to judge was found. Try a closer or sharper photo.';
+    } else {
+      const rec = { id: db.uid(), ts: Date.now(), ...data, note, photos: blobs.length, model };
+      S.checks = [rec, ...S.checks].slice(0, CHECK_KEEP);
+      await db.kvSet('checks', S.checks);
+      c.photos.forEach((p) => URL.revokeObjectURL(p.url));
+      c.photos = []; c.note = ''; c.openId = rec.id;
+    }
+  } catch (err) {
+    c.err = modelFailure(err, 'check');
+  }
+  c.busy = false; c.status = '';
+  render();
+  if (!c.err) showCheckResult();
+}
+
+async function removeCheck(id) {
+  S.checks = S.checks.filter((x) => x.id !== id);
+  if (S.check.openId === id) S.check.openId = null;
+  await db.kvSet('checks', S.checks);
+  render();
+}
+
+// "I am having this": the chosen option goes into today's log with the check's estimate
+async function logCheckOption(id, i) {
+  const rec = S.checks.find((x) => x.id === id);
+  const o = rec && rec.options[i];
+  if (!o) return;
+  await logMeal({
+    name: o.name, slot: 'any', kcal: o.kcal, p: o.p, c: o.c, f: o.f, fib: o.fib, tier: o.tier, conf: 0.5,
+    items: [{ n: o.portion ? `${o.name} (${o.portion})` : o.name, g: 0, kcal: o.kcal, p: o.p }],
+  }, 'check', today());
 }
 
 // ——— Pictures of the plan's meals: the person's own photos, kept apart from the log ———
@@ -844,7 +962,7 @@ async function deliverFile(name, content, type) {
 
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
-  const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days) };
+  const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
   // The plan's pictures always travel with the backup; photos of logged meals only when asked for
   const planIds = new Set(Object.values(S.settings.planPhotos || {}));
   const photos = (await db.all('photos')).filter((p) => withPhotos || planIds.has(p.id));
@@ -872,6 +990,10 @@ async function importBackup(file) {
   await db.putMany('days', data.days || []);
   if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, buf: bufFromB64(p.b64) })));
   if (data.settings) { S.settings = { ...S.settings, ...migrateSettings(data.settings), apiKey: S.settings.apiKey, oaKey: S.settings.oaKey }; await saveSettings(); }
+  if (Array.isArray(data.checks)) {
+    const have = new Set(S.checks.map((c) => c.id));
+    await db.kvSet('checks', S.checks.concat(data.checks.filter((c) => c && c.id && !have.has(c.id))).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
+  }
   await load();
   render();
   toast(`${data.entries.length} entries restored`);
@@ -894,6 +1016,7 @@ async function load() {
     await saveSettings();
   }
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
+  S.checks = await db.kvGet('checks', []);
 }
 
 async function refreshStorage() {
@@ -912,7 +1035,7 @@ export function go(tab) {
 function render() {
   const v = $('#view');
   const y = window.scrollY;
-  const fn = { today: renderToday, log: renderLog, progress: renderProgress, plan: renderPlan }[S.tab];
+  const fn = { today: renderToday, log: renderLog, check: renderCheck, progress: renderProgress, plan: renderPlan }[S.tab];
   const focusId = document.activeElement && v.contains(document.activeElement) ? document.activeElement.id : '';
   v.innerHTML = fn();
   v.dataset.view = S.tab;
@@ -1079,6 +1202,13 @@ const ACT = {
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
   'plan-meal': (el) => openSheet(renderPlanSheet(el.dataset.id), { type: 'plan', id: el.dataset.id }),
+  'check-cam': () => { photoTarget = CHECK_PHOTOS; $('#f-cam').click(); },
+  'check-lib': () => { photoTarget = CHECK_PHOTOS; $('#f-lib').click(); },
+  'check-photo-remove': (el) => removeCheckPhoto(el.dataset.id),
+  'check-run': () => runCheck(),
+  'check-open': (el) => { S.check.openId = el.dataset.id; render(); showCheckResult(); },
+  'check-remove': (el) => removeCheck(el.dataset.id),
+  'check-log': (el) => logCheckOption(el.dataset.id, Number(el.dataset.i)),
   'plan-photo-cam': (el) => { photoTarget = el.dataset.id; $('#f-cam').click(); },
   'plan-photo-lib': (el) => { photoTarget = el.dataset.id; $('#f-lib').click(); },
   'plan-photo-remove': (el) => removePlanPhoto(el.dataset.id),
@@ -1323,11 +1453,11 @@ const ACT = {
     location.reload();
   },
   'wipe': async () => {
-    if (!window.confirm('All entries, their photos and weigh-ins on this device will be deleted. Do you have a backup? Continue?')) return;
+    if (!window.confirm('All entries, their photos, weigh-ins and checks on this device will be deleted. Do you have a backup? Continue?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
-    await db.clear('entries'); await db.clear('days');
+    await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const p of await db.all('photos')) if (!keep.has(p.id)) await db.del('photos', p.id);
-    S.entries = []; S.days = {};
+    S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
     closeSheet();
     render();
     toast('All entries deleted');
@@ -1344,7 +1474,15 @@ document.addEventListener('click', (ev) => {
 });
 
 // The zoom slider of the framing step
-document.addEventListener('input', (ev) => { if (ev.target.id === 'frame-zoom') zoomFrame(Number(ev.target.value)); });
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'frame-zoom') zoomFrame(Number(ev.target.value));
+  // What is typed for a check is kept in state, so a re-render does not lose it
+  if (ev.target.id === 'check-note') {
+    S.check.note = ev.target.value;
+    const run = document.querySelector('[data-act="check-run"]');
+    if (run) run.disabled = !checkReady();
+  }
+});
 
 document.addEventListener('change', async (ev) => {
   const el = ev.target;
@@ -1354,6 +1492,7 @@ document.addEventListener('change', async (ev) => {
     // A photo asked for from the Plan screen becomes that meal's picture and is not logged
     const target = photoTarget;
     photoTarget = null;
+    if (target === CHECK_PHOTOS) { if (files.length) addCheckPhotos(files); return; }
     if (target) { if (files.length) openFrame(target, files[0]); return; }
     const note = $('#composer-input').value.trim();
     if (files.length) { $('#composer-input').value = ''; submitPhotos(files, note); }
@@ -1419,6 +1558,7 @@ $('#composer').addEventListener('submit', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet();
   // Enter in the correction box sends it
+  if (ev.key === 'Enter' && ev.target.id === 'check-note') { ev.preventDefault(); ev.target.blur(); runCheck(); }
   if (ev.key === 'Enter' && ev.target.id && ev.target.id.startsWith('answer-')) {
     ev.preventDefault();
     ACT.answer({ dataset: { id: ev.target.id.slice(7) } });
@@ -1472,7 +1612,7 @@ function setupUpdates() {
 })();
 
 // For tests and debugging
-if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings, dayVerdict, verdictText, reviewBrief, autoReview };
+if (location.hostname === 'localhost') window.__kantar = { S, parseLocal, render, submitPhotos, migrateEntry, migrateSettings, dayVerdict, verdictText, reviewBrief, autoReview, checkBrief };
 
 // Keep the composer above the on-screen keyboard
 if (window.visualViewport) {

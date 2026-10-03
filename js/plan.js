@@ -225,6 +225,8 @@ const SHORT = {
   almonds: 'almonds', cottage: 'cottage cheese', chicken: 'chicken breast', mince: 'meatballs',
   beef: 'red meat', salmon: 'salmon', ovenVeg: 'oven vegetables', bulgur: 'bulgur', lentils: 'lentils',
 };
+// The foods the plan is built from, for requests that only need the gist of it
+export const planFoods = () => Array.from(new Set(Object.values(SHORT))).join(', ');
 export function planDigest() {
   return MEALS.map((m) => `${m.id}: ${m.ingredients.map(([k, g]) => `${SHORT[k]} ${g}g`).join(', ')} = ${m.kcal} kcal, ${Math.round(m.p)}p`).join('\n');
 }

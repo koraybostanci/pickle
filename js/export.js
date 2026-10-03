@@ -37,7 +37,7 @@ CREATE TABLE kantar_meals (
   logged_at  TEXT NOT NULL,                     -- local time, YYYY-MM-DD HH:MM:SS
   slot       TEXT,                              -- morning, lunch, snack1, snack2, dinner, late, workout
   title      TEXT,
-  source     TEXT,                              -- plan, flex, favorite, photo, text
+  source     TEXT,                              -- plan, flex, favorite, photo, text, check
   plan_id    TEXT,                              -- id of the plan meal, if it was one
   tier       TEXT,                              -- plan, flex, off
   status     TEXT NOT NULL,                     -- ok, pending, error; only ok rows have numbers

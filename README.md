@@ -27,6 +27,11 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   setback, and what a surplus costs on the schedule ("491 kcal over target: about 0.06 kg, 69% of
   what the day was meant to lose"). The model then writes a short note on what helped, what cost
   the most and what would have reduced it, and one thing to do next.
+- **Check:** a verdict before you order or buy. Photograph a restaurant menu, a dish, or a product
+  and its nutrition table (up to four photos, or just a typed question). A model rates each option's
+  quality in general, says whether it fits your plan and what is left of today, estimates calories
+  and protein for a portion, and tells you how to order it so that it fits or what to have instead.
+  One tap logs the option you chose.
 - **Progress:** one token for every kilo collected, streaks and perfect days, the weight chart with
   a 7-day average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
@@ -50,12 +55,14 @@ on the device.
   time and camera details that the original file carried.
 - The day's review sends text only: that day's meals with their numbers, your targets, the weight
   schedule and where you stand against it. No photos.
+- Photos taken for a check are sent at up to 1536 px, so small print stays readable, together with
+  where your day stands. They are not stored; the last 30 verdicts are, as text.
 - The API key is stored only on the device and is never written to a backup file.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
 - There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can restore on
-  the same or another device. The plan's pictures are included in every backup; photos of
-  logged meals only when you choose "With photos".
+  the same or another device. The plan's pictures and the verdicts of your checks are included in
+  every backup; photos of logged meals only when you choose "With photos".
 
 ## Get your own copy
 
