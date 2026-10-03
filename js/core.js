@@ -1,22 +1,27 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '19'; // bump together with VERSION in sw.js
+export const APP_VERSION = '20'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file; 2 = English ids
 export const MIN_SCHEMA_VERSION = 2; // the oldest data this version can read; 1 = the first release, with Turkish ids, which can no longer be converted
 // Whether a device still holds data from before that. Entries with no stored settings can only come from a release that had not saved any yet.
 export const isLegacyData = (stored, entryCount) => (stored ? (stored.schema || 1) < MIN_SCHEMA_VERSION : entryCount > 0);
 
 // ——— State ———
+// The settings of an app that has just been installed (new objects each time, so a reset never shares them)
+export const freshSettings = () => ({
+  ...DEFAULTS, schema: SCHEMA_VERSION,
+  provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
+  useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
+  usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
+});
+// What the Check screen is holding while a check is put together; its photos live in memory only
+export const freshCheck = () => ({ photos: [], note: '', busy: false, status: '', err: '', openId: null });
+
 export const S = {
   tab: 'today',
   legacy: false, // the device holds data from the first release, which can no longer be read correctly
-  settings: {
-    ...DEFAULTS, schema: SCHEMA_VERSION,
-    provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
-    useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
-    usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
-  },
+  settings: freshSettings(),
   entries: [],
   days: {},
   viewDay: dayKey(new Date()),
@@ -25,7 +30,7 @@ export const S = {
   reviewing: new Set(), // days whose review is being written
   reviewErr: new Map(), // day → why the last review failed
   reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
-  check: { photos: [], note: '', busy: false, status: '', err: '', openId: null }, // the check being put together; its photos live in memory only
+  check: freshCheck(), // the check being put together
   checks: [], // earlier verdicts, newest first, without photos
   urls: new Map(),
   persisted: null,

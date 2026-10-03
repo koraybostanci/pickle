@@ -6,7 +6,7 @@ import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listM
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, isLegacyData, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+  APP_VERSION, SCHEMA_VERSION, isLegacyData, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -602,6 +602,7 @@ async function analyzeEntry(id, opts = {}) {
       onRetry: (...a) => { S.retry.set(id, retryNote(...a)); render(); },
     });
     await addUsage(usedModel, usage);
+    if (!S.entries.some((x) => x.id === id)) { S.busy.delete(id); S.retry.delete(id); return render(); } // deleted while the request was out
     e.model = usedModel;
     e.err = '';
     // What comes back from the model is kept within sane bounds: a slipped decimal must not wreck a day
@@ -1239,6 +1240,7 @@ const ACT = {
     location.reload();
   },
   'wipe': async () => {
+    if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
     if (!window.confirm('All entries, their photos, weigh-ins and checks on this device will be deleted. Do you have a backup? Continue?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
@@ -1255,7 +1257,32 @@ const ACT = {
     render();
     toast('All entries deleted');
   },
+  // Back to how the app was on its first launch: the database is emptied and the settings start again.
+  // The API key and provider can stay, so they need not be typed in again.
+  'wipe-all': async () => {
+    if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
+    const typed = window.prompt('Everything on this device will be deleted: entries, photos, weigh-ins, the plan’s pictures, targets, favourites and saved places. This cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
+    if (!typed || typed.trim().toLowerCase() !== 'delete') return;
+    const keepKey = !!($('#keep-key') && $('#keep-key').checked);
+    const kept = {};
+    if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
+    for (const store of ['entries', 'days', 'photos', 'kv']) await db.clear(store);
+    S.urls.forEach((u) => URL.revokeObjectURL(u));
+    S.urls.clear();
+    S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
+    S.settings = { ...freshSettings(), ...kept };
+    await saveSettings();
+    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck(); S.legacy = false;
+    S.viewDay = today(); S.calPick = null; S.openSetting = '';
+    S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.reviewOpen.clear();
+    autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
+    closeSheet();
+    go('today');
+    toast(keepKey ? 'The app is empty again. Your API key is kept' : 'The app is empty again');
+  },
 };
+// Work that a wipe must not run into: it would write its result into the emptied app
+const busyNow = () => S.busy.size > 0 || S.reviewing.size > 0 || preparing > 0 || S.check.busy;
 
 // A handler that fails (storage full, a database that will not open) says so, instead of the screen showing
 // something that was never saved. Runs fn straight away: file pickers need the tap's own turn.

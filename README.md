@@ -71,6 +71,11 @@ on the device.
   entries, days, checks and plan pictures to what is on the device (an entry or day that is in
   both takes the backup's version); its targets, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
+- Settings → "Reset" has two levels. "Delete all entries" removes what you logged (entries, photos,
+  weigh-ins, checks) and keeps your settings and the plan's pictures. "Reset everything" empties the
+  app as it was on its first launch, including targets, favourites, saved places and the plan's
+  pictures; the API key and provider stay unless you untick the box. It asks you to type DELETE, and
+  it refuses while something is being analysed. Neither can be undone, so save a backup first.
 
 ## Get your own copy
 
@@ -206,7 +211,7 @@ On `localhost` the app exposes `window.__kantar` for debugging.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'kantar-v20'`) and `APP_VERSION` in `js/core.js` (`'20'`) together, then
+Bump `VERSION` in `sw.js` (`'kantar-v21'`) and `APP_VERSION` in `js/core.js` (`'21'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,

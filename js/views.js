@@ -1172,7 +1172,11 @@ export function renderSettings() {
 
   const reset = `
     <p class="note">All entries and their photos, weigh-ins, steps, water, workout days and checks are deleted from this device. The plan’s pictures, settings and keys stay.</p>
-    <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Delete all entries</button></div>`;
+    <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Delete all entries</button></div>
+    <h3 class="sub-head">Start from scratch</h3>
+    <p class="note">Deletes everything on this device and returns the app to how it was on its first launch: entries, photos, weigh-ins, the plan’s pictures, targets, favourites, saved places and the usage totals. Save a backup first if you may want any of it back.</p>
+    <label class="check"><input type="checkbox" id="keep-key" checked> Keep my API key and provider</label>
+    <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe-all">Reset everything</button></div>`;
 
   return `
   <header class="sheet-top"><h2 id="sheet-title">Settings</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>

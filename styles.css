@@ -607,6 +607,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 .setting { border-bottom: 1px solid var(--line); }
 .setting summary { list-style: none; display: grid; grid-template-columns: 1fr auto; gap: 1px 12px; align-items: center; min-height: 62px; padding: 8px 0; cursor: pointer; }
 .setting summary::-webkit-details-marker { display: none; }
+.setting .sub-head { margin: 22px 0 4px; padding-top: 16px; border-top: 1px solid var(--line); }
 .setting summary span { font: 600 16px/1.3 var(--txt); }
 .setting summary small { grid-column: 1; color: var(--ink2); font-size: 13.5px; overflow-wrap: anywhere; }
 .setting summary::after { content: ""; grid-column: 2; grid-row: 1 / 3; width: 9px; height: 9px; margin: 0 6px 4px 0; border-right: 2px solid var(--ink3); border-bottom: 2px solid var(--ink3); transform: rotate(45deg); transition: transform .15s; }
