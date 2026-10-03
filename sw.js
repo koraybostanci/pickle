@@ -2,10 +2,10 @@
 // Bump VERSION here and APP_VERSION in js/app.js together on every release.
 // Files are served only from the versioned cache: files of two releases never mix,
 // and a new release arrives only once the new service worker is installed.
-const VERSION = 'kantar-v14';
+const VERSION = 'kantar-v15';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js',
+  'js/app.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 
