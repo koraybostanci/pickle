@@ -6,9 +6,9 @@ import {
   MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
   slotByTime, dayKey, parseDay, addDays, diffDays,
 } from './plan.js';
-import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, attachChart } from './views.js';
 
-export const APP_VERSION = '14'; // bump together with VERSION in sw.js
+export const APP_VERSION = '15'; // bump together with VERSION in sw.js
 const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
 
 // ——— State ———
@@ -438,6 +438,39 @@ function queueAnalyze(id, opts) {
   return chain;
 }
 
+// ——— Pictures of the plan's meals: the person's own photos, kept apart from the log ———
+let photoTarget = null; // the plan meal waiting for the photo picker, if any
+async function storePlanPhoto(mealId, blob, w, h) {
+  const old = (S.settings.planPhotos || {})[mealId];
+  const id = db.uid();
+  await db.put('photos', { id, buf: await blob.arrayBuffer(), type: 'image/jpeg', w, h, plan: mealId });
+  S.settings.planPhotos = { ...(S.settings.planPhotos || {}), [mealId]: id };
+  await saveSettings();
+  if (old) { await db.del('photos', old); const u = S.urls.get(old); if (u) { URL.revokeObjectURL(u); S.urls.delete(old); } }
+}
+async function setPlanPhoto(mealId, file) {
+  if (!MEAL_BY_ID[mealId]) return;
+  try {
+    const small = await shrink(file);
+    await storePlanPhoto(mealId, small.blob, small.w, small.h);
+  } catch (err) {
+    return toast('Could not open that photo');
+  }
+  render();
+  toast('Photo added to the plan');
+}
+async function removePlanPhoto(mealId) {
+  const id = (S.settings.planPhotos || {})[mealId];
+  if (!id) return;
+  const { [mealId]: gone, ...rest } = S.settings.planPhotos;
+  S.settings.planPhotos = rest;
+  await saveSettings();
+  await db.del('photos', id);
+  const u = S.urls.get(id);
+  if (u) { URL.revokeObjectURL(u); S.urls.delete(id); }
+  render();
+}
+
 async function photoBlob(pid) {
   const p = await db.get('photos', pid);
   return p ? new Blob([p.buf], { type: p.type || 'image/jpeg' }) : null;
@@ -476,6 +509,11 @@ async function analyzeEntry(id, opts = {}) {
           planId: plan.id, title: plan.name, items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
           kcal: plan.kcal, p: plan.p, c: plan.c, f: plan.f, fib: plan.fib, tier: 'plan',
         });
+        // A plan meal without a picture takes this photo as its own
+        if (blobs[0] && !(S.settings.planPhotos || {})[plan.id]) {
+          const src = await db.get('photos', (e.photoIds || [])[0]);
+          await storePlanPhoto(plan.id, blobs[0], (src && src.w) || 0, (src && src.h) || 0);
+        }
       } else {
         const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String(i.n || ''), g: +i.g || 0, kcal: +i.kcal || 0, p: +i.p || 0 })) : [];
         const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
@@ -579,7 +617,10 @@ async function deliverFile(name, content, type) {
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
   const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days) };
-  if (withPhotos) data.photos = (await db.all('photos')).map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, b64: b64FromBuf(p.buf) }));
+  // The plan's pictures always travel with the backup; photos of logged meals only when asked for
+  const planIds = new Set(Object.values(S.settings.planPhotos || {}));
+  const photos = (await db.all('photos')).filter((p) => withPhotos || planIds.has(p.id));
+  if (photos.length) data.photos = photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, b64: b64FromBuf(p.buf) }));
   const done = await deliverFile(`kantar-backup-${today()}.json`, JSON.stringify(data), 'application/json');
   if (!done) return;
   S.settings.lastBackup = Date.now();
@@ -601,7 +642,7 @@ async function importBackup(file) {
   if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('This is not a Kantar backup');
   await db.putMany('entries', data.entries.map(migrateEntry));
   await db.putMany('days', data.days || []);
-  if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, buf: bufFromB64(p.b64) })));
+  if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, buf: bufFromB64(p.b64) })));
   if (data.settings) { S.settings = { ...S.settings, ...migrateSettings(data.settings), apiKey: S.settings.apiKey, oaKey: S.settings.oaKey }; await saveSettings(); }
   await load();
   render();
@@ -660,6 +701,7 @@ function render() {
   checkWins();
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
+  if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
     if (html) { $('#sheet-body').innerHTML = html; hydratePhotos(); } else closeSheet();
@@ -785,7 +827,7 @@ const ACT = {
   'day-today': () => { S.viewDay = today(); render(); },
   'log-plan': (el) => { if (S.sheet && S.sheet.type === 'slot') closeSheet(); return logMeal(MEAL_BY_ID[el.dataset.id], 'plan'); },
   'slot': (el) => openSheet(renderSlotSheet(el.dataset.slot, S.viewDay), { type: 'slot', slot: el.dataset.slot }),
-  'slot-camera': () => { closeSheet(); $('#f-cam').click(); },
+  'slot-camera': () => { closeSheet(); photoTarget = null; $('#f-cam').click(); },
   'compose': () => { closeSheet(); const inp = $('#composer-input'); inp.focus(); },
   'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'flex' }, 'flex', today()); },
   'log-favorite': (el) => { const f = (S.settings.favorites || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'favorite', today()); },
@@ -804,8 +846,14 @@ const ACT = {
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
-  'camera': () => $('#f-cam').click(),
-  'library': () => $('#f-lib').click(),
+  'camera': () => { photoTarget = null; $('#f-cam').click(); },
+  'library': () => { photoTarget = null; $('#f-lib').click(); },
+  // Plan: a meal's details, and its picture
+  'plan-meal': (el) => openSheet(renderPlanSheet(el.dataset.id), { type: 'plan', id: el.dataset.id }),
+  'plan-photo-cam': (el) => { photoTarget = el.dataset.id; $('#f-cam').click(); },
+  'plan-photo-lib': (el) => { photoTarget = el.dataset.id; $('#f-lib').click(); },
+  'plan-photo-remove': (el) => removePlanPhoto(el.dataset.id),
+  'log-plan-today': (el) => { closeSheet(); return logMeal(MEAL_BY_ID[el.dataset.id], 'plan', today()); },
   'hint': (el) => {
     const inp = $('#composer-input');
     inp.value = el.dataset.fill;
@@ -1038,8 +1086,10 @@ const ACT = {
     location.reload();
   },
   'wipe': async () => {
-    if (!window.confirm('All entries, photos and weigh-ins on this device will be deleted. Do you have a backup? Continue?')) return;
-    await db.clear('entries'); await db.clear('photos'); await db.clear('days');
+    if (!window.confirm('All entries, their photos and weigh-ins on this device will be deleted. Do you have a backup? Continue?')) return;
+    const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
+    await db.clear('entries'); await db.clear('days');
+    for (const p of await db.all('photos')) if (!keep.has(p.id)) await db.del('photos', p.id);
     S.entries = []; S.days = {};
     closeSheet();
     render();
@@ -1060,8 +1110,12 @@ document.addEventListener('change', async (ev) => {
   const el = ev.target;
   if (el.id === 'f-cam' || el.id === 'f-lib') {
     const files = Array.from(el.files || []);
-    const note = $('#composer-input').value.trim();
     el.value = '';
+    // A photo asked for from the Plan screen becomes that meal's picture and is not logged
+    const target = photoTarget;
+    photoTarget = null;
+    if (target) { if (files.length) setPlanPhoto(target, files[0]); return; }
+    const note = $('#composer-input').value.trim();
     if (files.length) { $('#composer-input').value = ''; submitPhotos(files, note); }
     return;
   }
@@ -1110,8 +1164,8 @@ document.addEventListener('toggle', (ev) => {
 // Tapping an example chip must not take focus away from the composer input
 document.addEventListener('pointerdown', (ev) => { if (ev.target.closest('[data-act="hint"]')) ev.preventDefault(); });
 
-$('#btn-cam').addEventListener('click', () => $('#f-cam').click());
-$('#btn-lib').addEventListener('click', () => $('#f-lib').click());
+$('#btn-cam').addEventListener('click', () => { photoTarget = null; $('#f-cam').click(); });
+$('#btn-lib').addEventListener('click', () => { photoTarget = null; $('#f-lib').click(); });
 $('#composer').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const inp = $('#composer-input');

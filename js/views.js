@@ -23,6 +23,7 @@ const ICON = {
   camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.4" r="3.4"/></svg>',
 };
 const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
+const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
 
 // Where the weight stands against the schedule, in plain words
@@ -368,10 +369,14 @@ export function renderSlotSheet(slotId, day) {
   const options = slotOptions(slotId, all.filter((e) => e.slot === slotId));
   const suggested = sg.meal && sg.slot && sg.slot.id === slotId ? sg.meal.id : '';
   const ordered = options.slice().sort((a, b) => (a.id === suggested ? -1 : b.id === suggested ? 1 : 0));
+  const pics = S.settings.planPhotos || {};
+  const anyPic = options.some((m) => pics[m.id]); // thumbnails only when there is at least one to show
+  const thumb = (m) => (!anyPic ? '' : pics[m.id] ? `<span class="meal-thumb"><img data-photo="${pics[m.id]}" alt=""></span>` : `<span class="meal-thumb is-empty">${PLATE}</span>`);
   return `
   <header class="sheet-top"><h2 id="sheet-title">${sl.name}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
   <p class="note">${sl.hint ? sl.hint + '. ' : ''}Tap what you ${isToday ? 'are having' : 'had'}.</p>
   <ul class="meal-list option-list">${ordered.map((m) => `<li class="meal"><button type="button" class="meal-main" data-act="log-plan" data-id="${m.id}">
+      ${thumb(m)}
       <span class="meal-text"><b>${esc(m.name)}${m.id === suggested ? '<small>suggested</small>' : ''}</b><span>${n0(m.p)} g protein</span></span>
       <span class="meal-kcal"><b>${m.kcal}</b> kcal</span>
     </button></li>`).join('')}</ul>
@@ -857,36 +862,75 @@ function wins() {
 }
 
 // ——— Plan ———
+// The picture of a plan meal: the person's own photo, or an invitation to add one
+function planPic(id, emptyText) {
+  const pid = (S.settings.planPhotos || {})[id];
+  return `<span class="plan-pic${pid ? '' : ' is-empty'}"><span class="plan-pic-empty">${PLATE}${emptyText ? `<em>${emptyText}</em>` : ''}</span>${pid ? `<img data-photo="${pid}" alt="">` : ''}</span>`;
+}
+
 export function renderPlan() {
   const s = S.settings;
-  const section = (id, title, note) => `<section class="plan-meal">
-    <h2>${title}</h2>${note ? `<p class="note">${note}</p>` : ''}
-    ${MEALS.filter((m) => m.slot === id).map((m) => `<details class="plan-option">
-      <summary><span>${esc(m.name)}</span><span class="plan-value">${m.kcal} kcal, ${n0(m.p)} g protein</span></summary>
-      <ul class="items">${m.items.map((i) => `<li><span>${esc(i.n)}</span><span>${i.g} g${i.measure ? ` (${esc(i.measure)})` : ''}</span></li>`).join('')}</ul>
-      <p class="note">Carbs ${n0(m.c)} g, fat ${n0(m.f)} g, fibre ${n0(m.fib)} g.</p>
-    </details>`).join('')}
+  const pictured = MEALS.filter((m) => (s.planPhotos || {})[m.id]).length;
+  const slot = (id, title, time, note) => {
+    const meals = MEALS.filter((m) => m.slot === id);
+    return `<section class="plan-slot">
+    <h2>${title}${time ? `<small>${time}</small>` : ''}</h2>${note ? `<p class="note">${note}</p>` : ''}
+    <div class="plan-row${meals.length === 1 ? ' is-single' : ''}">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(`${m.name}, ${m.kcal} kcal, ${n0(m.p)} g protein. Details`)}">
+        ${planPic(m.id, 'Add photo')}
+        <span class="plan-name">${esc(m.name)}</span>
+        <span class="plan-meta"><b>${m.kcal}</b> kcal<i>${n0(m.p)} g protein</i></span>
+      </button>`).join('')}</div>
   </section>`;
+  };
   const list = (items) => `<ul class="rules">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const group = (title, body) => `<details class="rule-group"><summary><span>${title}</span></summary><div class="rule-body">${body}</div></details>`;
   return `
   <header class="top">
-    <div><h1>Plan</h1><p class="sub">Rest day ${n0(s.kcalRest)} kcal, workout day ${n0(s.kcalTrain)} kcal. Protein ${s.protein} g, fibre at least ${s.fiber} g.</p></div>
+    <div><h1>Plan</h1><p class="sub">${pictured ? `${pictured} of ${MEALS.length} meals show your own photo.` : 'Tap a meal for its ingredients, and to add a photo of your own plate.'}</p></div>
     <div class="top-actions">${settingsButton}</div>
   </header>
-  ${section('lunch', 'Lunch, 12:00', 'The first meal of the day. One of four options.')}
-  ${section('snack1', 'Snack 1', 'Most of the day’s protein comes from here: 250 g of skyr.')}
-  ${section('snack2', 'Snack 2', 'On meatball or salmon days the cottage cheese option tops up the protein.')}
-  ${section('dinner', 'Dinner, 18:00', 'Meat, chicken and fish by raw weight.')}
-  ${section('workout', 'Workout-day extras', 'Only on workout days; together about 200 kcal.')}
-  ${section('late', 'After 20:00', 'Herbal tea by default.')}
-  <section><h2>Dinner rotation</h2><p class="note">Fish twice and legumes twice a week.</p>
-    <table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>
-  </section>
-  <section><h2>Every day</h2>${list(RULES.daily)}</section>
-  <section><h2>Weekly flex budget</h2>${list(RULES.weekly)}</section>
-  <section><h2>Off for the whole period</h2>${list(RULES.off)}</section>
-  <section><h2>Training and movement</h2>${list(RULES.training)}</section>
-  <section><h2>Process rules</h2>${list(RULES.process)}</section>`;
+  <ul class="plan-targets" aria-label="Daily targets">
+    <li>Rest day <b>${n0(s.kcalRest)}</b> kcal</li>
+    <li>Workout day <b>${n0(s.kcalTrain)}</b> kcal</li>
+    <li>Protein <b>${s.protein}</b> g</li>
+    <li>Fibre <b>${s.fiber}</b> g</li>
+  </ul>
+  ${slot('lunch', 'Lunch', '12:00', 'The first meal of the day.')}
+  ${slot('snack1', 'Snack 1', '14:30', 'Most of the day’s protein: 250 g of skyr.')}
+  ${slot('snack2', 'Snack 2', '16:00', 'On meatball or salmon days, cottage cheese tops up the protein.')}
+  ${slot('dinner', 'Dinner', '18:00', 'Meat, chicken and fish by raw weight.')}
+  ${slot('workout', 'Workout-day extras', '', 'Only on workout days; together about 200 kcal.')}
+  ${slot('late', 'After 20:00', '', 'Herbal tea by default.')}
+  <section class="plan-rules">
+    <h2>The rules</h2>
+    ${group('Dinner rotation', `<p class="note">Fish twice and legumes twice a week.</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}
+    ${group('Every day', list(RULES.daily))}
+    ${group('The week’s treats', list(RULES.weekly))}
+    ${group('Off for the whole period', list(RULES.off))}
+    ${group('Training and movement', list(RULES.training))}
+    ${group('Process', list(RULES.process))}
+  </section>`;
+}
+
+// One plan meal: its picture, what goes into it, and a button to log it
+export function renderPlanSheet(id) {
+  const m = MEALS.find((x) => x.id === id);
+  if (!m) return '';
+  const has = !!(S.settings.planPhotos || {})[id];
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${esc(m.name)}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
+  <div class="plan-photo">${planPic(id, 'No photo yet. Take one the next time you make this.')}</div>
+  <div class="actions">
+    <button type="button" class="btn" data-act="plan-photo-cam" data-id="${id}">${has ? 'Retake' : 'Take a photo'}</button>
+    <button type="button" class="btn" data-act="plan-photo-lib" data-id="${id}">Choose a photo</button>
+    ${has ? `<button type="button" class="link link-danger" data-act="plan-photo-remove" data-id="${id}">Remove photo</button>` : ''}
+  </div>
+  <p class="entry-value"><b>${m.kcal}</b> kcal<span>${n0(m.p)} g protein, ${n0(m.c)} g carbs, ${n0(m.f)} g fat, ${n0(m.fib)} g fibre</span></p>
+  <table class="items-table">
+    <thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">kcal</th></tr></thead>
+    <tbody>${m.items.map((i) => `<tr><th scope="row">${esc(i.n)}${i.measure ? `<small>${esc(i.measure)}</small>` : ''}</th><td>${i.g} g</td><td>${n0(i.kcal)}</td></tr>`).join('')}</tbody>
+  </table>
+  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="log-plan-today" data-id="${id}">Log for today</button></div>`;
 }
 
 // ——— Settings: every section starts collapsed and shows its current state in the heading ———

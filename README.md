@@ -25,7 +25,9 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   does not show and it revises the items; you can also correct the portion, the numbers or the time.
 - **Progress:** one token for every kilo collected, streaks and perfect days, the weight chart with
   a 7-day average, projected arrival date, a consistency calendar and checkpoints.
-- **Plan:** the meal options with ingredients and amounts, and the rules of the plan.
+- **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
+  and the rules of the plan. The pictures are your own photos: add one from the meal's card, or let
+  the first logged photo that matches a plan meal fill it in.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
 water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
@@ -41,7 +43,8 @@ on the device.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
 - There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can restore on
-  the same or another device.
+  the same or another device. The plan's pictures are included in every backup; photos of
+  logged meals only when you choose "With photos".
 
 ## Get your own copy
 
