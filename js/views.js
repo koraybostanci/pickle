@@ -24,32 +24,39 @@ const ICON = {
 };
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
 
-// ——— Glide ruler: start weight to target weight, with the current average and today's target ———
-function ruler(cur, target) {
+// ——— Ruler: start weight on the left, target weight on the right. The fill and pointer are where you are,
+// the ring is where the schedule says you should be today. ———
+function ruler(cur, target, showTarget = true, isAverage = false) {
   const s = S.settings;
   const W = 320;
-  const pad = 16;
+  const L = 34;
+  const R = 286;
   const hi = Math.max(s.startKg, Math.min(Math.ceil(cur || s.startKg), s.startKg + 3));
   const lo = s.targetKg;
-  const x = (kg) => pad + ((hi - Math.min(Math.max(kg, lo), hi)) / (hi - lo)) * (W - 2 * pad);
-  let ticks = '';
-  let labels = '';
-  for (let k = hi * 2; k >= lo * 2; k--) {
-    const kg = k / 2;
-    const major = k % 2 === 0;
-    ticks += `<line x1="${x(kg).toFixed(1)}" x2="${x(kg).toFixed(1)}" y1="${major ? 31 : 36}" y2="42" class="r-tick${major ? ' r-tick-major' : ''}"/>`;
-    if (major) labels += `<text x="${x(kg).toFixed(1)}" y="57" text-anchor="middle" class="r-label">${kg}</text>`;
-  }
+  const x = (kg) => L + ((hi - Math.min(Math.max(kg, lo), hi)) / (hi - lo)) * (R - L);
   const xc = cur ? x(cur) : null;
   const xl = x(target);
-  const anchor = (px) => (px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle');
-  const tx = (px) => (px < 40 ? px - 6 : px > W - 40 ? px + 6 : px);
-  return `<svg class="ruler" viewBox="0 0 ${W} 62" role="img" aria-label="${esc(`Ruler from ${s.startKg} kg to ${s.targetKg} kg. ${cur ? `Your average is ${n1(cur)} kg.` : ''} Today’s target is ${n1(target)} kg.`)}">
-    <rect x="${pad}" y="26" width="${W - 2 * pad}" height="16" rx="3" class="r-track"/>
-    ${xc != null ? `<rect x="${pad}" y="26" width="${Math.max(0, xc - pad).toFixed(1)}" height="16" rx="3" class="r-fill"/>` : ''}
-    ${ticks}${labels}
-    <circle cx="${xl.toFixed(1)}" cy="34" r="4.5" class="r-line"/>
-    ${xc != null ? `<path d="M${(xc - 6).toFixed(1)} 15h12l-6 9z" class="r-current"/><text x="${tx(xc).toFixed(1)}" y="11" text-anchor="${anchor(xc)}" class="r-value">${n1(cur)}</text>` : ''}
+  const top = xc != null ? 22 : 2; // room above the bar only when there is a pointer to label
+  const bottom = top + 14;
+  const halfSteps = hi - lo <= 16; // half-kilo ticks stop being readable on a long ruler
+  let ticks = '';
+  for (let k = Math.floor(hi * 2); k >= Math.ceil(lo * 2); k--) {
+    const major = k % 2 === 0;
+    if (!major && !halfSteps) continue;
+    const px = x(k / 2).toFixed(1);
+    ticks += `<line x1="${px}" x2="${px}" y1="${major ? top + 5 : top + 9}" y2="${bottom}" class="r-tick${major ? ' r-tick-major' : ''}"/>`;
+  }
+  const anchor = (px) => (px < L + 30 ? 'start' : px > R - 30 ? 'end' : 'middle');
+  const tx = (px) => (px < L + 30 ? px - 6 : px > R - 30 ? px + 6 : px);
+  const label = `Ruler from ${n1(hi)} kg to ${n1(lo)} kg. ${cur ? `${isAverage ? 'Your average is' : 'You are at'} ${n1(cur)} kg. ` : ''}${showTarget ? `Today’s target is ${n1(target)} kg.` : ''}`;
+  return `<svg class="ruler" viewBox="0 0 ${W} ${bottom + (showTarget ? 16 : 2)}" role="img" aria-label="${esc(label)}">
+    <text x="${L - 7}" y="${top + 11.5}" text-anchor="end" class="r-end">${n0(hi) === String(hi) ? hi : n1(hi)}</text>
+    <text x="${R + 7}" y="${top + 11.5}" class="r-end">${n0(lo) === String(lo) ? lo : n1(lo)}</text>
+    <rect x="${L}" y="${top}" width="${R - L}" height="14" rx="3" class="r-track"/>
+    ${xc != null ? `<rect x="${L}" y="${top}" width="${Math.max(0, xc - L).toFixed(1)}" height="14" rx="3" class="r-fill"/>` : ''}
+    ${ticks}
+    ${showTarget ? `<circle cx="${xl.toFixed(1)}" cy="${top + 7}" r="4.5" class="r-line"/><text x="${tx(xl).toFixed(1)}" y="${bottom + 13}" text-anchor="${anchor(xl)}" class="r-caption">target today ${n1(target)}</text>` : ''}
+    ${xc != null ? `<path d="M${(xc - 6).toFixed(1)} 12h12l-6 9z" class="r-current"/><text x="${tx(xc).toFixed(1)}" y="9" text-anchor="${anchor(xc)}" class="r-value">${isAverage ? 'avg ' : ''}${n1(cur)} kg</text>` : ''}
   </svg>`;
 }
 
@@ -67,42 +74,48 @@ function progressSummary() {
   const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
   const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
-  let head;
-  let sub;
-  let stats;
+  const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
+  let head; // the status, a few words
+  let line; // the numbers behind it, one sentence, for Today
+  let sub; // the longer sentence under the ruler on Progress
   if (!started) {
-    head = `Starts ${dLong.format(parseDay(s.startDate))}`;
+    head = toStart === 1 ? 'Starts tomorrow' : toStart <= 7 ? `Starts ${dWeekday.format(parseDay(s.startDate))}` : `Starts ${dShort.format(parseDay(s.startDate))}`;
+    line = plan;
     sub = `${n1(s.startKg)} kg down to ${s.targetKg} kg by ${endDate}, about ${n1(pace)} kg a week.`;
-    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Starts in', days(toStart)]];
   } else if (!a) {
-    head = 'Enter your first weigh-in';
+    head = 'No weigh-in yet';
+    line = plan;
     sub = `The target is ${s.targetKg} kg by ${endDate}.`;
-    stats = [['To lose', toLose], ['Weekly pace', `${n1(pace)} kg`], ['Days left', String(Math.max(0, left))]];
   } else {
     const diff = a.kg - target;
-    if (a.kg <= s.targetKg) head = `You reached ${s.targetKg} kg`;
-    else if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
-    else if (Math.abs(diff) <= 0.2) head = 'On schedule';
-    else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
-    else head = `${n1(diff)} kg behind schedule`;
-    sub = `${source} ${n1(a.kg)} kg; today’s target is ${n1(target)} kg.`;
     const change = s.startKg - a.kg;
-    stats = [[change < -0.05 ? 'Gained' : 'Lost', `${n1(Math.abs(change))} kg`], ['To go', toLose], ['Days left', String(Math.max(0, left))]];
+    const moved = `${n1(Math.abs(change))} kg ${change < -0.05 ? 'up' : 'down'}`;
+    if (a.kg <= s.targetKg) {
+      head = `You reached ${s.targetKg} kg`;
+      line = `${moved} since ${dShort.format(parseDay(s.startDate))}.`;
+    } else {
+      if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
+      else if (Math.abs(diff) <= 0.2) head = 'On schedule';
+      else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
+      else head = `${n1(diff)} kg behind schedule`;
+      line = `${moved}, ${toLose} to go${left > 0 ? `, ${days(left)} left` : ''}.`;
+    }
+    sub = `${source} ${n1(a.kg)} kg; today’s target is ${n1(target)} kg.`;
   }
-  return { head, sub, stats, a, target, source, started };
+  return { head, line, sub, a, target, source, started };
 }
 
-// Top of Today: where you stand, the ruler, three numbers and today's weigh-in
-function glide() {
+// Top of Today, one card: the status, today's weigh-in, and the ruler
+function weightCard() {
   const p = progressSummary();
   const kg = (S.days[today()] || {}).kg;
-  const duplicatesStartCard = p.started && !p.a && startStep() === 1;
-  return `<section class="glide" aria-label="Progress towards the target">
-    ${duplicatesStartCard ? '' : `<p class="glide-head">${esc(p.head)}</p>`}
-    ${ruler(p.a ? p.a.kg : null, p.target)}
-    <p class="legend">${p.a ? `<span><i class="key-current"></i>${esc(lower(p.source))} ${n1(p.a.kg)} kg</span>` : ''}<span><i class="key-line"></i>${p.started ? 'today’s target' : 'start'} ${n1(p.target)} kg</span></p>
-    <dl class="stats stats-3">${p.stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
-    <button type="button" class="row-field" data-act="num" data-kind="kg"><span>Today’s weigh-in</span><b>${kg ? n1(kg) + ' kg' : '–'}</b><i>${kg ? 'Change' : 'Enter'}</i></button>
+  const button = kg
+    ? `<button type="button" class="btn weigh-btn" data-act="num" data-kind="kg" aria-label="Today’s weigh-in, ${n1(kg)} kg. Change"><small>Today</small><b>${n1(kg)} kg</b></button>`
+    : '<button type="button" class="btn btn-primary weigh-btn" data-act="num" data-kind="kg">Weigh in</button>';
+  return `<section class="weight" aria-label="Weight and schedule">
+    <div class="weight-head"><h2>${esc(p.head)}</h2>${button}</div>
+    <p class="weight-line">${esc(p.line)}</p>
+    ${ruler(p.a ? p.a.kg : null, p.target, p.started, !!p.a && p.a.n > 1)}
   </section>`;
 }
 
@@ -236,7 +249,7 @@ function startCard() {
   const n = startStep();
   if (!n) return '';
   const step = {
-    1: ['Enter your first weigh-in', 'Progress and forecasts are calculated from your weigh-ins.', '<button type="button" class="btn btn-primary" data-act="num" data-kind="kg">Enter weight</button>'],
+    1: ['Enter your first weigh-in', 'Tap “Weigh in” below. Progress and forecasts are calculated from your weigh-ins.', ''],
     2: ['Log your first meal', 'Tap “Log this meal” under Today’s meals. No key needed.', ''],
     3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
@@ -267,7 +280,7 @@ export function renderToday() {
     </div>
   </header>
   ${isToday ? startCard() : ''}
-  ${isToday ? glide() : `<section class="glide"><button type="button" class="row-field" data-act="num" data-kind="kg"><span>Weigh-in for this day</span><b>${dd.kg ? n1(dd.kg) + ' kg' : 'None'}</b><i>${dd.kg ? 'Change' : 'Enter'}</i></button></section>`}
+  ${isToday ? weightCard() : `<section class="glide"><button type="button" class="row-field" data-act="num" data-kind="kg"><span>Weigh-in for this day</span><b>${dd.kg ? n1(dd.kg) + ' kg' : 'None'}</b><i>${dd.kg ? 'Change' : 'Enter'}</i></button></section>`}
   <section class="budget" aria-label="Daily budget">
     <div class="budget-grid">
       ${gauge('Calories', tot.kcal, dayTarget(day), 'kcal', 100, true)}
@@ -618,7 +631,7 @@ function adjustNotice() {
 
 export function renderProgress() {
   const s = S.settings;
-  const { head, sub, a, target } = progressSummary();
+  const { head, sub, a, target, started } = progressSummary();
   const pr = projection();
   const series = weightSeries();
   const lost = a ? s.startKg - a.kg : 0;
@@ -636,7 +649,7 @@ export function renderProgress() {
   ${adjustNotice()}
   <section class="glide">
     <p class="glide-head">${esc(head)}</p>
-    ${ruler(a ? a.kg : null, target)}
+    ${ruler(a ? a.kg : null, target, started, !!a && a.n > 1)}
     <p class="glide-note">${esc(sub)}</p>
   </section>
   <section>
