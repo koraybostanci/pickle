@@ -71,6 +71,11 @@ on the device.
   entries, days, checks and plan pictures to what is on the device (an entry or day that is in
   both takes the backup's version); its targets, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
+- Settings → "Reset" has two levels. "Delete all entries" removes what you logged (entries, photos,
+  weigh-ins, checks) and keeps your settings and the plan's pictures. "Reset everything" empties the
+  app as it was on its first launch, including targets, favourites, saved places and the plan's
+  pictures; the API key and provider stay unless you untick the box. It asks you to type DELETE, and
+  it refuses while something is being analysed. Neither can be undone, so save a backup first.
 
 ## Get your own copy
 

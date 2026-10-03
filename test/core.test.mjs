@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
-  fmtKg, isLegacyData, today, SCHEMA_VERSION, MIN_SCHEMA_VERSION,
+  fmtKg, isLegacyData, freshSettings, freshCheck, today, SCHEMA_VERSION, MIN_SCHEMA_VERSION,
 } from '../js/core.js';
 import { addDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -105,4 +105,18 @@ test('a food added to the plan without a short name does not put "undefined" in 
     MEALS[0].ingredients.pop();
     delete FOODS.testfood;
   }
+});
+
+test('fresh settings are those of a new install, as new objects each time', () => {
+  const a = freshSettings();
+  const b = freshSettings();
+  assert.equal(a.schema, SCHEMA_VERSION);
+  assert.equal(a.apiKey, '');
+  assert.equal(a.hideStart, false);
+  assert.deepEqual(a.places, []);
+  a.places.push({ name: 'x' }); a.favorites.push({ id: 'f' }); a.usage.calls = 9;
+  assert.deepEqual([b.places, b.favorites, b.usage.calls], [[], [], 0]); // nothing shared between resets
+  const c = freshCheck();
+  c.photos.push(1);
+  assert.deepEqual(freshCheck().photos, []);
 });
