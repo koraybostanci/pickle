@@ -15,6 +15,9 @@ const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' }
 const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
 const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+const dayWord = (n) => (n === 1 ? 'day' : 'days');
+const days = (n) => `${n} ${dayWord(n)}`;
+const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
 const ICON = {
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/></svg>',
@@ -41,7 +44,6 @@ function progressSummary() {
   const endDate = dShort.format(parseDay(s.targetDate));
   const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
-  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
   const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
   let head; // the status, a few words
   let line; // the numbers behind it, one sentence
@@ -93,11 +95,12 @@ function beam(a, target, started) {
   if (!(span > 0)) return '';
   const pct = (kg) => (Math.min(100, Math.max(0, ((s.startKg - kg) / span) * 100))).toFixed(2);
   const marks = [s.startKg, ...kiloMarks()];
-  const you = a ? pct(a.kg) : '0';
-  const bar = `<span class="beam beam-big" aria-hidden="true"><span class="beam-bar"><i style="width:${you}%"></i></span>`
+  // Before the plan starts nothing is counted yet: the brass weight waits at the start
+  const lost = a && started ? s.startKg - a.kg : 0;
+  const you = pct(s.startKg - lost);
+  const bar = `<span class="beam" aria-hidden="true"><span class="beam-bar"><i style="width:${you}%"></i></span>`
     + `<span class="beam-ticks">${marks.map((kg) => `<b style="left:${pct(kg)}%"></b>`).join('')}</span>`
     + `${started ? `<u style="left:${pct(target)}%"></u>` : ''}${a ? `<em style="left:${you}%"></em>` : ''}</span>`;
-  const lost = a ? s.startKg - a.kg : 0;
   const next = marks.find((kg, i) => i > 0 && s.startKg - kg > lost + 1e-6);
   // The start and the target are always labelled; the kilos in between at the smallest regular step (every kilo,
   // every second, …) whose labels clear each other on the narrowest phone (about 250 px of beam, 7 px a character)
@@ -122,7 +125,7 @@ function beam(a, target, started) {
   };
   const shown = [1, 2, 5, 10].map(pick).find(fits) || pick(Infinity);
   const labels = marks.map((kg, i) => (!shown[i] ? ''
-    : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
+    : `<span class="${i && s.startKg - kg <= lost + 1e-6 ? 'is-got' : kg === next ? 'is-next' : i === last ? 'is-goal' : ''}" style="left:${pct(kg)}%">${esc(kgLabel(kg))}</span>`)).join('');
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
@@ -132,7 +135,7 @@ const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'p
 function weekStrip(day) {
   const t = today();
   const ws = weekStart(day);
-  const tokens = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((letter, i) => {
+  const tokens = WEEKDAYS.map((letter, i) => {
     const d = addDays(ws, i);
     // Days before the plan started only count if something was logged on them
     const raw = d > t ? 'future' : dayStatus(d);
@@ -145,7 +148,7 @@ function weekStrip(day) {
   const goals = dayGoals(day);
   const done = goals.filter((g) => g.done).length;
   const run = streak();
-  const left = run > 0 ? `<span><b>${run} ${run === 1 ? 'day' : 'days'}</b> on plan in a row</span>` : '<span>A day on plan starts a new run</span>';
+  const left = run > 0 ? `<span><b>${days(run)}</b> on plan in a row</span>` : '<span>A day on plan starts a new run</span>';
   const count = done === goals.length ? 'All five goals' : `${done} of ${goals.length} goals${day === t ? ' so far' : ''}`;
   return `<nav class="week" aria-label="Days of the week">
     <button type="button" class="week-nav" data-act="week-prev" aria-label="Previous week">${ICON.prev}</button>
@@ -232,14 +235,14 @@ function budgetTile(day) {
   else if (rate < 0.7) verdict = 'Under plan so far';
   else { verdict = 'On pace'; tone = 'good'; }
   let foot;
-  if (!isToday || now >= H1) foot = `${n0(eaten)} of ${n0(target)} kcal spent`;
+  if (!isToday || now >= H1) foot = ''; // "eaten" on the left says it all
   else if (!open.length) foot = rem >= 0 ? `All meals in, ${n0(rem)} kcal to spare` : `All meals in, ${n0(-rem)} kcal over`;
   else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
   const forecastBad = isToday && open.length > 0 && forecast < -slack;
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}. ${foot}.`;
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}.${foot ? ` ${foot}.` : ''}`;
   return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}${wayOver ? ' is-way-over' : ''}" role="group" aria-label="${esc(label)}">
     <div class="budget-head">
-      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>kcal ${rem >= 0 ? 'left' : 'over'} of ${n0(target)}</span></p>
+      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>${rem >= 0 ? `kcal left of ${n0(target)}` : 'kcal over'}</span></p>
       <i class="pill pill-${tone}">${tone === 'good' ? CHECK : ''}${esc(verdict)}</i>
     </div>
     <svg class="burn" viewBox="0 0 330 92" aria-hidden="true">
@@ -255,7 +258,7 @@ function budgetTile(day) {
       <text x="${X0 - 5}" y="${Y0 + 4}" text-anchor="end" class="burn-axis">0</text>
       ${[6, 12, 18, 24].map((h) => `<text x="${f(x(h))}" y="90" text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}" class="burn-axis">${String(h).padStart(2, '0')}</text>`).join('')}
     </svg>
-    <p class="budget-foot"><span><b>${n0(eaten)}</b> eaten</span><span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span></p>
+    <p class="budget-foot"><span><b>${n0(eaten)}</b> eaten</span>${foot ? `<span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span>` : ''}</p>
   </div>`;
 }
 
@@ -296,7 +299,7 @@ function bento(day, part) {
   const glasses = Math.max(1, Math.min(12, Math.round(s.water / 250)));
   const full = Math.min(glasses, Math.floor(water / 250));
   const pct = (v, of) => Math.min(100, (v / of) * 100).toFixed(1);
-  const pLeft = Math.max(0, proteinFloor() - tot.p);
+  const pLeft = Math.max(1, Math.ceil(s.protein - tot.p - 1e-6)); // only shown while the goal is open
   const glassesLeft = Math.max(0, Math.ceil((s.water - water) / 250));
   if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
     ${budgetTile(day)}
@@ -1008,7 +1011,7 @@ function calendar() {
     pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
   }
   return `<div class="calendar card">
-    <div class="cal-row cal-head"><span class="cal-month"></span>${['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((x) => `<span>${x}</span>`).join('')}</div>
+    <div class="cal-row cal-head"><span class="cal-month"></span>${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}</div>
     ${rows}
     <p class="legend"><span><i class="cell cell-on"></i>on target</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>over</span><span><i class="cell cell-none"></i>nothing logged</span></p>
     ${pick}
@@ -1047,7 +1050,6 @@ export function renderProgress() {
   const series = weightSeries();
   const lost = a ? s.startKg - a.kg : 0;
   const run = streak();
-  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
   const rows = series.slice().reverse().slice(0, 120).map((d) => {
     const avg = avg7(d.day);
     const tot = dayTotals(d.day);
@@ -1057,7 +1059,7 @@ export function renderProgress() {
   let hero;
   let note;
   if (started && a) {
-    hero = `<p class="glide-head">${esc(n1(Math.abs(lost)))} kg <em>${lost < -0.05 ? 'up' : 'down'}</em></p>`;
+    hero = `<p class="glide-head">${esc(n1(Math.abs(lost)))} kg ${lost < -0.05 ? '<em class="is-up">up</em>' : '<em>down</em>'}</p>`;
     let arrive = '';
     if (pr && pr.eta && a.kg > s.targetKg) {
       const early = diffDays(pr.eta, s.targetDate);
@@ -1129,7 +1131,7 @@ function beamCard(a, target, started) {
 function runs(run) {
   const h = history();
   const best = Math.max(h.best, run);
-  const d = (n) => `${n}<small>${n === 1 ? 'day' : 'days'}</small>`;
+  const d = (n) => `${n}<small>${dayWord(n)}</small>`;
   return `<dl class="stats" aria-label="Days on plan">
     <div><dt>In a row</dt><dd>${d(run)}</dd></div>
     <div><dt>Longest run</dt><dd>${d(best)}</dd></div>
