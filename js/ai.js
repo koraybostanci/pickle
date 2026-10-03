@@ -1,7 +1,8 @@
 // Model calls. Two routes: Claude (Anthropic Messages API) or any OpenAI-compatible endpoint
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
-import { planDigest, planFoods, RULES, SLOTS } from './plan.js';
+import { planDigest, planFoods, RULES, SLOTS, hhmm } from './plan.js';
+import { decode } from './picture.js';
 
 export const MODELS = {
   'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
@@ -58,18 +59,7 @@ const SCHEMA = {
 
 // Shrinks the photo on the device; this copy is what gets sent (and, for logged meals, stored).
 export async function shrink(file, edge = IMG_EDGE) {
-  let bmp;
-  try {
-    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    bmp = await new Promise((res, rej) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => { URL.revokeObjectURL(url); res(img); };
-      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Could not open the image')); };
-      img.src = url;
-    });
-  }
+  const bmp = await decode(file);
   const w0 = bmp.naturalWidth || bmp.width;
   const h0 = bmp.naturalHeight || bmp.height;
   const k = Math.min(1, edge / Math.max(w0, h0));
@@ -78,9 +68,12 @@ export async function shrink(file, edge = IMG_EDGE) {
   const cv = document.createElement('canvas');
   cv.width = w;
   cv.height = h;
-  cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
-  if (bmp.close) bmp.close();
+  const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; // a transparent PNG would turn black as a JPEG
+  g.fillRect(0, 0, w, h);
+  try { g.drawImage(bmp, 0, 0, w, h); } finally { if (bmp.close) bmp.close(); }
   const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.8));
+  cv.width = 0; // gives the canvas memory back: Safari limits the total
   if (!blob) throw new Error('Could not shrink the image');
   return { blob, w, h };
 }
@@ -97,8 +90,16 @@ function parseLoose(text) {
   try { return JSON.parse(t); } catch { /* try below */ }
   const a = t.indexOf('{');
   const b = t.lastIndexOf('}');
-  if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch { /* not JSON either */ } }
   throw new AiError('empty', 'Reply is not JSON');
+}
+// A reply that was cut off at the token limit is reported as that, not as unreadable
+function parseReply(r) {
+  try {
+    return parseLoose(r.text);
+  } catch (e) {
+    throw r.truncated ? new AiError('truncated', 'The answer was cut off') : e;
+  }
 }
 
 export class AiError extends Error {
@@ -129,8 +130,9 @@ function classify(status, msg) {
   if (status === 429) return /limit:\s*0\b/.test(msg) ? 'no_quota' : 'rate';
   if (status === 402 || /credit balance|insufficient (credit|balance|funds)|payment required/i.test(msg)) return 'no_credit';
   if (/free tier is not available|enable billing|billing account/i.test(msg)) return 'needs_billing';
-  if (status === 401 || status === 403) return 'bad_key';
-  if (/image|vision|multimodal|modalit/i.test(msg) && (status === 400 || status === 404 || status === 415 || status === 422)) return 'no_vision';
+  if (status === 401 || status === 403 || /api key not valid|invalid api key|incorrect api key/i.test(msg)) return 'bad_key';
+  // A photo that is too large is a different problem from a model that cannot read photos
+  if (/image|vision|multimodal|modalit/i.test(msg) && !/exceed|too (large|big)|maximum/i.test(msg) && (status === 400 || status === 404 || status === 415 || status === 422)) return 'no_vision';
   if (status === 404) return 'bad_model';
   if (status === 400 || status === 422) return 'bad_request';
   if (status >= 500) return 'server';
@@ -141,11 +143,17 @@ function classify(status, msg) {
 const RETRY_MS = [1200, 3000];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function postOnce(url, headers, payload) {
+const TIMEOUT_MS = 60000; // a request that has not answered by then is given up on, so the queue does not stall behind it
+
+async function postOnce(url, headers, payload, timeout) {
   let res;
   try {
-    res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload) });
-  } catch {
+    res = await fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeout) : undefined,
+    });
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') throw new AiError('timeout', 'The provider did not answer in time');
     throw new AiError(navigator.onLine === false ? 'offline' : 'net', 'Could not connect');
   }
   let json = null;
@@ -153,8 +161,11 @@ async function postOnce(url, headers, payload) {
   if (!res.ok) {
     const er = (Array.isArray(json) ? json[0] : json) || {};
     const e = er.error;
-    const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || er.message || `HTTP ${res.status}`;
-    throw new AiError(classify(res.status, String(msg)), /HTTP \d+/.test(String(msg)) ? String(msg) : `${msg} (HTTP ${res.status})`);
+    let msg = String((e && (e.message || (typeof e === 'string' ? e : ''))) || er.message || `HTTP ${res.status}`);
+    // A provider that echoes the key in its error must not get it into a stored message
+    const secret = headers['x-api-key'] || String(headers.authorization || '').slice(7);
+    if (secret.length > 8) msg = msg.split(secret).join('…');
+    throw new AiError(classify(res.status, msg), /HTTP \d+/.test(msg) ? msg : `${msg} (HTTP ${res.status})`);
   }
   return json || {};
 }
@@ -163,7 +174,7 @@ async function post(url, headers, payload, opts = {}) {
   const tries = opts.retry === false ? 0 : RETRY_MS.length;
   for (let i = 0; ; i++) {
     try {
-      return await postOnce(url, headers, payload);
+      return await postOnce(url, headers, payload, opts.timeout || TIMEOUT_MS);
     } catch (e) {
       if (e.code !== 'server' || i >= tries) throw e;
       if (opts.onRetry) opts.onRetry(i + 1, tries);
@@ -174,10 +185,12 @@ async function post(url, headers, payload, opts = {}) {
 
 /**
  * One call. cfg: {provider:'anthropic'|'openai', key, model, base?}
- * @returns {Promise<{text:string, usage:{in:number,out:number}}>}
+ * schema: a JSON schema the Claude route enforces. shape: the same reply described in words, which
+ * the OpenAI-compatible route needs instead, because not every endpoint takes a schema.
+ * @returns {Promise<{text:string, usage:{in:number,out:number}, truncated:boolean}>}
  */
-export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600, maxImages = 3, retry = true, onRetry = null }) {
-  const retryOpts = { retry, onRetry };
+export async function callModel(cfg, { system, shape = '', text, blobs = [], schema = null, json = false, maxTokens = 600, maxImages = 3, retry = true, onRetry = null, timeout = TIMEOUT_MS }) {
+  const retryOpts = { retry, onRetry, timeout };
   if (!cfg || !cfg.key) throw new AiError('no_key', 'No API key set');
   const imgs = [];
   for (const b of blobs.slice(0, maxImages)) imgs.push(await toB64(b));
@@ -189,7 +202,7 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
     const body = {
       model: cfg.model,
       max_tokens: Math.max(maxTokens * 2, 1500), // thinking models spend part of the budget on reasoning
-      messages: [{ role: 'system', content: system }, { role: 'user', content: imgs.length ? content : text }],
+      messages: [{ role: 'system', content: system + shape }, { role: 'user', content: imgs.length ? content : text }],
     };
     if (json) body.response_format = { type: 'json_object' };
     const url = cfg.base.replace(/\/+$/, '') + '/chat/completions';
@@ -203,17 +216,21 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
         out = await post(url, headers, rest, retryOpts);
       } else throw e;
     }
-    const msg = out.choices && out.choices[0] && out.choices[0].message;
+    const choice = (out.choices && out.choices[0]) || {};
+    const msg = choice.message;
     let txt = msg ? msg.content : '';
     if (Array.isArray(txt)) txt = txt.filter((c) => c.type === 'text' || typeof c.text === 'string').map((c) => c.text).join('');
-    if (!txt) throw new AiError('empty', 'The model returned nothing');
+    const truncated = choice.finish_reason === 'length';
+    if (!txt) throw new AiError(truncated ? 'truncated' : 'empty', truncated ? 'The answer was cut off' : 'The model returned nothing');
     const u = out.usage || {};
-    return { text: String(txt), usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 } };
+    return { text: String(txt), usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 }, truncated };
   }
 
   const content = imgs.map((d) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }));
   content.push({ type: 'text', text });
   const body = { model: cfg.model, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] };
+  // Sonnet 5.5 thinks before it answers unless told not to, and that thinking would eat the small token budget
+  if (cfg.model === STRONG_MODEL) body.thinking = { type: 'between_tools' };
   if (schema) body.output_config = { format: { type: 'json_schema', schema } };
   const headers = { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
   const url = 'https://api.anthropic.com/v1/messages';
@@ -228,8 +245,9 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
     } else throw e;
   }
   const txt = (out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
-  if (out.stop_reason === 'refusal' || !txt) throw new AiError('empty', 'The model returned nothing');
-  return { text: txt, usage: { in: (out.usage && out.usage.input_tokens) || 0, out: (out.usage && out.usage.output_tokens) || 0 } };
+  const truncated = out.stop_reason === 'max_tokens';
+  if (out.stop_reason === 'refusal' || !txt) throw new AiError(truncated ? 'truncated' : 'empty', truncated ? 'The answer was cut off' : 'The model returned nothing');
+  return { text: txt, usage: { in: (out.usage && out.usage.input_tokens) || 0, out: (out.usage && out.usage.output_tokens) || 0 }, truncated };
 }
 
 /**
@@ -237,13 +255,10 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
  * @returns {Promise<{data:object, usage:{in:number,out:number}, model:string}>}
  */
 export async function analyze(o) {
-  const hh = String(o.when.getHours()).padStart(2, '0');
-  const mm = String(o.when.getMinutes()).padStart(2, '0');
-  const lines = [`Time ${hh}:${mm}` + (o.place ? `, place: ${o.place}` : '')];
+  const lines = [`Time ${hhmm(o.when)}` + (o.place ? `, place: ${o.place}` : '')];
   if (o.text) lines.push(`Note: ${o.text}`);
   if (o.hint) lines.push(o.hint);
-  const openai = o.cfg && o.cfg.provider === 'openai';
-  const req = { system: openai ? SYSTEM + SHAPE : SYSTEM, text: lines.join('\n'), blobs: o.blobs || [], schema: openai ? null : SCHEMA, json: true };
+  const req = { system: SYSTEM, shape: SHAPE, text: lines.join('\n'), blobs: o.blobs || [], schema: SCHEMA, json: true };
   return callWithFallback(o.cfg, req, o.onRetry);
 }
 
@@ -251,7 +266,7 @@ export async function analyze(o) {
 async function callWithFallback(cfg, req, onRetry) {
   try {
     const r = await callModel(cfg, { ...req, onRetry });
-    return { data: parseLoose(r.text), usage: r.usage, model: cfg.model };
+    return { data: parseReply(r), usage: r.usage, model: cfg.model };
   } catch (e) {
     if (!FALLBACK_ON.includes(e.code)) throw e;
     const preset = cfg.provider === 'openai' ? PRESETS.find((p) => p.base === cfg.base) : null;
@@ -259,7 +274,7 @@ async function callWithFallback(cfg, req, onRetry) {
       if (onRetry) onRetry(0, 0, model, e.code);
       try {
         const r = await callModel({ ...cfg, model }, { ...req, retry: false });
-        return { data: parseLoose(r.text), usage: r.usage, model, fallbackFrom: e };
+        return { data: parseReply(r), usage: r.usage, model, fallbackFrom: e };
       } catch (e2) {
         if (!FALLBACK_ON.includes(e2.code) && e2.code !== 'bad_model') throw e2;
       }
@@ -298,15 +313,19 @@ const REVIEW_SCHEMA = {
  * @returns {Promise<{data:{head:string,good:string[],cut:string[],next:string}, usage:{in:number,out:number}, model:string}>}
  */
 export async function review(o) {
-  const openai = o.cfg && o.cfg.provider === 'openai';
-  const req = { system: openai ? REVIEW_SYSTEM + REVIEW_SHAPE : REVIEW_SYSTEM, text: o.brief, schema: openai ? null : REVIEW_SCHEMA, json: true, maxTokens: 400 };
+  const req = { system: REVIEW_SYSTEM, shape: REVIEW_SHAPE, text: o.brief, schema: REVIEW_SCHEMA, json: true, maxTokens: 400 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
-  const str = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 240);
-  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []).map(str).filter(Boolean).slice(0, 2);
-  const d = r.data || {};
-  const data = { head: str(d.head), good: list(d.good), cut: list(d.cut), next: str(d.next) };
+  const data = cleanReview(r.data);
   if (!data.head) throw new AiError('empty', 'The model returned no review');
   return { ...r, data };
+}
+
+// Text that came from outside (a model, a backup file): plain, single-spaced and short
+const clean = (v, max) => String(typeof v === 'string' || typeof v === 'number' ? v : '').replace(/\s+/g, ' ').trim().slice(0, max);
+export function cleanReview(d) {
+  d = d && typeof d === 'object' ? d : {};
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []).map((x) => clean(x, 240)).filter(Boolean).slice(0, 2);
+  return { head: clean(d.head, 240), good: list(d.good), cut: list(d.cut), next: clean(d.next, 240) };
 }
 
 // ——— Check before ordering or buying: photos of a menu, a dish or a product, judged against the plan ———
@@ -358,22 +377,28 @@ const CHECK_SCHEMA = {
  * @returns {Promise<{data:{kind:string,title:string,answer:string,options:object[]}, usage:{in:number,out:number}, model:string}>}
  */
 export async function check(o) {
-  const openai = o.cfg && o.cfg.provider === 'openai';
-  const req = { system: openai ? CHECK_SYSTEM + CHECK_SHAPE : CHECK_SYSTEM, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: openai ? null : CHECK_SCHEMA, json: true, maxTokens: 1400 };
+  const req = { system: CHECK_SYSTEM, shape: CHECK_SHAPE, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: CHECK_SCHEMA, json: true, maxTokens: 1400, timeout: 90000 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
-  const str = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
-  const num = (v) => (Number.isFinite(+v) && +v > 0 ? Math.round(+v) : 0);
-  const d = r.data || {};
-  const options = (Array.isArray(d.options) ? d.options : []).slice(0, 6).map((x) => ({
-    name: str(x && x.name, 90), rating: Math.min(5, Math.max(1, Math.round(+(x && x.rating) || 3))),
-    fit: ['good', 'ok', 'avoid'].includes(x && x.fit) ? x.fit : 'ok', portion: str(x && x.portion, 40),
-    kcal: num(x && x.kcal), p: num(x && x.p), c: num(x && x.c), f: num(x && x.f), fib: num(x && x.fib),
-    facts: str(x && x.facts, 160), why: str(x && x.why, 220), tip: str(x && x.tip, 160),
-    tier: ['plan', 'flex', 'off'].includes(x && x.tier) ? x.tier : 'flex',
-  })).filter((x) => x.name);
-  const data = { kind: ['menu', 'product', 'dish', 'none'].includes(d.kind) ? d.kind : 'none', title: str(d.title, 80), answer: str(d.answer, 360), options };
-  if (!data.answer && !options.length) throw new AiError('empty', 'The model returned no verdict');
+  const data = cleanVerdict(r.data);
+  if (!data.answer && !data.options.length) throw new AiError('empty', 'The model returned no verdict');
   return { ...r, data };
+}
+
+// A verdict with every field the right type and size, whether it came from the model or from a backup file
+export function cleanVerdict(d) {
+  d = d && typeof d === 'object' ? d : {};
+  const num = (v, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(max, Math.round(+v)) : 0);
+  const options = (Array.isArray(d.options) ? d.options : []).slice(0, 6).map((x) => {
+    x = x && typeof x === 'object' ? x : {};
+    return {
+      name: clean(x.name, 90), rating: Math.min(5, Math.max(1, Math.round(+x.rating || 3))),
+      fit: ['good', 'ok', 'avoid'].includes(x.fit) ? x.fit : 'ok', portion: clean(x.portion, 40),
+      kcal: num(x.kcal, 5000), p: num(x.p, 500), c: num(x.c, 800), f: num(x.f, 500), fib: num(x.fib, 150),
+      facts: clean(x.facts, 160), why: clean(x.why, 220), tip: clean(x.tip, 160),
+      tier: ['plan', 'flex', 'off'].includes(x.tier) ? x.tier : 'flex',
+    };
+  }).filter((x) => x.name);
+  return { kind: ['menu', 'product', 'dish', 'none'].includes(d.kind) ? d.kind : 'none', title: clean(d.title, 80), answer: clean(d.answer, 360), options };
 }
 
 // The useful part of a provider's error text: for quota errors the limit, the model and the wait, otherwise the start of the message
@@ -429,19 +454,23 @@ export function costUSD(model, usage) {
   return m ? (usage.in * m.inp + usage.out * m.out) / 1e6 : 0;
 }
 
+// What went wrong, in words that fit anywhere. Where an entry is parked because of it, the app adds WAITING.
 export const AI_ERRORS = {
-  no_key: 'No API key. Add one in Settings; the entry is waiting.',
+  no_key: 'No API key. Add one in Settings.',
   bad_key: 'The API key was rejected. Check it in Settings.',
-  offline: 'No internet. The entry is waiting; tap “Analyse” once you are back online.',
-  net: 'Could not reach the server; the entry is waiting. If you are online, this provider may not allow calls from a browser.',
-  rate: 'Too many requests or the quota is used up; the entry is waiting. Tap “Analyse” a little later.',
-  no_quota: 'This model has no quota on your plan; the entry is waiting. Pick another model in Settings.',
-  no_credit: 'The provider says the account has no credit; the entry is waiting. Add credit or pick another provider in Settings.',
-  needs_billing: 'The provider wants billing enabled on this account before it answers; the entry is waiting. Enable it with the provider or pick another one in Settings.',
+  offline: 'No internet.',
+  net: 'Could not reach the server. If you are online, this provider may not allow calls from a browser.',
+  timeout: 'The provider took too long to answer.',
+  truncated: 'The answer was cut off before it was complete. Try again, or add a short note.',
+  rate: 'Too many requests or the quota is used up.',
+  no_quota: 'This model has no quota on your plan. Pick another model in Settings.',
+  no_credit: 'The provider says the account has no credit. Add credit or pick another provider in Settings.',
+  needs_billing: 'The provider wants billing enabled on this account before it answers. Enable it with the provider or pick another one in Settings.',
   no_vision: 'This model does not accept photos. Pick a model with image support in Settings.',
   bad_model: 'Model not found. Check the model name in Settings.',
-  server: 'The provider is busy right now; the entry is waiting. Tap “Analyse” a little later.',
+  server: 'The provider is busy right now.',
   bad_request: 'The request was rejected.',
   empty: 'The model could not interpret this input. Add a short note and try again.',
   http: 'The request failed.',
 };
+export const WAITING = ' The entry is waiting; tap “Analyse” to try again.';

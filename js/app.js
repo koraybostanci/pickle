@@ -2,276 +2,16 @@ import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
+import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, DEFAULTS, LOCALE,
-  slotByTime, dayKey, parseDay, addDays, diffDays, targetAt,
-} from './plan.js';
+  APP_VERSION, SCHEMA_VERSION, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+} from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
-
-export const APP_VERSION = '17'; // bump together with VERSION in sw.js
-const SCHEMA_VERSION = 2; // 1 = original Turkish ids, 2 = English ids
-
-// ——— State ———
-export const S = {
-  tab: 'today',
-  settings: {
-    ...DEFAULTS, schema: SCHEMA_VERSION,
-    provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
-    useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
-    usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
-  },
-  entries: [],
-  days: {},
-  viewDay: dayKey(new Date()),
-  busy: new Set(),
-  retry: new Map(), // status note shown while an analysis is retrying
-  reviewing: new Set(), // days whose review is being written
-  reviewErr: new Map(), // day → why the last review failed
-  reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
-  check: { photos: [], note: '', busy: false, status: '', err: '', openId: null }, // the check being put together; its photos live in memory only
-  checks: [], // earlier verdicts, newest first, without photos
-  urls: new Map(),
-  persisted: null,
-  storage: null,
-  calPick: null,
-  sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num', ...}
-  openSetting: '', // expanded section in Settings
-};
 
 const $ = (s, r = document) => r.querySelector(s);
 
-// Call configuration for the selected provider
-export function aiCfg() {
-  const s = S.settings;
-  return s.provider === 'openai'
-    ? { provider: 'openai', key: s.oaKey, model: s.oaModel, base: s.oaBase }
-    : { provider: 'anthropic', key: s.apiKey, model: s.model };
-}
-export const hasKey = () => { const c = aiCfg(); return !!c.key && (c.provider !== 'openai' || (!!c.base && !!c.model)); };
-export const today = () => dayKey(new Date());
-
-// ——— Calculations ———
-export const eff = (e) => {
-  const m = e.mult || 1;
-  return { kcal: (e.kcal || 0) * m, p: (e.p || 0) * m, c: (e.c || 0) * m, f: (e.f || 0) * m, fib: (e.fib || 0) * m };
-};
-export const mealsOf = (day) => S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status === 'ok');
-export function dayTotals(day) {
-  const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, n: 0 };
-  for (const e of mealsOf(day)) {
-    const v = eff(e);
-    t.kcal += v.kcal; t.p += v.p; t.c += v.c; t.f += v.f; t.fib += v.fib; t.n += 1;
-  }
-  return t;
-}
-export const dayTarget = (day) => ((S.days[day] && S.days[day].train) ? S.settings.kcalTrain : S.settings.kcalRest);
-
-// 'on' = on target, 'near' = close, 'over' = above, 'partial' = too little logged, 'none' = nothing logged
-export function dayStatus(day) {
-  const t = dayTotals(day);
-  if (!t.n) return 'none';
-  const target = dayTarget(day);
-  const hasOff = mealsOf(day).some((e) => e.tier === 'off');
-  if (t.kcal < target * 0.6) return 'partial';
-  if (t.kcal <= target * 1.07 && t.kcal >= target * 0.75 && t.p >= S.settings.proteinMin && !hasOff) return 'on';
-  if (t.kcal <= target * 1.15) return 'near';
-  return 'over';
-}
-
-// The five things a day can get right. Calories count once enough is logged and the total is within budget.
-export function dayGoals(day) {
-  const dd = S.days[day] || {};
-  const t = dayTotals(day);
-  const target = dayTarget(day);
-  const s = S.settings;
-  return [
-    { id: 'weigh', name: 'Weigh-in', done: !!dd.kg },
-    { id: 'kcal', name: 'Calories', done: t.n > 0 && t.kcal >= target * 0.75 && t.kcal <= target * 1.07 },
-    { id: 'protein', name: 'Protein', done: t.p >= Math.min(s.proteinMin || s.protein, s.protein) },
-    { id: 'steps', name: 'Steps', done: (dd.steps || 0) >= s.steps },
-    { id: 'water', name: 'Water', done: (dd.water || 0) >= s.water },
-  ];
-}
-export const isPerfect = (day) => dayGoals(day).every((g) => g.done);
-
-// Whole kilos lost since the start, by the 7-day average
-export function kilosDown(day = today()) {
-  const a = avg7(day);
-  if (!a || day < S.settings.startDate) return 0;
-  return Math.max(0, Math.floor(S.settings.startKg - a.kg + 1e-6));
-}
-
-// Looking back over the plan so far: days on plan, the longest run, perfect days
-export function history() {
-  const s = S.settings;
-  const t = today();
-  let onPlan = 0;
-  let best = 0;
-  let run = 0;
-  let perfect = 0;
-  for (let d = s.startDate; d <= t; d = addDays(d, 1)) {
-    const st = dayStatus(d);
-    if (st === 'on' || st === 'near') { onPlan += 1; run += 1; best = Math.max(best, run); } else if (d !== t) run = 0;
-    if (isPerfect(d)) perfect += 1;
-  }
-  return { onPlan, best, perfect, days: Math.max(0, diffDays(s.startDate, t) + 1) };
-}
-
-export function avg7(day) {
-  let s = 0;
-  let n = 0;
-  for (let i = 0; i < 7; i++) {
-    const d = S.days[addDays(day, -i)];
-    if (d && d.kg) { s += d.kg; n += 1; }
-  }
-  return n ? { kg: s / n, n } : null;
-}
-
-export function weightSeries() {
-  return Object.values(S.days).filter((d) => d.kg).sort((a, b) => (a.day < b.day ? -1 : 1));
-}
-
-// Slope over the last 14 days (kg/day) and the projected arrival at the target
-export function projection() {
-  const w = weightSeries().filter((d) => diffDays(d.day, today()) <= 14);
-  if (w.length < 4 || diffDays(w[0].day, w[w.length - 1].day) < 6) return null;
-  const xs = w.map((d) => diffDays(w[0].day, d.day));
-  const ys = w.map((d) => d.kg);
-  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-  let num = 0;
-  let den = 0;
-  xs.forEach((x, i) => { num += (x - mx) * (ys[i] - my); den += (x - mx) ** 2; });
-  const slope = den ? num / den : 0;
-  const cur = avg7(today()) || avg7(w[w.length - 1].day);
-  if (!cur) return null;
-  const out = { slope, perWeek: slope * 7 };
-  if (slope < -0.005) {
-    const daysLeft = Math.ceil((cur.kg - S.settings.targetKg) / -slope);
-    out.eta = daysLeft > 0 && daysLeft < 730 ? addDays(today(), daysLeft) : null;
-    if (daysLeft <= 0) out.eta = today();
-  }
-  return out;
-}
-
-export function weekStart(day) {
-  const d = parseDay(day);
-  return addDays(day, -((d.getDay() + 6) % 7));
-}
-export function weekFlex(day) {
-  const ws = weekStart(day);
-  const we = addDays(ws, 6);
-  const r = { small: 0, meal: 0, off: 0 };
-  for (const e of S.entries) {
-    if (e.kind !== 'meal' || e.status !== 'ok' || e.day < ws || e.day > we) continue;
-    if (e.tier === 'off') r.off += 1;
-    else if (e.tier === 'flex') {
-      if ((e.flags || []).includes('alcohol') || eff(e).kcal <= 250) r.small += 1;
-      else r.meal += 1;
-    }
-  }
-  return r;
-}
-
-export function streak() {
-  let n = 0;
-  let d = today();
-  const first = dayStatus(d);
-  if (first !== 'on' && first !== 'near') d = addDays(d, -1); // today is not over yet
-  for (let i = 0; i < 400; i++) {
-    const st = dayStatus(d);
-    if (st === 'on' || st === 'near') { n += 1; d = addDays(d, -1); } else break;
-  }
-  return n;
-}
-
-export function suggest(day) {
-  const tot = dayTotals(day);
-  const rem = dayTarget(day) - tot.kcal;
-  const remP = S.settings.protein - tot.p;
-  const logged = new Set(mealsOf(day).map((e) => e.slot));
-  const open = SLOTS.filter((s) => s.id !== 'late' && !logged.has(s.id));
-  if (!open.length) {
-    if (remP > 12 && rem >= 90) return { rem, remP, meal: MEAL_BY_ID['N-A'], slot: SLOTS[4], extra: true };
-    return { rem, remP, meal: null };
-  }
-  const next = open[0];
-  const minKcal = (id) => Math.min(...MEALS.filter((m) => m.slot === id).map((m) => m.kcal));
-  const reserve = open.slice(1).reduce((a, s) => a + minKcal(s.id), 0);
-  const options = MEALS.filter((m) => m.slot === next.id);
-  const fit = options.filter((m) => m.kcal <= rem - reserve + 40);
-  const pool = fit.length ? fit : options.slice().sort((a, b) => a.kcal - b.kcal).slice(0, 1);
-  const meal = pool.slice().sort((a, b) => b.p - a.p)[0];
-  return { rem, remP, meal, slot: next, tight: !fit.length };
-}
-
-// ——— The day against the plan ———
-const KCAL_PER_KG = 7700; // roughly a kilo of body fat
-// What the schedule asks of one day, in kg and in kcal
-export function planRate() {
-  const s = S.settings;
-  const days = diffDays(s.startDate, s.targetDate);
-  const kg = days > 0 ? Math.max(0, (s.startKg - s.targetKg) / days) : 0;
-  return { kg, kcal: kg * KCAL_PER_KG };
-}
-
-// How a day compares with the plan and what it did to the schedule. Worked out on the device, no model involved.
-// level: 'open' (today, still within budget), 'thin' (too little logged to judge), 'on', 'near' (calories fine, something else is not),
-// 'under', 'over' (slightly) or 'back' (clearly over)
-export function dayVerdict(day) {
-  const t = dayTotals(day);
-  if (!t.n) return null;
-  const s = S.settings;
-  const target = dayTarget(day);
-  const delta = Math.round(t.kcal - target);
-  const live = day === today();
-  const proteinGap = Math.max(0, Math.round(Math.min(s.proteinMin || s.protein, s.protein) - t.p));
-  const off = mealsOf(day).filter((e) => e.tier === 'off').length;
-  let level;
-  if (delta > target * 0.15) level = 'back';
-  else if (delta > target * 0.07) level = 'over';
-  else if (live) level = 'open';
-  else if (t.kcal < target * 0.6) level = 'thin';
-  else if (t.kcal < target * 0.75) level = 'under';
-  else level = proteinGap || off ? 'near' : 'on';
-  const rate = planRate();
-  return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
-}
-export const VERDICT = {
-  open: 'In progress', thin: 'Too little logged', on: 'In line', near: 'Mostly in line',
-  under: 'Under target', over: 'Slightly over', back: 'Set you back',
-};
-// The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
-export function verdictText(v) {
-  const out = [];
-  const kcal = fmtInt(Math.abs(v.delta));
-  const judged = v.level !== 'thin' && v.level !== 'open';
-  if (v.level === 'thin') out.push(`Only ${fmtInt(v.kcal)} kcal logged, too little to judge the day.`);
-  else if (v.level === 'open') out.push(v.delta < -25 ? `${kcal} kcal left for today.` : 'The budget for today is used up.');
-  else if (v.delta > 25) {
-    const kg = v.kg >= 0.005 ? `: about ${v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '';
-    const cost = !kg || v.share <= 0 ? '' : v.share >= 1.5 ? `, ${v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} days of the schedule`
-      : v.share >= 0.95 ? ', all of what the day was meant to lose' : `, ${Math.round(v.share * 100)}% of what the day was meant to lose`;
-    out.push(`${kcal} kcal over target${kg}${cost}.`);
-  } else if (v.delta < -25) out.push(`${kcal} kcal under target${v.level === 'under' ? '; check that everything is logged' : ''}.`);
-  else out.push('On target.');
-  if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short.`);
-  if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
-  return out;
-}
-
-// A review belongs to the log it was written for: it goes stale when the day's meals change, or when it was written before the day ended
-export const reviewSig = (day) => `${dayTarget(day)}|${mealsOf(day).map((e) => `${e.id}:${Math.round(eff(e).kcal)}`).sort().join(',')}`;
-export function reviewState(day) {
-  const r = S.days[day] && S.days[day].review;
-  if (!r) return 'none';
-  return r.sig !== reviewSig(day) || (r.live && day !== today()) ? 'stale' : 'fresh';
-}
-
-// ——— Formatting ———
-export const fmtKg = (kg) => kg.toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-export const fmtInt = (n) => Math.round(n).toLocaleString(LOCALE);
 
 // ——— Storage ———
 async function saveSettings() { await db.kvSet('settings', S.settings); }
@@ -289,6 +29,9 @@ async function saveEntry(e) {
 let toastTimer;
 export function toast(msg, action) {
   const el = $('#toast');
+  const live = $('#toast-live');
+  live.textContent = '';
+  setTimeout(() => { live.textContent = action ? `${msg}. ${action.label} is available.` : msg; }, 50); // a change after a pause is announced even when the text repeats
   el.innerHTML = '';
   const sp = document.createElement('span');
   sp.textContent = msg;
@@ -297,7 +40,7 @@ export function toast(msg, action) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = action.label;
-    b.onclick = () => { el.hidden = true; action.fn(); };
+    b.onclick = () => { el.hidden = true; guard(action.fn); };
     el.append(b);
   }
   el.hidden = false;
@@ -341,8 +84,12 @@ async function removeEntry(id, silent) {
     const u = S.urls.get(pid);
     if (u) { URL.revokeObjectURL(u); S.urls.delete(pid); }
   }
-  if (e.kind === 'weight' && S.days[e.day] && S.days[e.day].kg === e.kg) await saveDay(e.day, { kg: null });
-  if (e.kind === 'steps' && S.days[e.day] && S.days[e.day].steps === e.steps) await saveDay(e.day, { steps: null });
+  // The day keeps the latest weigh-in or step count still in the log, if there is one
+  for (const [kind, key] of [['weight', 'kg'], ['steps', 'steps']]) {
+    if (e.kind !== kind || !S.days[e.day] || S.days[e.day][key] !== e[key]) continue;
+    const left = S.entries.filter((x) => x.day === e.day && x.kind === kind && x.status === 'ok').sort((a, b) => b.ts - a.ts)[0];
+    await saveDay(e.day, { [key]: left ? left[key] : null });
+  }
   render();
   if (!silent) toast('Entry deleted');
 }
@@ -425,8 +172,8 @@ async function submitText(text) {
 }
 
 let posCache = null;
-function getPos() {
-  if (!S.settings.useLocation || !navigator.geolocation) return Promise.resolve(null);
+function getPos(force = false) {
+  if (!(force || S.settings.useLocation) || !navigator.geolocation) return Promise.resolve(null);
   if (posCache && Date.now() - posCache.at < 300000) return Promise.resolve(posCache);
   return new Promise((res) => {
     const t = setTimeout(() => res(null), 6000);
@@ -438,7 +185,12 @@ function getPos() {
   });
 }
 
+let preparing = 0; // photo batches being prepared; an update must not reload the page under them
 async function submitPhotos(files, note) {
+  preparing += 1;
+  try { await prepareAndQueue(files, note); } finally { preparing -= 1; }
+}
+async function prepareAndQueue(files, note) {
   const list = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
   if (!list.length) return;
   go('log');
@@ -500,11 +252,30 @@ async function submitPhotos(files, note) {
 
 // ——— Analysis queue (requests go one at a time) ———
 let chain = Promise.resolve();
+// After a failure that every further request would share (no quota, bad key, no connection...), the entries queued
+// automatically wait instead of each sending a request that fails the same way. A tap on Analyse, or the
+// connection coming back, lifts it.
+let pausedUntil = 0;
+const SHARED_FAILURE = ['no_key', 'bad_key', 'offline', 'net', 'timeout', 'rate', 'no_quota', 'no_credit', 'needs_billing'];
 function queueAnalyze(id, opts) {
   S.busy.add(id);
   render();
   chain = chain.then(() => analyzeEntry(id, opts)).catch(() => {});
   return chain;
+}
+// Entries that are waiting for the model go again
+function resumePending() {
+  pausedUntil = 0;
+  if (!hasKey() || navigator.onLine === false) return;
+  S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id));
+}
+// What the person sees while a request is retried
+const retryNote = (n, of, alt, why) => (alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`);
+// What the model has used so far, kept in Settings
+async function addUsage(model, usage) {
+  const u = S.settings.usage;
+  u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
+  await saveSettings();
 }
 
 // ——— The day's review, written by the model ———
@@ -515,12 +286,11 @@ function reviewBrief(day) {
   const t = dayTotals(day);
   const v = dayVerdict(day);
   const r = (x) => Math.round(x);
-  const clock = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const date = (d) => new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(parseDay(d));
   const meals = mealsOf(day).sort((a, b) => a.ts - b.ts);
   const lines = [
-    `Day: ${date(day)}, ${dd.train ? 'workout day' : 'rest day'}, ${v.live ? `still in progress, now ${clock(Date.now())}` : 'finished'}.`,
-    `Targets: ${v.target} kcal, protein ${s.protein} g (at least ${Math.min(s.proteinMin || s.protein, s.protein)}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
+    `Day: ${date(day)}, ${dd.train ? 'workout day' : 'rest day'}, ${v.live ? `still in progress, now ${hhmm(Date.now())}` : 'finished'}.`,
+    `Targets: ${v.target} kcal, protein ${s.protein} g (at least ${proteinFloor()}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
     `Eaten: ${r(t.kcal)} kcal, protein ${r(t.p)} g, carbs ${r(t.c)} g, fat ${r(t.f)} g, fibre ${r(t.fib)} g.`,
     'Meals:',
   ];
@@ -529,11 +299,10 @@ function reviewBrief(day) {
     const m = e.mult || 1;
     const kind = e.planId ? 'plan meal' : e.tier === 'off' ? 'off plan' : e.tier === 'flex' ? 'weekly flex' : 'fits the plan';
     const items = e.planId ? '' : (e.items || []).slice(0, 6).map((i) => `${i.n}${i.g ? ` ${r(i.g * m)} g` : ''} ${r((i.kcal || 0) * m)} kcal`).join('; ');
-    lines.push(`- ${clock(e.ts)} ${(SLOT_NAME[e.slot] || '').toLowerCase()}: ${e.title}, ${r(x.kcal)} kcal, ${r(x.p)} g protein, ${kind}`
+    lines.push(`- ${hhmm(e.ts)} ${(SLOT_NAME[e.slot] || '').toLowerCase()}: ${e.title}, ${r(x.kcal)} kcal, ${r(x.p)} g protein, ${kind}`
       + `${(e.flags || []).includes('alcohol') ? ', alcohol' : ''}${e.place ? `, ${e.place === 'out' ? 'eaten out' : `at ${e.place}`}` : ''}${items ? ` [${items}]` : ''}`);
   }
-  const logged = new Set(meals.map((e) => e.slot));
-  const open = SLOTS.filter((x) => x.id !== 'late' && !logged.has(x.id)).map((x) => x.name.toLowerCase());
+  const open = openSlots(day).map((x) => x.name.toLowerCase());
   if (open.length) lines.push(`${v.live ? 'Not eaten yet' : 'Nothing logged for'}: ${open.join(', ')}.`);
   const waiting = S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status !== 'ok').length;
   if (waiting) lines.push(`${waiting} more ${waiting === 1 ? 'entry is' : 'entries are'} not analysed yet and not counted.`);
@@ -556,14 +325,13 @@ function reviewBrief(day) {
 
 function modelFailure(err, what = 'review') {
   const code = err && err.code;
-  if (code === 'no_key') return `Add a model key in Settings to get a ${what}.`;
-  if (code === 'no_vision') return 'This model does not accept photos. Pick a model with image support in Settings.';
-  if (code === 'no_credit' || code === 'needs_billing') return `${code === 'no_credit' ? 'The provider says the account has no credit.' : 'The provider wants billing enabled before it answers.'} ${errorDetail(err, 120)}`.trim();
-  if (code === 'bad_key') return 'The API key was rejected. Check it in Settings.';
-  if (code === 'offline' || code === 'net') return 'No connection. Try again when you are online.';
-  if (code === 'rate' || code === 'no_quota' || code === 'server') return `The provider is busy or the quota is used up. Try again a little later. ${errorDetail(err, 120)}`.trim();
+  if (code === 'no_key') return `Add an API key in Settings to get a ${what}.`;
   if (code === 'empty') return 'The model sent nothing usable. Try again.';
-  return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
+  if (!AI_ERRORS[code]) return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
+  // The same wording as for an entry, plus what the provider said where that explains it
+  const later = code === 'offline' || code === 'net' ? ' Try again when you are online.' : ['rate', 'no_quota', 'server', 'timeout'].includes(code) ? ' Try again a little later.' : '';
+  const said = ['rate', 'no_quota', 'server', 'no_credit', 'needs_billing'].includes(code) ? ` ${errorDetail(err, 120)}` : '';
+  return `${AI_ERRORS[code]}${later}${said}`.trim();
 }
 
 async function runReview(day, auto) {
@@ -571,9 +339,7 @@ async function runReview(day, auto) {
     const sig = reviewSig(day);
     const live = day === today();
     const { data, usage, model } = await review({ cfg: aiCfg(), brief: reviewBrief(day) });
-    const u = S.settings.usage;
-    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
-    await saveSettings();
+    await addUsage(model, usage);
     // The day may have been wiped while the request was out
     if (dayTotals(day).n) await saveDay(day, { review: { ...data, ts: Date.now(), sig, live, model } });
     S.reviewErr.delete(day);
@@ -610,9 +376,7 @@ function autoReview() {
 
 // ——— Check before ordering or buying ———
 const CHECK_PHOTOS = '__check'; // marks the photo picker as opened from the Check screen
-const CHECK_MAX = 4; // photos per check
 const CHECK_KEEP = 30; // verdicts kept
-export const checkReady = () => !S.check.busy && (S.check.photos.length > 0 || S.check.note.trim().length > 2);
 
 async function addCheckPhotos(files) {
   const room = CHECK_MAX - S.check.photos.length;
@@ -641,10 +405,9 @@ function checkBrief(note) {
   const tot = dayTotals(t);
   const target = dayTarget(t);
   const r = (x) => Math.round(x);
-  const logged = new Set(mealsOf(t).map((e) => e.slot));
-  const open = SLOTS.filter((x) => x.id !== 'late' && !logged.has(x.id)).map((x) => x.name.toLowerCase());
+  const open = openSlots(t).map((x) => x.name.toLowerCase());
   const lines = [
-    `Time ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(now)}, a ${S.days[t] && S.days[t].train ? 'workout' : 'rest'} day.`,
+    `Time ${hhmm(now)} on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(now)}, a ${S.days[t] && S.days[t].train ? 'workout' : 'rest'} day.`,
     tot.n
       ? `Today so far: ${r(tot.kcal)} of ${target} kcal eaten, ${r(target - tot.kcal) >= 0 ? `${r(target - tot.kcal)} kcal left` : `${r(tot.kcal - target)} kcal over`}; protein ${r(tot.p)} of ${s.protein} g.${open.length ? ` Not eaten yet: ${open.join(', ')}.` : ' All meals of the day are logged.'}`
       : `Nothing eaten yet today: the whole ${target} kcal and ${s.protein} g of protein are open. The plan's meals: ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.`,
@@ -675,17 +438,16 @@ async function runCheck() {
   if (!hasKey()) { c.err = modelFailure({ code: 'no_key' }, 'check'); return render(); }
   if (navigator.onLine === false) { c.err = modelFailure({ code: 'offline' }, 'check'); return render(); }
   const note = c.note.trim().slice(0, 300);
-  const blobs = c.photos.map((p) => p.blob);
+  const sent = c.photos.slice();
+  const blobs = sent.map((p) => p.blob);
   c.busy = true; c.err = ''; c.status = '';
   render();
   try {
     const { data, usage, model } = await check({
       cfg: aiCfg(), blobs, brief: checkBrief(note),
-      onRetry: (n, of, alt, why) => { c.status = alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`; render(); },
+      onRetry: (...a) => { c.status = retryNote(...a); render(); },
     });
-    const u = S.settings.usage;
-    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(model, usage);
-    await saveSettings();
+    await addUsage(model, usage);
     if (data.kind === 'none' || !data.options.length) {
       // Nothing to judge: the photos stay, so one more can be added
       c.err = data.answer || 'Nothing to judge was found. Try a closer or sharper photo.';
@@ -693,8 +455,9 @@ async function runCheck() {
       const rec = { id: db.uid(), ts: Date.now(), ...data, note, photos: blobs.length, model };
       S.checks = [rec, ...S.checks].slice(0, CHECK_KEEP);
       await db.kvSet('checks', S.checks);
-      c.photos.forEach((p) => URL.revokeObjectURL(p.url));
-      c.photos = []; c.note = ''; c.openId = rec.id;
+      sent.forEach((p) => URL.revokeObjectURL(p.url));
+      c.photos = c.photos.filter((p) => !sent.includes(p)); // a photo added while the request was out stays
+      c.note = ''; c.openId = rec.id;
     }
   } catch (err) {
     c.err = modelFailure(err, 'check');
@@ -786,13 +549,15 @@ async function openFrame(mealId, file) {
 }
 async function saveFrame() {
   if (!frame) return;
-  const { id, src, zoom, cx, cy } = frame;
+  const f = frame;
+  const { id, src, zoom, cx, cy } = f;
+  frame = null; // a second tap while this one is saving does nothing
   try {
     await storePlanPhoto(id, await picture.render(src, zoom, cx, cy), picture.PICTURE_SIZE, picture.PICTURE_SIZE);
   } catch (err) {
+    frame = f;
     return toast('Could not save the picture');
   }
-  frame = null;
   openSheet(renderPlanSheet(id), { type: 'plan', id });
   render();
   toast('Picture saved');
@@ -823,7 +588,10 @@ async function photoBlob(pid) {
 async function analyzeEntry(id, opts = {}) {
   const original = S.entries.find((x) => x.id === id);
   if (!original) { S.busy.delete(id); return; }
+  if (Date.now() < pausedUntil) { S.busy.delete(id); render(); return; } // see pausedUntil
   const e = { ...original };
+  const settled = original.status === 'ok'; // a new estimate was asked for: if it fails, the old one stays as it is
+  let failure = '';
   try {
     const blobs = [];
     for (const pid of e.photoIds || []) { const b = await photoBlob(pid); if (b) blobs.push(b); }
@@ -831,23 +599,23 @@ async function analyzeEntry(id, opts = {}) {
     if (opts.strong && cfg.provider === 'anthropic') cfg.model = STRONG_MODEL;
     const { data, usage, model: usedModel } = await analyze({
       cfg, blobs, text: e.text, when: new Date(e.ts), place: e.place, hint: opts.hint,
-      onRetry: (n, of, alt, why) => { S.retry.set(id, alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`); render(); },
+      onRetry: (...a) => { S.retry.set(id, retryNote(...a)); render(); },
     });
-    const u = S.settings.usage;
-    u.in += usage.in; u.out += usage.out; u.calls += 1; u.usd += costUSD(usedModel, usage);
-    await saveSettings();
+    await addUsage(usedModel, usage);
     e.model = usedModel;
     e.err = '';
+    // What comes back from the model is kept within sane bounds: a slipped decimal must not wreck a day
+    const cap = (v, max) => Math.min(max, Math.max(0, +v || 0));
     if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
       const kg = Math.round(data.kg * 10) / 10;
       Object.assign(e, { kind: 'weight', status: 'ok', kg, title: weightTitle(kg) });
       await saveDay(e.day, { kg });
-    } else if (data.kind === 'steps' && data.steps > 0) {
+    } else if (data.kind === 'steps' && data.steps > 0 && data.steps <= 100000) {
       const steps = Math.round(data.steps);
       Object.assign(e, { kind: 'steps', status: 'ok', steps, title: stepsTitle(steps) });
       await saveDay(e.day, { steps });
     } else if (data.kind === 'meal') {
-      const plan = MEAL_BY_ID[data.plan];
+      const plan = has(MEAL_BY_ID, data.plan) ? MEAL_BY_ID[data.plan] : null;
       if (plan) {
         Object.assign(e, {
           planId: plan.id, title: plan.name, items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
@@ -861,33 +629,38 @@ async function analyzeEntry(id, opts = {}) {
           } catch (err) { /* the picture is optional; the entry itself is fine */ }
         }
       } else {
-        const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String(i.n || ''), g: +i.g || 0, kcal: +i.kcal || 0, p: +i.p || 0 })) : [];
+        const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String((i && i.n) || '').slice(0, 80), g: cap(i && i.g, 5000), kcal: cap(i && i.kcal, 3000), p: cap(i && i.p, 300) })) : [];
         const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
         Object.assign(e, {
           planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items,
           // The item list is what explains the total, so the total is their sum whenever items carry calories
-          kcal: Math.round(sumKcal || +data.kcal || 0), p: +data.p || items.reduce((a, i) => a + i.p, 0), edited: false,
-          c: +data.c || 0, f: +data.f || 0, fib: +data.fib || 0,
+          kcal: Math.round(cap(sumKcal || data.kcal, 6000)), p: cap(data.p, 500) || items.reduce((a, i) => a + i.p, 0), edited: false,
+          c: cap(data.c, 800), f: cap(data.f, 500), fib: cap(data.fib, 150),
           tier: ['plan', 'flex', 'off'].includes(data.tier) ? data.tier : 'plan',
         });
       }
       Object.assign(e, {
         kind: 'meal', status: 'ok',
-        slot: SLOT_NAME[data.slot] ? data.slot : e.slot,
-        flags: Array.isArray(data.flags) ? data.flags.map(String).slice(0, 4) : [],
+        slot: has(SLOT_NAME, data.slot) ? data.slot : e.slot,
+        flags: Array.isArray(data.flags) ? data.flags.map((f) => String(f).slice(0, 20)).slice(0, 4) : [],
         conf: Math.max(0, Math.min(1, +data.conf || 0)), q: String(data.q || '').slice(0, 160),
       });
+    } else if (settled) {
+      failure = 'Nothing to log was found in that, so the entry is unchanged.';
     } else {
       Object.assign(e, { status: 'error', err: 'Nothing to log was found: no food, weight or step count.' });
     }
   } catch (err) {
     const code = err && err.code;
-    const waiting = ['no_key', 'offline', 'net', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
+    if (SHARED_FAILURE.includes(code)) pausedUntil = Date.now() + 300000;
+    const waiting = ['no_key', 'offline', 'net', 'timeout', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     const detail = ['bad_request', 'http', 'bad_model', 'server', 'rate', 'no_quota', 'no_credit', 'needs_billing'].includes(code) ? ' ' + errorDetail(err, 140) : '';
-    Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + detail });
+    if (settled) failure = modelFailure(err, 'new estimate');
+    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + (waiting ? WAITING : '') + detail });
   }
   S.busy.delete(id);
   S.retry.delete(id);
+  if (failure) { render(); toast(failure); return; }
   if (S.entries.some((x) => x.id === id)) await saveEntry(e);
   render();
 }
@@ -929,26 +702,34 @@ function migrateSettings(st) {
 }
 
 // ——— Backup ———
-const b64FromBuf = (buf) => {
-  const u8 = new Uint8Array(buf);
-  let s = '';
-  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-  return btoa(s);
-};
-const bufFromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
-
 // Hands a file to the share sheet where that is possible (Save to Files on iOS), otherwise downloads it.
+// content: a string, or a list of strings that are joined without ever being one big string.
 // Returns false when the person cancelled.
 async function deliverFile(name, content, type) {
-  const blob = new Blob([content], { type });
+  const blob = new Blob(Array.isArray(content) ? content : [content], { type });
+  const file = new File([blob], name, { type });
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
   try {
-    const file = new File([blob], name, { type });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (canShare) {
       await navigator.share({ files: [file], title: name });
       return true;
     }
   } catch (err) {
     if (err && err.name === 'AbortError') return false;
+    // Safari only opens the share sheet shortly after a tap, and a big file takes longer to build than that:
+    // ask for a new tap instead of falling back to a download that a Home Screen app may ignore
+    if (err && err.name === 'NotAllowedError') {
+      return new Promise((res) => {
+        const timer = setTimeout(() => res(false), 7000);
+        toast('The file is ready', {
+          label: 'Save',
+          fn: () => {
+            clearTimeout(timer);
+            navigator.share({ files: [file], title: name }).then(() => res(true), () => res(false));
+          },
+        });
+      });
+    }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -963,11 +744,16 @@ async function deliverFile(name, content, type) {
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
   const data = { app: 'kantar', v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
-  // The plan's pictures always travel with the backup; photos of logged meals only when asked for
+  // The plan's pictures always travel with the backup; photos of logged meals only when asked for.
+  // They are read one at a time, so the photos that are left out are never loaded.
   const planIds = new Set(Object.values(S.settings.planPhotos || {}));
-  const photos = (await db.all('photos')).filter((p) => withPhotos || planIds.has(p.id));
-  if (photos.length) data.photos = photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, b64: b64FromBuf(p.buf) }));
-  const done = await deliverFile(`kantar-backup-${today()}.json`, JSON.stringify(data), 'application/json');
+  const content = [JSON.stringify(data).slice(0, -1) + ',"photos":['];
+  for (const id of (await db.keys('photos')).filter((k) => withPhotos || planIds.has(k))) {
+    const p = await db.get('photos', id);
+    if (p) content.push((content.length > 1 ? ',' : '') + JSON.stringify({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, b64: b64FromBuf(p.buf) }));
+  }
+  content.push(']}');
+  const done = await deliverFile(`kantar-backup-${today()}.json`, content, 'application/json');
   if (!done) return;
   S.settings.lastBackup = Date.now();
   await saveSettings();
@@ -986,17 +772,49 @@ async function importBackup(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch { return toast('Could not read the file'); }
   if (!data || data.app !== 'kantar' || !Array.isArray(data.entries)) return toast('This is not a Kantar backup');
-  await db.putMany('entries', data.entries.map(migrateEntry));
-  await db.putMany('days', data.days || []);
-  if (Array.isArray(data.photos)) await db.putMany('photos', data.photos.map((p) => ({ id: p.id, type: p.type, w: p.w, h: p.h, plan: p.plan, buf: bufFromB64(p.b64) })));
-  if (data.settings) { S.settings = { ...S.settings, ...migrateSettings(data.settings), apiKey: S.settings.apiKey, oaKey: S.settings.oaKey }; await saveSettings(); }
-  if (Array.isArray(data.checks)) {
-    const have = new Set(S.checks.map((c) => c.id));
-    await db.kvSet('checks', S.checks.concat(data.checks.filter((c) => c && c.id && !have.has(c.id))).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
+  const v = Number.isInteger(data.v) ? data.v : 1;
+  if (v > SCHEMA_VERSION) return toast('This backup is from a newer version of Kantar. Update the app first');
+  // Restoring adds to what is on the device; an entry or day that is in both is replaced by the backup's version.
+  // Everything read from the file is checked first (see backup.js).
+  let restored = 0;
+  let skipped = 0;
+  try {
+    for (const p of Array.isArray(data.photos) ? data.photos : []) {
+      const photo = cleanPhoto(p); // photos go in one at a time: a damaged one is skipped, and the others are not held in memory together
+      if (photo) await db.put('photos', photo); else skipped += 1;
+    }
+    const entries = data.entries.map((e) => cleanEntry(v < SCHEMA_VERSION ? migrateEntry(e) : e)).filter(Boolean);
+    skipped += data.entries.length - entries.length;
+    restored = entries.length;
+    await db.putMany('entries', entries);
+    await db.putMany('days', (Array.isArray(data.days) ? data.days : []).map(cleanDay).filter(Boolean));
+    if (data.settings && typeof data.settings === 'object') {
+      const before = Object.values(S.settings.planPhotos || {});
+      const incoming = cleanSettings(v < SCHEMA_VERSION ? migrateSettings(data.settings) : data.settings);
+      if (incoming.planPhotos) incoming.planPhotos = { ...(S.settings.planPhotos || {}), ...incoming.planPhotos }; // pictures are added to, not replaced
+      S.settings = { ...S.settings, ...incoming, schema: SCHEMA_VERSION };
+      await saveSettings();
+      // A plan picture that the backup replaces is no longer referred to by anything
+      const now = new Set(Object.values(S.settings.planPhotos || {}));
+      for (const id of before.filter((x) => !now.has(x))) {
+        await db.del('photos', id);
+        const u = S.urls.get(id);
+        if (u) { URL.revokeObjectURL(u); S.urls.delete(id); }
+      }
+    }
+    if (Array.isArray(data.checks)) {
+      const have = new Set(S.checks.map((c) => c.id));
+      const added = data.checks.map(cleanCheck).filter((c) => c && !have.has(c.id));
+      await db.kvSet('checks', S.checks.concat(added).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
+    }
+  } catch (err) {
+    toast('The backup could not be restored completely');
+    await load();
+    return render();
   }
   await load();
   render();
-  toast(`${data.entries.length} entries restored`);
+  toast(`${restored} ${restored === 1 ? 'entry' : 'entries'} restored${skipped ? `; ${skipped} damaged ${skipped === 1 ? 'item' : 'items'} skipped` : ''}`);
 }
 
 // ——— Loading and rendering ———
@@ -1055,9 +873,16 @@ function render() {
   if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
-    if (html) { $('#sheet-body').innerHTML = html; hydratePhotos(); } else closeSheet();
+    const body = $('#sheet-body');
+    const typing = body.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    const sig = entrySig(S.sheet.id);
+    if (!html) closeSheet();
+    else if (!typing || sig !== S.sheet.sig) { body.innerHTML = html; hydratePhotos(); } // a retry tick must not wipe what is being typed; a changed entry must show
+    if (S.sheet) S.sheet.sig = sig;
   }
 }
+// What the entry sheet shows that can change under it: whether the entry is being analysed, and its state
+const entrySig = (id) => { const e = S.entries.find((x) => x.id === id); return e ? `${e.status}|${S.busy.has(id)}` : ''; };
 
 // ——— Small celebrations: a kilo milestone, a day with all five goals done ———
 function celebrate() {
@@ -1125,14 +950,12 @@ function renderFavorites() {
 async function hydratePhotos() {
   for (const img of document.querySelectorAll('img[data-photo]')) {
     const pid = img.dataset.photo;
-    let url = S.urls.get(pid);
-    if (!url) {
+    if (!S.urls.has(pid)) {
       const b = await photoBlob(pid);
       if (!b) continue;
-      url = URL.createObjectURL(b);
-      S.urls.set(pid, url);
+      if (!S.urls.has(pid)) S.urls.set(pid, URL.createObjectURL(b)); // another call may have got there while this one waited
     }
-    img.src = url;
+    img.src = S.urls.get(pid);
   }
 }
 
@@ -1146,6 +969,7 @@ function openSheet(html, state, focusSel, keepFocus) {
   body.innerHTML = html;
   body.dataset.type = state.type;
   $('#sheet').hidden = false;
+  $('#app').inert = true; // the page behind the sheet cannot be tabbed to or read out
   document.body.classList.add('sheet-open');
   body.scrollTop = keep;
   if (!keepFocus) {
@@ -1158,6 +982,7 @@ function closeSheet() {
   $('#sheet').hidden = true;
   S.sheet = null;
   frame = null; // a photo being framed is dropped with the sheet
+  $('#app').inert = false;
   document.body.classList.remove('sheet-open');
   if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
   sheetOpener = null;
@@ -1185,7 +1010,7 @@ const ACT = {
   'log-favorite': (el) => { const f = (S.settings.favorites || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'favorite', today()); },
   'open-entry': (el) => {
     const html = renderEntrySheet(el.dataset.id);
-    if (html) openSheet(html, { type: 'entry', id: el.dataset.id });
+    if (html) openSheet(html, { type: 'entry', id: el.dataset.id, sig: entrySig(el.dataset.id) });
   },
   'num': (el) => {
     const kind = el.dataset.kind;
@@ -1235,9 +1060,9 @@ const ACT = {
     if (e) { await saveEntry({ ...e, mult: Number(el.dataset.v) }); render(); }
   },
   'delete': (el) => removeEntry(el.dataset.id),
-  'analyze': (el) => queueAnalyze(el.dataset.id),
-  'analyze-all': () => { S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id)); },
-  'reanalyze': (el) => queueAnalyze(el.dataset.id, { strong: true }),
+  'analyze': (el) => { pausedUntil = 0; return queueAnalyze(el.dataset.id); },
+  'analyze-all': () => { pausedUntil = 0; S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id)); },
+  'reanalyze': (el) => { pausedUntil = 0; return queueAnalyze(el.dataset.id, { strong: true }); },
   // The person tells the model what the photo does not show; the model revises its own item list
   'answer': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
@@ -1245,8 +1070,9 @@ const ACT = {
     const said = inp ? inp.value.trim() : '';
     if (!e || !said) return;
     const earlier = (e.items || []).map((i) => `${i.n} ${Math.round(i.g || 0)} g ${Math.round(i.kcal || 0)} kcal`).join('; ');
-    // The correction is kept as part of the entry's note, so a later re-analysis still knows it
-    await saveEntry({ ...e, text: [e.text, said].filter(Boolean).join('; ').slice(0, 400) });
+    // The correction is kept as part of the entry's note, so a later re-analysis still knows it; when the note is full, the oldest part goes
+    await saveEntry({ ...e, text: [e.text, said].filter(Boolean).join('; ').slice(-400) });
+    pausedUntil = 0;
     queueAnalyze(e.id, { hint: `${earlier ? `Your earlier estimate: ${earlier}.\n` : ''}${e.q ? `Your earlier question: ${e.q}\n` : ''}Correction from the person: ${said}\nRevise the estimate with this correction and keep the items it does not mention.` });
   },
   'favorite': async (el) => {
@@ -1284,6 +1110,7 @@ const ACT = {
       if (d.getTime() !== e.ts) { next.ts = d.getTime(); next.timeSrc = 'manual'; }
     }
     await saveEntry(next);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // Safari keeps a field focused when a button is tapped, which would keep the sheet from refreshing
     render();
     toast('Entry updated');
   },
@@ -1292,7 +1119,10 @@ const ACT = {
   // Settings
   'save-key': async () => {
     if (S.settings.provider === 'openai') {
-      S.settings.oaBase = $('#set-base').value.trim().replace(/\/+$/, '');
+      // The key is sent to this address, so it must be a secure one; a schemeless address would be read as a path on this site
+      const base = $('#set-base').value.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+      if (base && !/^https:\/\/[^/\s]+/i.test(base)) { toast('The address must start with https://'); return false; }
+      S.settings.oaBase = base;
       S.settings.oaModel = $('#set-oamodel').value.trim();
       S.settings.oaKey = $('#set-oakey').value.trim();
     } else {
@@ -1306,16 +1136,16 @@ const ACT = {
     if (hasKey()) ACT['analyze-all']();
   },
   'test-key': async () => {
-    await ACT['save-key']();
+    if ((await ACT['save-key']()) === false) return;
     const out = $('#key-test');
     if (!hasKey()) { out.textContent = S.settings.provider === 'openai' ? 'Address, model and key are all required.' : 'A key is required.'; return; }
     const cfg = aiCfg();
-    const add = async (u) => { S.settings.usage.in += u.in; S.settings.usage.out += u.out; S.settings.usage.calls += 1; S.settings.usage.usd += costUSD(cfg.model, u); await saveSettings(); };
+    const add = (u) => addUsage(cfg.model, u);
     // Always show what the provider said, so the cause can be checked
     const gemini = cfg.provider === 'openai' && /generativelanguage\.googleapis\.com/.test(cfg.base || '');
     const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? ' Your plan and limits: aistudio.google.com/rate-limit' : '');
     const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? ` ${d}` : ` The provider said: “${d}”`; };
-    const why = (err) => `${(AI_ERRORS[err.code] || 'Failed.').replace('; the entry is waiting', '').replace(' Tap “Analyse” a little later.', '')}${said(err)}${limitsHint(err)}`;
+    const why = (err) => `${AI_ERRORS[err.code] || 'Failed.'}${said(err)}${limitsHint(err)}`;
     out.textContent = 'Testing text…';
     let textLine;
     try {
@@ -1351,7 +1181,7 @@ const ACT = {
     }
   },
   'find-vision': async () => {
-    await ACT['save-key']();
+    if ((await ACT['save-key']()) === false) return;
     const out = $('#key-test');
     if (!S.settings.oaBase || !S.settings.oaKey) { out.textContent = 'Enter the address and key first.'; return; }
     const base = { provider: 'openai', key: S.settings.oaKey, base: S.settings.oaBase };
@@ -1393,8 +1223,8 @@ const ACT = {
       startKg: num('#set-startkg'), targetKg: num('#set-endkg'),
       kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), protein: Math.round(num('#set-prot')),
     };
-    if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= 1200) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
-      return toast('Check the values: the end must be after the start, the target weight below the start weight, and calories at least 1,200');
+    if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= KCAL_FLOOR) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
+      return toast(`Check the values: the end must be after the start, the target weight below the start weight, and calories at least ${fmtInt(KCAL_FLOOR)}, as the plan's rules say`);
     }
     S.settings = { ...S.settings, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
     await saveSettings();
@@ -1404,7 +1234,7 @@ const ACT = {
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
   'review-day': (el) => {
-    if (!hasKey()) return toast('Add a model key in Settings to get a review');
+    if (!hasKey()) return toast('Add an API key in Settings to get a review');
     if (navigator.onLine === false) return toast('No connection. Try again when you are online');
     queueReview(el.dataset.day);
   },
@@ -1412,10 +1242,7 @@ const ACT = {
     const out = $('#loc-out');
     out.textContent = 'Getting your location…';
     posCache = null;
-    const was = S.settings.useLocation;
-    S.settings.useLocation = true;
-    const pos = await getPos();
-    S.settings.useLocation = was;
+    const pos = await getPos(true);
     if (!pos) { out.textContent = 'Could not get a location. Check that the browser has location permission.'; return; }
     const name = el.dataset.name;
     S.settings.places = (S.settings.places || []).filter((p) => p.name !== name).concat([{ name, lat: pos.lat, lon: pos.lon }]);
@@ -1445,10 +1272,12 @@ const ACT = {
   },
   'hard-reload': async () => {
     try {
+      // Only this app's own cache and worker: other apps on the same host share the origin
       const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k.startsWith('kantar-')).map((k) => caches.delete(k)));
+      const here = new URL('./', location.href).href;
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
+      await Promise.all(regs.filter((r) => r.scope === here).map((r) => r.unregister()));
     } catch { /* not supported */ }
     location.reload();
   },
@@ -1456,7 +1285,14 @@ const ACT = {
     if (!window.confirm('All entries, their photos, weigh-ins and checks on this device will be deleted. Do you have a backup? Continue?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
-    for (const p of await db.all('photos')) if (!keep.has(p.id)) await db.del('photos', p.id);
+    for (const id of await db.keys('photos')) {
+      if (keep.has(id)) continue;
+      await db.del('photos', id);
+      const u = S.urls.get(id);
+      if (u) { URL.revokeObjectURL(u); S.urls.delete(id); }
+    }
+    delete S.settings.wins; // the next kilo or perfect day is celebrated again
+    await saveSettings();
     S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
     closeSheet();
     render();
@@ -1464,13 +1300,24 @@ const ACT = {
   },
 };
 
+// A handler that fails (storage full, a database that will not open) says so, instead of the screen showing
+// something that was never saved. Runs fn straight away: file pickers need the tap's own turn.
+const report = (err) => toast(`Could not save: ${(err && err.message) || 'storage error'}`);
+function guard(fn, undo) {
+  const fail = (err) => { if (undo) undo(); report(err); };
+  try {
+    const r = fn();
+    if (r && typeof r.catch === 'function') r.catch(fail);
+  } catch (err) { fail(err); }
+}
+
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-act],.tabs [data-tab],[data-close-sheet]');
   if (!el) return;
   if (el.matches('input[type=checkbox]')) return; // handled on change
   if (el.dataset.closeSheet !== undefined) return closeSheet();
   const act = el.dataset.act || (el.dataset.tab ? 'tab' : '');
-  if (ACT[act]) { ev.preventDefault(); ACT[act](el); }
+  if (ACT[act]) { ev.preventDefault(); guard(() => ACT[act](el)); }
 });
 
 // The zoom slider of the framing step
@@ -1484,7 +1331,7 @@ document.addEventListener('input', (ev) => {
   }
 });
 
-document.addEventListener('change', async (ev) => {
+document.addEventListener('change', (ev) => guard(async () => {
   const el = ev.target;
   if (el.id === 'f-cam' || el.id === 'f-lib') {
     const files = Array.from(el.files || []);
@@ -1492,13 +1339,13 @@ document.addEventListener('change', async (ev) => {
     // A photo asked for from the Plan screen becomes that meal's picture and is not logged
     const target = photoTarget;
     photoTarget = null;
-    if (target === CHECK_PHOTOS) { if (files.length) addCheckPhotos(files); return; }
-    if (target) { if (files.length) openFrame(target, files[0]); return; }
+    if (target === CHECK_PHOTOS) { if (files.length) await addCheckPhotos(files); return; }
+    if (target) { if (files.length) await openFrame(target, files[0]); return; }
     const note = $('#composer-input').value.trim();
-    if (files.length) { $('#composer-input').value = ''; submitPhotos(files, note); }
+    if (files.length) { $('#composer-input').value = ''; await submitPhotos(files, note); }
     return;
   }
-  if (el.id === 'set-import') { if (el.files[0]) importBackup(el.files[0]); el.value = ''; return; }
+  if (el.id === 'set-import') { const file = el.files[0]; el.value = ''; if (file) await importBackup(file); return; }
   if (el.dataset.act === 'loc-toggle') return ACT['loc-toggle'](el);
   if (el.dataset.act === 'review-toggle') return ACT['review-toggle'](el);
   if (el.dataset.chg === 'provider') { S.settings.provider = el.value; await saveSettings(); render(); return openSettings(); }
@@ -1506,7 +1353,7 @@ document.addEventListener('change', async (ev) => {
     const p = PRESETS.find((x) => x.id === el.value);
     if (p) { $('#set-base').value = p.base; $('#set-oamodel').value = p.model; }
   }
-});
+}));
 
 // Number sheet: saves a weigh-in or a step count
 document.addEventListener('submit', (ev) => {
@@ -1520,12 +1367,12 @@ document.addEventListener('submit', (ev) => {
     const kg = parseFloat(raw.replace(',', '.'));
     if (!(kg >= 50 && kg <= 160)) { err.textContent = 'Enter a value between 50 and 160 kg. Example: 85.4'; err.hidden = false; return; }
     closeSheet();
-    setWeight(Math.round(kg * 10) / 10, day, false);
+    guard(() => setWeight(Math.round(kg * 10) / 10, day, false));
   } else {
     const steps = parseInt(raw.replace(/\D/g, ''), 10);
     if (!(steps >= 0 && steps <= 100000)) { err.textContent = 'Enter the step count in digits. Example: 8200'; err.hidden = false; return; }
     closeSheet();
-    setSteps(steps, day, false);
+    guard(() => setSteps(steps, day, false));
   }
 });
 
@@ -1553,34 +1400,43 @@ $('#composer').addEventListener('submit', (ev) => {
   const t = inp.value.trim();
   if (!t) return;
   inp.value = '';
-  submitText(t);
+  guard(() => submitText(t), () => { if (!inp.value) inp.value = t; }); // a failed save gives the text back
 });
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet();
   // Enter in the correction box sends it
-  if (ev.key === 'Enter' && ev.target.id === 'check-note') { ev.preventDefault(); ev.target.blur(); runCheck(); }
+  if (ev.key === 'Enter' && ev.target.id === 'check-note') { ev.preventDefault(); ev.target.blur(); guard(runCheck); }
   if (ev.key === 'Enter' && ev.target.id && ev.target.id.startsWith('answer-')) {
     ev.preventDefault();
-    ACT.answer({ dataset: { id: ev.target.id.slice(7) } });
+    guard(() => ACT.answer({ dataset: { id: ev.target.id.slice(7) } }));
   }
 });
 
 // If the app stayed open past midnight, move on to the new day
 let lastToday = today();
+function newDay() {
+  const t = today();
+  if (t === lastToday) return false;
+  if (S.viewDay === lastToday) S.viewDay = t;
+  lastToday = t;
+  return true;
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  const t = today();
-  if (lastToday !== t && S.viewDay === lastToday) S.viewDay = t;
-  lastToday = t;
+  newDay();
   render();
   autoReview();
 });
+// ...and when it stays open and in front through midnight
+setInterval(() => { if (document.visibilityState === 'visible' && newDay()) { render(); autoReview(); } }, 60000);
 
 // ——— Updates ———
 // When a new service worker takes control the page is still running old files, so it reloads.
 let swReg = null;
 function safeToReload() {
-  return $('#sheet').hidden && !$('#composer-input').value && !S.busy.size && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
+  const c = S.check;
+  const working = S.busy.size || S.reviewing.size || preparing || c.busy || c.photos.length || c.note; // nothing in flight or half-written
+  return $('#sheet').hidden && !$('#composer-input').value && !working && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
 }
 function setupUpdates() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
@@ -1595,7 +1451,11 @@ function setupUpdates() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && swReg) swReg.update().catch(() => {}); });
 }
 
+// Waiting entries go again as soon as the connection is back
+window.addEventListener('online', resumePending);
+
 (async function start() {
+  setupUpdates(); // first, so that a fixed version can still arrive when the database does not open
   try {
     await load();
   } catch (err) {
@@ -1605,9 +1465,7 @@ function setupUpdates() {
   render();
   refreshStorage();
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((p) => { S.persisted = p; }); } catch { /* not supported */ }
-  setupUpdates();
-  // Unfinished analyses resume when there is a key and a connection
-  if (hasKey() && navigator.onLine) S.entries.filter((e) => e.status === 'pending').forEach((e) => queueAnalyze(e.id));
+  resumePending(); // unfinished analyses resume when there is a key and a connection
   autoReview();
 })();
 

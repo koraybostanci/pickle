@@ -1,5 +1,6 @@
 // SQL export: one text file that builds the Kantar tables in any SQLite database.
-//   sqlite3 kantar.db < kantar-export-2026-10-03.sql
+//   sqlite3 -bail kantar.db < kantar-export-2026-10-03.sql
+// (-bail stops at the first error, so a failed load is rolled back instead of leaving half the tables.)
 // Loading the file again replaces the kantar_* tables and views and touches nothing else.
 import { targetAt, dayKey } from './plan.js';
 
@@ -27,7 +28,7 @@ CREATE TABLE kantar_days (
   steps            INTEGER,
   water_ml         INTEGER,
   workout          INTEGER NOT NULL DEFAULT 0,  -- 1 on workout days
-  target_kcal      INTEGER NOT NULL,            -- the calorie target that applied on the day
+  target_kcal      INTEGER NOT NULL,            -- the day's calorie target under the current Targets, so changing them changes past rows
   target_weight_kg REAL                         -- where the schedule stood on the day; NULL before the start date
 );
 
@@ -47,7 +48,7 @@ CREATE TABLE kantar_meals (
   carbs_g    REAL,
   fat_g      REAL,
   fibre_g    REAL,
-  confidence REAL,                              -- the model's own estimate, 0 to 1; NULL for plan meals
+  confidence REAL,                              -- 0 to 1: the model's own estimate; 1 for meals you tapped or edited; NULL when unknown
   place      TEXT,                              -- Home, Office or out, when photo location is on
   note       TEXT,                              -- what was typed
   photos     INTEGER NOT NULL DEFAULT 0,        -- number of photos; the photos themselves are not exported
@@ -100,9 +101,9 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
   out.push(
     `-- Kantar export, ${localTime(now.getTime())} (app version ${appVersion}, export schema ${EXPORT_SCHEMA})`,
     '-- Load it into a new or existing SQLite database:',
-    `--   sqlite3 kantar.db < ${exportName(now)}`,
+    `--   sqlite3 -bail kantar.db < ${exportName(now)}`,
     '-- Loading again replaces the kantar_* tables and the kantar_daily view; nothing else in the database is touched.',
-    '-- Not included: photos, API keys, saved places.',
+    '-- Not included: photos, API keys, the coordinates of saved places.',
     '',
     'BEGIN TRANSACTION;',
     'DROP VIEW IF EXISTS kantar_daily;',

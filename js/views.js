@@ -1,20 +1,19 @@
 import {
-  S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, weightSeries, projection,
-  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, kilosDown,
-  dayVerdict, verdictText, reviewState, VERDICT, checkReady,
-} from './app.js';
+  S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
+  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
+  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg,
+} from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, parseDay, addDays, diffDays, targetAt, dayKey } from './plan.js';
+import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const n0 = (x) => Math.round(x).toLocaleString(LOCALE);
-const n1 = (x) => (Math.round(x * 10) / 10).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const n0 = fmtInt;
+const n1 = fmtKg;
 const dLong = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long', weekday: 'long' });
 const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' });
 const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });
 const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
 const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
-const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 
 const ICON = {
@@ -32,12 +31,12 @@ const settingsButton = `<button type="button" class="icon-btn" data-act="setting
 function progressSummary() {
   const s = S.settings;
   const t = today();
-  const a = avg7(t);
+  const a = currentAvg(t);
   const target = targetAt(t, s);
   const left = diffDays(t, s.targetDate);
   const toStart = diffDays(t, s.startDate);
   const started = toStart <= 0;
-  const pace = ((s.startKg - s.targetKg) / diffDays(s.startDate, s.targetDate)) * 7;
+  const pace = planRate().kg * 7;
   const endDate = dShort.format(parseDay(s.targetDate));
   const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
@@ -180,7 +179,8 @@ function budgetTile(day) {
   }
 
   // The verdict, in the budget's own terms
-  const over = rem < -target * 0.07;
+  const slack = target * (BAND.high - 1); // how far over still counts as on target
+  const over = rem < -slack;
   const rate = plannedByNow > 0 ? eaten / plannedByNow : 0;
   let tone = 'calm';
   let verdict;
@@ -198,7 +198,7 @@ function budgetTile(day) {
   if (!isToday || now >= H1) foot = `${n0(eaten)} of ${n0(target)} kcal spent`;
   else if (!open.length) foot = rem >= 0 ? `All meals in, ${n0(rem)} kcal to spare` : `All meals in, ${n0(-rem)} kcal over`;
   else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
-  const forecastBad = isToday && open.length > 0 && forecast < -target * 0.07;
+  const forecastBad = isToday && open.length > 0 && forecast < -slack;
   const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}. ${foot}.`;
   return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}" role="group" aria-label="${esc(label)}">
     <div class="budget-head">
@@ -235,20 +235,19 @@ function bento(day, part) {
   if (isToday) {
     const p = progressSummary();
     const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
-    weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
+    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
       ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
       <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}<em>${esc(p.tag)}</em></span>
       ${track(p.a, p.target, p.started)}
     </button>`;
   } else {
-    weight = `<button type="button" class="tile tile-weight${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
+    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
       ${top(GLYPH.scale, 'Weight', !!dd.kg, dd.kg ? '' : 'tap to add')}
       <span class="tile-val"><b>${dd.kg ? n1(dd.kg) : '–'}</b>${dd.kg ? ' kg' : ''}</span>
     </button>`;
   }
 
-  const pGoal = Math.min(s.proteinMin || s.protein, s.protein);
-  const pDone = tot.p >= pGoal;
+  const pDone = tot.p >= proteinFloor();
   const steps = dd.steps || 0;
   const stepsDone = steps >= s.steps;
   const water = dd.water || 0;
@@ -290,7 +289,6 @@ const multLabel = (m) => ({ 0.5: '½', 1.5: '1½', 2: '2' }[m] || String(m));
 
 const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(m.name)} <span>${m.kcal}</span></button>`;
 
-// The day's meals. The next open slot carries the suggestion and the screen's one primary action.
 // Which slots a day shows, and what the plan offers in each
 function daySlots(day) {
   const dd = S.days[day] || {};
@@ -303,9 +301,10 @@ function daySlots(day) {
   if (dd.train || has('workout')) list.push({ id: 'workout', name: 'Workout extras', time: '', hint: 'Banana before, skyr after' });
   // The late slot only shows once it matters: in the evening, when something is in it, or when skyr would close a protein gap
   const sg = suggest(day);
-  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: 'After 20:00', time: '20:00', hint: 'Herbal tea; skyr if very hungry' });
+  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: lateName(), time: SLOTS.find((x) => x.id === 'late').time, hint: 'Herbal tea; skyr if very hungry' });
   return { list, all, sg, isToday };
 }
+const lateName = () => `After ${SLOTS.find((x) => x.id === 'late').time}`;
 const slotOptions = (id, entries) => {
   const logged = new Set(entries.map((e) => e.planId));
   return MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
@@ -333,7 +332,7 @@ function dayList(day) {
     for (const e of entries) {
       const ok = e.status === 'ok';
       const v = eff(e);
-      rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${e.id}">
+      rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${esc(e.id)}">
         <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
         <span class="meal-text"><b>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
         <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b> kcal` : esc(entryState(e))}</span>
@@ -373,7 +372,7 @@ export function renderSlotSheet(slotId, day) {
   const ordered = options.slice().sort((a, b) => (a.id === suggested ? -1 : b.id === suggested ? 1 : 0));
   const pics = S.settings.planPhotos || {};
   const anyPic = options.some((m) => pics[m.id]); // thumbnails only when there is at least one to show
-  const thumb = (m) => (!anyPic ? '' : pics[m.id] ? `<span class="meal-thumb"><img data-photo="${pics[m.id]}" alt=""></span>` : `<span class="meal-thumb is-empty">${PLATE}</span>`);
+  const thumb = (m) => (!anyPic ? '' : pics[m.id] ? `<span class="meal-thumb"><img data-photo="${esc(pics[m.id])}" alt=""></span>` : `<span class="meal-thumb is-empty">${PLATE}</span>`);
   return `
   <header class="sheet-top"><h2 id="sheet-title">${sl.name}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
   <p class="note">${sl.hint ? sl.hint + '. ' : ''}Tap what you ${isToday ? 'are having' : 'had'}.</p>
@@ -418,7 +417,7 @@ function startCard() {
   const n = startStep();
   if (!n) return '';
   const step = {
-    1: ['Enter your first weigh-in', 'Tap “Weigh in” below. Progress and forecasts are calculated from your weigh-ins.', ''],
+    1: ['Enter your first weigh-in', 'Tap the Weight tile below. Progress and forecasts are calculated from your weigh-ins.', ''],
     2: ['Log your first meal', 'Tap “Log” next to the suggested meal under Today’s meals. No key needed.', ''],
     3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
@@ -463,7 +462,7 @@ export function renderNumSheet(kind, day) {
   <header class="sheet-top"><h2 id="sheet-title">${title}</h2><button type="button" class="btn" data-act="close-sheet">Cancel</button></header>
   <form id="num-form" class="num" data-kind="${kind}" data-day="${day}" autocomplete="off">
     <label for="num-in" class="note">${isKg ? 'Weigh in the morning under the same conditions. A single day fluctuates; the maths uses the 7-day average.' : `Your daily step count from the phone’s Health app. Target ${n0(S.settings.steps)}.`}</label>
-    <div class="num-row"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? (isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.settings.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : 'steps'}</span></div>
+    <div class="num-row"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? esc(isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.settings.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : 'steps'}</span></div>
     <p class="note is-error" id="num-err" role="alert" hidden></p>
     <button type="submit" class="btn btn-primary btn-wide">Save</button>
     ${cur ? `<button type="button" class="link link-danger" data-act="num-clear" data-kind="${kind}" data-day="${day}">${isKg ? 'Remove weigh-in' : 'Remove steps'}</button>` : ''}
@@ -471,7 +470,7 @@ export function renderNumSheet(kind, day) {
 }
 
 const TIME_SOURCE = { exif: ' (from photo)', file: ' (from file)', manual: ' (edited)', now: '' };
-const placeText = (place) => (place === 'out' ? 'out' : `at ${lower(place)}`);
+const placeText = (place) => (place === 'out' ? 'out' : `at ${lower(String(place))}`);
 
 // Full entry, shown in the bottom sheet: photos, numbers, corrections
 function entryDetail(e) {
@@ -481,22 +480,22 @@ function entryDetail(e) {
       <div class="entry-body">
         <h3>${esc(e.title)}</h3>
         <p class="meta">${esc(dLong.format(parseDay(e.day)))}, ${when}</p>
-        <div class="actions"><button type="button" class="btn btn-danger" data-act="delete" data-id="${e.id}">Delete</button></div>
+        <div class="actions"><button type="button" class="btn btn-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>
       </div>
     </article>`;
   }
   const v = eff(e);
-  const photos = (e.photoIds || []).map((p) => `<img data-photo="${p}" alt="Photo of the meal">`).join('');
+  const photos = (e.photoIds || []).map((p) => `<img data-photo="${esc(p)}" alt="Photo of the meal">`).join('');
   const meta = [when, SLOT_NAME[e.slot] || '', e.place ? esc(placeText(e.place)) : ''].filter(Boolean).join(', ');
   let body;
   if (S.busy.has(e.id)) {
     body = `<p class="status"><span class="spin" aria-hidden="true"></span>${esc(entryState(e))}</p>`;
   } else if (e.status === 'pending') {
-    body = `<p class="status">${esc(e.err || 'Waiting for analysis.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${e.id}">Analyse</button><button type="button" class="link link-danger" data-act="delete" data-id="${e.id}">Delete</button></div>`;
+    body = `<p class="status">${esc(e.err || 'Waiting for analysis.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Analyse</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
   } else if (e.status === 'error') {
-    body = `<p class="status is-error">${esc(e.err || 'Analysis failed.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${e.id}">Try again</button><button type="button" class="link link-danger" data-act="delete" data-id="${e.id}">Delete</button></div>`;
+    body = `<p class="status is-error">${esc(e.err || 'Analysis failed.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Try again</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
   } else {
-    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Flex budget</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
+    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Treat</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
     const rough = e.conf > 0 && e.conf < 0.6 && !e.planId;
     const mult = e.mult || 1;
     const canReanalyse = e.src === 'photo' || e.src === 'text';
@@ -512,8 +511,8 @@ function entryDetail(e) {
       </table>` : '';
     // The person can always tell the model what it could not see; if the model asked, its question is the prompt
     const prompt = e.q || (e.src === 'photo' ? 'Something the photo does not show?' : 'Something to correct?');
-    const question = canReanalyse ? `<div class="question${e.q ? ' is-asked' : ''}"><p id="ask-${e.id}">${esc(prompt)}</p><div><input id="answer-${e.id}" type="text" aria-labelledby="ask-${e.id}" enterkeyhint="send" autocomplete="off" placeholder="${e.q ? 'Answer briefly' : 'e.g. 2 eggs, low-fat cheese, baked'}"><button type="button" class="btn" data-act="answer" data-id="${e.id}">Update</button></div><p class="note">The model revises the items with your note.</p></div>` : '';
-    const mults = [0.5, 1, 1.5, 2].map((m) => `<button type="button" data-act="mult" data-id="${e.id}" data-v="${m}" aria-pressed="${(e.mult || 1) === m}">${m === 1 ? '1' : multLabel(m)}</button>`).join('');
+    const question = canReanalyse ? `<div class="question${e.q ? ' is-asked' : ''}"><p id="ask-${esc(e.id)}">${esc(prompt)}</p><div><input id="answer-${esc(e.id)}" type="text" aria-labelledby="ask-${esc(e.id)}" enterkeyhint="send" autocomplete="off" placeholder="${e.q ? 'Answer briefly' : 'e.g. 2 eggs, low-fat cheese, baked'}"><button type="button" class="btn" data-act="answer" data-id="${esc(e.id)}">Update</button></div><p class="note">The model revises the items with your note.</p></div>` : '';
+    const mults = [0.5, 1, 1.5, 2].map((m) => `<button type="button" data-act="mult" data-id="${esc(e.id)}" data-v="${m}" aria-pressed="${(e.mult || 1) === m}">${m === 1 ? '1' : multLabel(m)}</button>`).join('');
     const slotOptions = Object.entries(SLOT_NAME).map(([k, name]) => `<option value="${k}"${e.slot === k ? ' selected' : ''}>${name}</option>`).join('');
     body = `
       <p class="entry-value"><b>${n0(v.kcal)}</b> kcal<span>${n0(v.p)} g protein, ${n0(v.c)} g carbs, ${n0(v.f)} g fat</span></p>
@@ -525,16 +524,16 @@ function entryDetail(e) {
         ${tier}
       </div>
       <div class="field-grid">
-        <label for="edit-kcal-${e.id}">Calories<input id="edit-kcal-${e.id}" type="text" inputmode="numeric" value="${Math.round(v.kcal)}"></label>
-        <label for="edit-protein-${e.id}">Protein (g)<input id="edit-protein-${e.id}" type="text" inputmode="decimal" value="${Math.round(v.p)}"></label>
-        <label for="edit-slot-${e.id}">Meal<select id="edit-slot-${e.id}">${slotOptions}</select></label>
-        <label for="edit-time-${e.id}">Time<input id="edit-time-${e.id}" type="time" value="${hhmm(e.ts)}"></label>
+        <label for="edit-kcal-${esc(e.id)}">Calories<input id="edit-kcal-${esc(e.id)}" type="text" inputmode="numeric" value="${Math.round(v.kcal)}"></label>
+        <label for="edit-protein-${esc(e.id)}">Protein (g)<input id="edit-protein-${esc(e.id)}" type="text" inputmode="decimal" value="${Math.round(v.p)}"></label>
+        <label for="edit-slot-${esc(e.id)}">Meal<select id="edit-slot-${esc(e.id)}">${slotOptions}</select></label>
+        <label for="edit-time-${esc(e.id)}">Time<input id="edit-time-${esc(e.id)}" type="time" value="${hhmm(e.ts)}"></label>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-act="save-edit" data-id="${e.id}">Save changes</button>
-        <button type="button" class="link" data-act="favorite" data-id="${e.id}">Add to favourites</button>
-        ${canReanalyse ? `<button type="button" class="link" data-act="reanalyze" data-id="${e.id}">${S.settings.provider === 'openai' ? 'Analyse again' : 'Analyse again with Sonnet'}</button>` : ''}
-        <button type="button" class="link link-danger" data-act="delete" data-id="${e.id}">Delete</button>
+        <button type="button" class="btn" data-act="save-edit" data-id="${esc(e.id)}">Save changes</button>
+        <button type="button" class="link" data-act="favorite" data-id="${esc(e.id)}">Add to favourites</button>
+        ${canReanalyse ? `<button type="button" class="link" data-act="reanalyze" data-id="${esc(e.id)}">${S.settings.provider === 'openai' ? 'Analyse again' : 'Analyse again with Sonnet'}</button>` : ''}
+        <button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button>
       </div>`;
   }
   return `<article class="entry">
@@ -561,7 +560,7 @@ function logRow(e) {
   const ok = e.status === 'ok';
   const photoCount = (e.photoIds || []).length;
   const thumb = photoCount
-    ? `<span class="log-thumb"><img data-photo="${e.photoIds[0]}" alt="">${photoCount > 1 ? `<b>${photoCount}</b>` : ''}</span>`
+    ? `<span class="log-thumb"><img data-photo="${esc(e.photoIds[0])}" alt="">${photoCount > 1 ? `<b>${photoCount}</b>` : ''}</span>`
     : '';
   let meta;
   let value = '';
@@ -575,7 +574,7 @@ function logRow(e) {
     const notes = [`${n0(v.p)} g protein`];
     if (e.mult && e.mult !== 1) notes.push(`${multLabel(e.mult)} portion`);
     if (e.tier === 'off') notes.push('off plan');
-    else if (e.tier === 'flex') notes.push('flex budget');
+    else if (e.tier === 'flex') notes.push('treat');
     else if (e.planId) notes.push('plan meal');
     if (e.q) notes.push('has a question');
     else if (e.conf > 0 && e.conf < 0.6 && !e.planId) notes.push('rough estimate');
@@ -583,7 +582,7 @@ function logRow(e) {
     value = `<b>${n0(v.kcal)}</b><small>kcal</small>`;
   }
   const state = e.kind === 'meal' && !ok ? (e.status === 'error' ? ' is-error' : ' is-pending') : '';
-  return `<li><button type="button" class="log-row${state}${e.tier === 'off' && ok ? ' is-off' : ''}" data-act="open-entry" data-id="${e.id}" data-entry="${e.id}">
+  return `<li><button type="button" class="log-row${state}${e.tier === 'off' && ok ? ' is-off' : ''}" data-act="open-entry" data-id="${esc(e.id)}">
     <span class="log-time">${hhmm(e.ts)}</span>
     <span class="log-main"><span class="log-title">${esc(e.title)}</span><span class="log-meta">${meta}</span></span>
     ${thumb}
@@ -643,7 +642,7 @@ export function renderLog() {
       <ul class="log-list">${entries.map(logRow).join('')}</ul>
     </section>`;
   }).join('');
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>Photo and free-text analysis needs a model key. Plan meals, weight and steps work without one.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>Photo and free-text analysis needs an API key. Plan meals, weight and steps work without one.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
   const pendingNotice = pending.length && hasKey() ? `<div class="notice"><p>${pending.length === 1 ? '1 entry is' : `${pending.length} entries are`} waiting for analysis.</p><button type="button" class="btn" data-act="analyze-all">Analyse all</button></div>` : '';
   return `
   <header class="top">
@@ -674,11 +673,11 @@ function checkOption(rec, o, i, rem) {
   }
   return `<li class="option">
     <div class="option-head"><h3>${esc(o.name)}</h3><i class="pill ${pill}">${label}</i></div>
-    <p class="option-nums"><span class="rating" role="img" aria-label="Quality ${o.rating} of 5"><em>Quality</em>${dots}</span><span class="option-kcal">${nums}</span></p>
+    <p class="option-nums"><span class="rating" role="img" aria-label="Quality ${esc(o.rating)} of 5"><em>Quality</em>${dots}</span><span class="option-kcal">${nums}</span></p>
     ${o.why ? `<p class="option-why">${esc(o.why)}</p>` : ''}
     ${o.tip ? `<p class="option-tip"><b>${o.fit === 'avoid' ? 'Instead' : rec.kind === 'menu' ? 'Order it like this' : 'Make it fit'}:</b> ${esc(o.tip)}</p>` : ''}
     ${o.facts ? `<p class="option-facts">${esc(o.facts)}</p>` : ''}
-    ${budget || o.kcal ? `<div class="option-foot"><span>${budget}</span>${o.kcal ? `<button type="button" class="btn btn-small" data-act="check-log" data-id="${rec.id}" data-i="${i}">Log this</button>` : ''}</div>` : ''}
+    ${budget || o.kcal ? `<div class="option-foot"><span>${budget}</span>${o.kcal ? `<button type="button" class="btn btn-small" data-act="check-log" data-id="${esc(rec.id)}" data-i="${i}">Log this</button>` : ''}</div>` : ''}
   </li>`;
 }
 
@@ -689,7 +688,7 @@ function checkResult(rec, rem) {
     <p class="verdict-answer">${esc(rec.answer)}</p>
     ${rec.note ? `<p class="note">Your note: ${esc(rec.note)}</p>` : ''}
     <ol class="options">${rec.options.map((o, i) => checkOption(rec, o, i, sameDay ? rem : null)).join('')}</ol>
-    <p class="review-foot">From ${rec.photos ? `${rec.photos} ${rec.photos === 1 ? 'photo' : 'photos'}` : 'your note'}; the photos were not kept. Numbers are estimates. <button type="button" class="link" data-act="check-remove" data-id="${rec.id}">Remove this check</button></p>
+    <p class="review-foot">From ${rec.photos ? `${esc(rec.photos)} ${rec.photos === 1 ? 'photo' : 'photos'}` : 'your note'}; the photos were not kept. Numbers are estimates. <button type="button" class="link" data-act="check-remove" data-id="${esc(rec.id)}">Remove this check</button></p>
   </section>`;
 }
 
@@ -700,17 +699,17 @@ export function renderCheck() {
   const rem = Math.round(dayTarget(t) - tot.kcal);
   const remP = Math.max(0, Math.round(S.settings.protein - tot.p));
   const rec = S.checks.find((x) => x.id === c.openId) || null;
-  const full = c.photos.length >= 4;
+  const full = c.photos.length >= CHECK_MAX;
   const photos = c.photos.length
     ? `<ul class="check-photos">${c.photos.map((p, i) => `<li><img src="${p.url}" alt="Photo ${i + 1} for this check"><button type="button" data-act="check-photo-remove" data-id="${p.id}" aria-label="Remove photo ${i + 1}">${ICON.close}</button></li>`).join('')}</ul>`
     : '';
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs a model key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs an API key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
   const earlier = S.checks.filter((x) => !rec || x.id !== rec.id);
   const history = earlier.length ? `<section class="check-history">
     <h2>${rec ? 'Other checks' : 'Earlier checks'}</h2>
     <ul class="log-list">${earlier.map((x) => {
       const best = x.options.find((o) => o.fit === 'good') || x.options[0];
-      return `<li><button type="button" class="log-row" data-act="check-open" data-id="${x.id}">
+      return `<li><button type="button" class="log-row" data-act="check-open" data-id="${esc(x.id)}">
         <span class="log-time">${checkWhen(x.ts)}</span>
         <span class="log-main"><span class="log-title">${esc(x.title || CHECK_KIND[x.kind])}</span><span class="log-meta">${CHECK_KIND[x.kind] || 'Check'}${best ? `, ${best.fit === 'avoid' ? 'leave' : best.fit === 'good' ? 'best' : 'with care'}: ${esc(best.name)}` : ''}</span></span>
       </button></li>`;
@@ -729,7 +728,7 @@ export function renderCheck() {
       <button type="button" class="btn" data-act="check-cam"${full || c.busy ? ' disabled' : ''}>${ICON.camera}Take a photo</button>
       <button type="button" class="btn" data-act="check-lib"${full || c.busy ? ' disabled' : ''}>Choose photos</button>
     </div>
-    <p class="note">${c.photos.length ? `${c.photos.length} of 4 photos. ` : 'Up to 4 photos: both pages of a menu, or the front and the nutrition table of a product. '}They are sent for this check and not kept.</p>
+    <p class="note">${c.photos.length ? `${c.photos.length} of ${CHECK_MAX} photos. ` : `Up to ${CHECK_MAX} photos: both pages of a menu, or the front and the nutrition table of a product. `}They are sent for this check and not kept.</p>
     <label class="sr-only" for="check-note">A note for this check</label>
     <input id="check-note" type="text" enterkeyhint="go" maxlength="300" placeholder="Add a note: “dinner, very hungry”" value="${esc(c.note)}"${c.busy ? ' disabled' : ''}>
     <button type="button" class="btn btn-primary btn-wide" data-act="check-run"${checkReady() ? '' : ' disabled'}>${c.busy ? '<span class="spin" aria-hidden="true"></span>Checking…' : 'Check against my plan'}</button>
@@ -776,7 +775,7 @@ function weightChart() {
     }
   }
   const target = `<line x1="${X(s.startDate).toFixed(1)}" y1="${Y(s.startKg).toFixed(1)}" x2="${X(s.targetDate).toFixed(1)}" y2="${Y(s.targetKg).toFixed(1)}" class="c-target"/>
-    <text x="${(X(s.targetDate) + 6).toFixed(1)}" y="${(Y(s.targetKg) + 4).toFixed(1)}" class="c-label">${s.targetKg} kg</text>`;
+    <text x="${(X(s.targetDate) + 6).toFixed(1)}" y="${(Y(s.targetKg) + 4).toFixed(1)}" class="c-label">${esc(s.targetKg)} kg</text>`;
   const dots = visible.map((d) => `<circle cx="${X(d.day).toFixed(1)}" cy="${Y(d.kg).toFixed(1)}" r="2.2" class="c-dot"/>`).join('');
   const avgPoints = [];
   if (visible.length) {
@@ -898,7 +897,7 @@ function adjustNotice() {
   const b = avg7(addDays(t, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
   if (a.kg - targetAt(t, s) > 0.7 && b.kg - targetAt(addDays(t, -7), s) > 0.7) {
-    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(1500, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
+    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(KCAL_FLOOR, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
   }
   return '';
 }
@@ -917,7 +916,7 @@ export function renderProgress() {
   }).join('');
   return `
   <header class="top">
-    <div><h1>Progress</h1><p class="sub">${esc(dShort.format(parseDay(s.startDate)))} to ${esc(dShort.format(parseDay(s.targetDate)))}, ${s.startKg} kg to ${s.targetKg} kg</p></div>
+    <div><h1>Progress</h1><p class="sub">${esc(dShort.format(parseDay(s.startDate)))} to ${esc(dShort.format(parseDay(s.targetDate)))}, ${esc(s.startKg)} kg to ${esc(s.targetKg)} kg</p></div>
     <div class="top-actions">${settingsButton}</div>
   </header>
   ${adjustNotice()}
@@ -925,7 +924,7 @@ export function renderProgress() {
     <p class="glide-head">${esc(head)}</p>
     <p class="glide-note">${esc(line)}</p>
     ${track(a, target, started)}
-    <p class="track-ends"><span>${s.startKg} kg</span><span>${s.targetKg} kg</span></p>
+    <p class="track-ends"><span>${esc(s.startKg)} kg</span><span>${esc(s.targetKg)} kg</span></p>
   </section>
   ${wins()}
   <section>
@@ -936,7 +935,7 @@ export function renderProgress() {
       <div><dt>Weekly rate</dt><dd>${pr ? n1(pr.perWeek).replace('-', '−') + ' kg' : '–'}</dd></div>
       <div><dt>Projected arrival</dt><dd>${pr && pr.eta ? esc(dTiny.format(parseDay(pr.eta))) : '–'}</dd></div>
     </dl>
-    ${pr ? '' : '<p class="note">Weekly rate and projected arrival appear after 4 weigh-ins spread over at least a week.</p>'}
+    ${pr ? '' : '<p class="note">Weekly rate and projected arrival appear after 4 weigh-ins within the last 14 days, at least 6 days apart.</p>'}
   </section>
   <section>
     <h2>Consistency calendar</h2>
@@ -958,15 +957,19 @@ export function renderProgress() {
 // What has been collected so far: one token per kilo, and the runs of good days
 function wins() {
   const s = S.settings;
-  const a = avg7(today());
-  const marks = [];
-  for (let k = Math.ceil(s.startKg) - 1; k >= Math.ceil(s.targetKg); k--) marks.push(k);
-  if (!Number.isInteger(s.targetKg)) marks.push(s.targetKg);
-  const got = (kg) => !!a && today() >= s.startDate && a.kg <= kg + 1e-6;
+  const a = currentAvg(today());
+  const lost = a && today() >= s.startDate ? s.startKg - a.kg : 0;
+  // A token for every whole kilo down from the start weight (the same count as kilosDown), then the target itself when it is not a whole kilo away
+  const need = [];
+  for (let k = 1; k <= s.startKg - s.targetKg + 1e-6; k++) need.push(k);
+  if (!need.length || s.startKg - s.targetKg - need[need.length - 1] > 1e-6) need.push(s.startKg - s.targetKg);
+  const marks = need.map((n) => ({ n, kg: Math.round((s.startKg - n) * 10) / 10 }));
+  const got = (m) => lost >= m.n - 1e-6;
   const reached = marks.filter(got).length;
   const h = history();
   const run = streak();
-  const tokens = marks.map((kg, i) => `<li class="${got(kg) ? 'is-got' : ''}${i === marks.length - 1 ? ' is-goal' : ''}"${got(kg) ? '' : ' aria-label="' + kg + ' kg, not reached yet"'}>${kg}</li>`).join('');
+  const label = (kg) => (Number.isInteger(kg) ? String(kg) : n1(kg));
+  const tokens = marks.map((m, i) => `<li class="${got(m) ? 'is-got' : ''}${i === marks.length - 1 ? ' is-goal' : ''}${Number.isInteger(m.kg) ? '' : ' is-frac'}"${got(m) ? '' : ' aria-label="' + label(m.kg) + ' kg, not reached yet"'}>${label(m.kg)}</li>`).join('');
   return `<section class="wins" aria-labelledby="wins-title">
     <h2 id="wins-title">${reached ? `${reached} of ${marks.length} kilos collected` : 'Kilos to collect'}</h2>
     <p class="note">Each one is yours when the 7-day average reaches it.</p>
@@ -984,7 +987,7 @@ function wins() {
 // The picture of a plan meal: the person's own photo, or an invitation to add one
 function planPic(id, emptyText) {
   const pid = (S.settings.planPhotos || {})[id];
-  return `<span class="plan-pic${pid ? '' : ' is-empty'}"><span class="plan-pic-empty">${PLATE}${emptyText ? `<em>${emptyText}</em>` : ''}</span>${pid ? `<img data-photo="${pid}" alt="">` : ''}</span>`;
+  return `<span class="plan-pic${pid ? '' : ' is-empty'}"><span class="plan-pic-empty">${PLATE}${emptyText ? `<em>${emptyText}</em>` : ''}</span>${pid ? `<img data-photo="${esc(pid)}" alt="">` : ''}</span>`;
 }
 
 export function renderPlan() {
@@ -994,7 +997,7 @@ export function renderPlan() {
     const meals = MEALS.filter((m) => m.slot === id);
     return `<section class="plan-slot">
     <h2>${title}${time ? `<small>${time}</small>` : ''}</h2>${note ? `<p class="note">${note}</p>` : ''}
-    <div class="plan-row${meals.length === 1 ? ' is-single' : ''}">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(`${m.name}, ${m.kcal} kcal, ${n0(m.p)} g protein. Details`)}">
+    <div class="plan-row">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(`${m.name}, ${m.kcal} kcal, ${n0(m.p)} g protein. Details`)}">
         ${planPic(m.id, 'Add photo')}
         <span class="plan-name">${esc(m.name)}</span>
         <span class="plan-meta"><b>${m.kcal}</b> kcal<i>${n0(m.p)} g protein</i></span>
@@ -1011,15 +1014,17 @@ export function renderPlan() {
   <ul class="plan-targets" aria-label="Daily targets">
     <li>Rest day <b>${n0(s.kcalRest)}</b> kcal</li>
     <li>Workout day <b>${n0(s.kcalTrain)}</b> kcal</li>
-    <li>Protein <b>${s.protein}</b> g</li>
-    <li>Fibre <b>${s.fiber}</b> g</li>
+    <li>Protein <b>${esc(s.protein)}</b> g</li>
+    <li>Fibre <b>${esc(s.fiber)}</b> g</li>
   </ul>
-  ${slot('lunch', 'Lunch', '12:00', 'The first meal of the day.')}
-  ${slot('snack1', 'Snack 1', '14:30', 'Most of the day’s protein: 250 g of skyr.')}
-  ${slot('snack2', 'Snack 2', '16:00', 'On meatball or salmon days, cottage cheese tops up the protein.')}
-  ${slot('dinner', 'Dinner', '18:00', 'Meat, chicken and fish by raw weight.')}
+  ${Object.entries({
+    lunch: 'The first meal of the day.',
+    snack1: 'A protein snack: 250 g of skyr.',
+    snack2: 'On meatball or salmon days, cottage cheese tops up the protein.',
+    dinner: 'Meat, chicken and fish by raw weight.',
+  }).map(([id, note]) => { const x = SLOTS.find((y) => y.id === id); return slot(id, x.name, x.time, note); }).join('')}
   ${slot('workout', 'Workout-day extras', '', 'Only on workout days; together about 200 kcal.')}
-  ${slot('late', 'After 20:00', '', 'Herbal tea by default.')}
+  ${slot('late', lateName(), '', 'Herbal tea by default.')}
   <section class="plan-rules">
     <h2>The rules</h2>
     ${group('Dinner rotation', `<p class="note">Fish twice and legumes twice a week.</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}
@@ -1076,7 +1081,10 @@ export function renderSettings() {
   const backupAge = s.lastBackup ? diffDays(dayKey(new Date(s.lastBackup)), today()) : null;
   const backupStatus = backupAge == null ? 'No backup yet' : backupAge === 0 ? 'Last backup today' : `Last backup ${backupAge} ${backupAge === 1 ? 'day' : 'days'} ago`;
   const preset = PRESETS.find((p) => p.base === s.oaBase);
-  const analysisStatus = !hasKey() ? 'No key' : openai ? `${preset ? preset.name.split(' (')[0] : 'OpenAI-compatible'}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { name: s.model }).name.split(' (')[0]}`;
+  // Where the key is sent must be visible: a preset names its provider, any other address shows its host
+  let host = s.oaBase;
+  try { host = new URL(s.oaBase).host; } catch { /* not an address; show it as typed */ }
+  const analysisStatus = !hasKey() ? 'No key' : openai ? `${preset ? preset.name.split(' (')[0] : host}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { name: s.model }).name.split(' (')[0]}`;
   const section = (id, title, status, body) => `<details class="setting" data-sec="${id}"${S.openSetting === id ? ' open' : ''}>
     <summary><span>${title}</span><small>${esc(status)}</small></summary>
     <div class="setting-body">${body}</div>
@@ -1111,23 +1119,23 @@ export function renderSettings() {
     <p class="note pre" id="key-test" role="status"></p>`}
     <label class="check"><input type="checkbox" data-act="review-toggle"${s.autoReview === false ? '' : ' checked'}> Review each finished day by itself</label>
     <p class="note">One short text request a day, sent when you open the app: the day’s meals and numbers, no photos. Switched off, a review is written only when you ask for it in the Log.</p>
-    <p class="note">So far ${n0(u.calls)} calls, ${n0(u.in)} input and ${n0(u.out)} output tokens.${openai ? '' : ` Estimated cost $${u.usd.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}.`}</p>`;
+    <p class="note">So far ${n0(u.calls)} ${u.calls === 1 ? 'call' : 'calls'}, ${n0(u.in)} input and ${n0(u.out)} output tokens.${openai ? '' : ` Estimated cost $${u.usd.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}.`}</p>`;
 
   const targets = `
     <div class="field-grid">
-      <label for="set-start">Start<input id="set-start" type="date" value="${s.startDate}"></label>
-      <label for="set-end">End<input id="set-end" type="date" value="${s.targetDate}"></label>
+      <label for="set-start">Start<input id="set-start" type="date" value="${esc(s.startDate)}"></label>
+      <label for="set-end">End<input id="set-end" type="date" value="${esc(s.targetDate)}"></label>
       <label for="set-startkg">Start weight<input id="set-startkg" type="text" inputmode="decimal" value="${n1(s.startKg)}"></label>
       <label for="set-endkg">Target weight<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
-      <label for="set-rest">Rest-day kcal<input id="set-rest" type="text" inputmode="numeric" value="${s.kcalRest}"></label>
-      <label for="set-train">Workout-day kcal<input id="set-train" type="text" inputmode="numeric" value="${s.kcalTrain}"></label>
-      <label for="set-prot">Protein (g)<input id="set-prot" type="text" inputmode="numeric" value="${s.protein}"></label>
+      <label for="set-rest">Rest-day kcal<input id="set-rest" type="text" inputmode="numeric" value="${esc(s.kcalRest)}"></label>
+      <label for="set-train">Workout-day kcal<input id="set-train" type="text" inputmode="numeric" value="${esc(s.kcalTrain)}"></label>
+      <label for="set-prot">Protein (g)<input id="set-prot" type="text" inputmode="numeric" value="${esc(s.protein)}"></label>
     </div>
     <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">Save targets</button></div>`;
 
   const location = `
     <label class="check"><input type="checkbox" data-act="loc-toggle"${s.useLocation ? ' checked' : ''}> Use the photo’s location</label>
-    <p class="note">Location is read on the device and matched to your saved places here. The model only gets the word “Home”, “Office” or “out”; coordinates never leave the phone. When you choose from the library, location only comes through if Location is switched on under Options in the picker.</p>
+    <p class="note">Location is read on the device and matched to your saved places here. The model only gets the word “Home”, “Office” or “out”; coordinates are never sent to the model (they are in your backup file). When you choose from the library, location only comes through if Location is switched on under Options in the picker.</p>
     <div class="actions">
       <button type="button" class="btn" data-act="loc-save" data-name="Home">I am here: Home</button>
       <button type="button" class="btn" data-act="loc-save" data-name="Office">I am here: Office</button>
@@ -1148,7 +1156,7 @@ export function renderSettings() {
     ${S.persisted === false ? '<div class="actions"><button type="button" class="btn" data-act="persist">Request persistent storage</button></div>' : ''}`;
 
   const favoritesBody = favorites.length
-    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${f.id}">Remove</button></li>`).join('')}</ul>`
+    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">Remove</button></li>`).join('')}</ul>`
     : '<p class="note">Open an entry and tap “Add to favourites”. It then logs with one tap from the Log tab.</p>';
 
   const version = `
@@ -1157,7 +1165,7 @@ export function renderSettings() {
     <p class="note" id="update-out" role="status"></p>`;
 
   const reset = `
-    <p class="note">All entries, photos and weigh-ins are deleted from this device. Settings and keys stay.</p>
+    <p class="note">All entries and their photos, weigh-ins, steps, water, workout days and checks are deleted from this device. The plan’s pictures, settings and keys stay.</p>
     <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Delete all entries</button></div>`;
 
   return `
@@ -1171,5 +1179,5 @@ export function renderSettings() {
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
     ${section('reset', 'Reset', '', reset)}
   </div>
-  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Kantar</b><span>Version ${APP_VERSION}. Your data stays on this device.</span></p></footer>`;
+  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Kantar</b><span>Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
 }

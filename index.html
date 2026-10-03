@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Kantar</title>
-<meta name="description" content="A weight-loss tracker: a meal plan, a photo and text food log, and daily tracking. Data stays on this device.">
+<meta name="description" content="A weight-loss tracker: a meal plan, a photo and text food log, and daily tracking. Entries, photos and settings are stored on this device.">
 <meta name="theme-color" content="#F3F5F0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151911" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -24,7 +25,7 @@
   <main id="view" tabindex="-1"></main>
 
   <form id="composer" class="composer" autocomplete="off" hidden>
-    <div class="hints" aria-label="Things you can type">
+    <div class="hints" role="group" aria-label="Things you can type">
       <span class="hints-label">Examples</span>
       <button type="button" class="chip" data-act="hint" data-fill="85.4">Weight: 85.4</button>
       <button type="button" class="chip" data-act="hint" data-fill="8200 steps">8200 steps</button>
@@ -47,9 +48,6 @@
       </button>
     </div>
   </form>
-  <!-- Outside the composer, which is hidden on some screens: the pickers are also opened from Plan and Check -->
-  <input id="f-cam" class="file-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
-  <input id="f-lib" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
 
   <nav class="tabs" aria-label="Sections">
     <button type="button" data-tab="today" aria-current="page">
@@ -70,11 +68,17 @@
   </nav>
 </div>
 
+<!-- Outside #app, which is inert while a sheet is open, and outside the composer, which is hidden on some screens: the pickers are also opened from Plan and Check -->
+<input id="f-cam" class="file-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+<input id="f-lib" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
+
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-bg" data-close-sheet></div>
   <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="sheet-title" id="sheet-body"></div>
 </div>
-<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<!-- Always rendered, so a screen reader announces each toast; the toast itself is hidden when it is not showing -->
+<div id="toast-live" class="sr-only" role="status" aria-live="polite"></div>
 
 <script type="module" src="js/app.js"></script>
 </body>

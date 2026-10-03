@@ -1,7 +1,7 @@
 {
   "name": "Kantar",
   "short_name": "Kantar",
-  "description": "A weight-loss tracker: a meal plan, a photo and text food log, and daily tracking. Data stays on this device.",
+  "description": "A weight-loss tracker: a meal plan, a photo and text food log, and daily tracking. No account; entries are stored on this device.",
   "lang": "en",
   "start_url": "./",
   "scope": "./",
