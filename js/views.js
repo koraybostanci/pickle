@@ -441,7 +441,7 @@ export function renderToday() {
     </div>
     <div class="top-actions">${settingsButton}</div>
   </header>
-  ${isToday ? startCard() : ''}
+  ${isToday ? legacyNotice() + startCard() : ''}
   ${weekStrip(day)}
   ${bento(day, 'top')}
   ${dayList(day)}
@@ -887,6 +887,12 @@ function checkpoints() {
   return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Target</th><th scope="col">Your average</th></tr></thead><tbody>
     ${points.map((d) => { const a = d <= t ? avg7(d) : null; return `<tr><td>${esc(dShort.format(parseDay(d)))}</td><td>${n1(targetAt(d, s))} kg</td><td>${a ? n1(a.kg) + ' kg' : '–'}</td></tr>`; }).join('')}
   </tbody></table>`;
+}
+
+// Data from the first release (Turkish ids) can no longer be converted, so some of it shows wrongly
+function legacyNotice() {
+  if (!S.legacy || S.settings.legacyDismissed) return '';
+  return `<div class="notice"><p>This device still holds data from the first release of Kantar, which this version can no longer convert. Some entries may show wrongly. Nothing has been deleted.</p><button type="button" class="btn" data-act="dismiss-legacy">Got it</button></div>`;
 }
 
 function adjustNotice() {
