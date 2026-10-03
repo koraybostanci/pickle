@@ -46,9 +46,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>
       </button>
     </div>
-    <input id="f-cam" class="file-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
-    <input id="f-lib" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
   </form>
+  <!-- Outside the composer, which is hidden on some screens: the pickers are also opened from Plan and Check -->
+  <input id="f-cam" class="file-input" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+  <input id="f-lib" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
 
   <nav class="tabs" aria-label="Sections">
     <button type="button" data-tab="today" aria-current="page">
@@ -56,6 +57,9 @@
     </button>
     <button type="button" data-tab="log">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14M5 12h14M5 17.5h9"/></svg><span>Log</span>
+    </button>
+    <button type="button" data-tab="check">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5V7a3 3 0 0 1 3-3h1.5M15.5 4H17a3 3 0 0 1 3 3v1.5M20 15.5V17a3 3 0 0 1-3 3h-1.5M8.5 20H7a3 3 0 0 1-3-3v-1.5"/><path d="m8.5 12.3 2.4 2.4 4.6-5.2"/></svg><span>Check</span>
     </button>
     <button type="button" data-tab="progress">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9.5 12l3.5-2.5L20 17"/><path d="M20 12.5V17h-4.5"/></svg><span>Progress</span>

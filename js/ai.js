@@ -1,7 +1,7 @@
 // Model calls. Two routes: Claude (Anthropic Messages API) or any OpenAI-compatible endpoint
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
-import { planDigest, RULES, SLOTS } from './plan.js';
+import { planDigest, planFoods, RULES, SLOTS } from './plan.js';
 
 export const MODELS = {
   'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
@@ -9,6 +9,7 @@ export const MODELS = {
 };
 export const STRONG_MODEL = 'claude-sonnet-5-5';
 const IMG_EDGE = 768; // long edge; 768×576 is about 590 image tokens
+export const CHECK_EDGE = 1536; // menus and nutrition tables have small print, so checks send a larger copy
 
 const SYSTEM = `You log food for one person on a weight-loss plan. Reply with JSON only. Write food names, title and q in English.
 Input: photo(s) and/or a short text in any language, plus local time and place.
@@ -55,8 +56,8 @@ const SCHEMA = {
   },
 };
 
-// Shrinks the photo on the device; this copy is both stored and sent.
-export async function shrink(file) {
+// Shrinks the photo on the device; this copy is what gets sent (and, for logged meals, stored).
+export async function shrink(file, edge = IMG_EDGE) {
   let bmp;
   try {
     bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -71,7 +72,7 @@ export async function shrink(file) {
   }
   const w0 = bmp.naturalWidth || bmp.width;
   const h0 = bmp.naturalHeight || bmp.height;
-  const k = Math.min(1, IMG_EDGE / Math.max(w0, h0));
+  const k = Math.min(1, edge / Math.max(w0, h0));
   const w = Math.max(1, Math.round(w0 * k));
   const h = Math.max(1, Math.round(h0 * k));
   const cv = document.createElement('canvas');
@@ -175,11 +176,11 @@ async function post(url, headers, payload, opts = {}) {
  * One call. cfg: {provider:'anthropic'|'openai', key, model, base?}
  * @returns {Promise<{text:string, usage:{in:number,out:number}}>}
  */
-export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600, retry = true, onRetry = null }) {
+export async function callModel(cfg, { system, text, blobs = [], schema = null, json = false, maxTokens = 600, maxImages = 3, retry = true, onRetry = null }) {
   const retryOpts = { retry, onRetry };
   if (!cfg || !cfg.key) throw new AiError('no_key', 'No API key set');
   const imgs = [];
-  for (const b of blobs.slice(0, 3)) imgs.push(await toB64(b));
+  for (const b of blobs.slice(0, maxImages)) imgs.push(await toB64(b));
 
   if (cfg.provider === 'openai') {
     if (!cfg.base || !cfg.model) throw new AiError('no_key', 'No address or model set');
@@ -187,7 +188,7 @@ export async function callModel(cfg, { system, text, blobs = [], schema = null, 
     content.push({ type: 'text', text });
     const body = {
       model: cfg.model,
-      max_tokens: Math.max(maxTokens, 1500), // thinking models spend part of the budget on reasoning
+      max_tokens: Math.max(maxTokens * 2, 1500), // thinking models spend part of the budget on reasoning
       messages: [{ role: 'system', content: system }, { role: 'user', content: imgs.length ? content : text }],
     };
     if (json) body.response_format = { type: 'json_object' };
@@ -305,6 +306,73 @@ export async function review(o) {
   const d = r.data || {};
   const data = { head: str(d.head), good: list(d.good), cut: list(d.cut), next: str(d.next) };
   if (!data.head) throw new AiError('empty', 'The model returned no review');
+  return { ...r, data };
+}
+
+// ——— Check before ordering or buying: photos of a menu, a dish or a product, judged against the plan ———
+const CHECK_SYSTEM = `You help one person on a weight-loss plan decide what to order or what to buy. They send photos of a restaurant menu, a dish, a shop shelf or a packaged product (front, nutrition table, ingredients), sometimes with a note. Several photos can show one thing or several things to compare. Reply with JSON only, in English. Keep dish and product names as written; add a short English gloss in brackets when the name is in another language.
+The plan is built from: ${planFoods()}.
+Weekly allowance: ${RULES.weekly.join(' ')}
+Off plan: ${RULES.off.join(' ')}
+kind: "menu", "product" (one or several packaged products), "dish" (prepared food in front of them), or "none" when there is nothing to judge or the text is too small or blurred to read.
+title: what you are looking at, in a few words.
+answer: the decision in one or two sentences: what to order, or buy it / leave it, and the main reason, measured against the plan and what is left of today. For "none", say what is missing.
+options: up to 6. Menu: the best choices first (up to 4), then up to 2 tempting ones to avoid. Products: each product shown. Dish: that dish.
+For each option:
+- rating: 1 to 5, the food's nutritional quality in general, whoever eats it. 5 = whole foods, lean protein, vegetables, fibre. 1 = mostly sugar, refined starch, deep-fried or ultra-processed.
+- fit: "good" fits the plan and today's remaining budget; "ok" works with the change in tip or in a smaller portion; "avoid".
+- portion: the amount the numbers are for, as the person would eat it: "1 plate", "1 bar (40 g)", "150 g".
+- kcal, p, c, f, fib: for that portion. For packaged products read the nutrition table and compute; if no table is visible, estimate and say so in why. For restaurant food estimate as restaurants cook: more fat than at home.
+- facts: for packaged products the label per 100 g, "per 100 g: 380 kcal, 8 g protein, 22 g sugar, 12 g fat, 1.1 g salt"; otherwise "".
+- why: one sentence with the numbers or ingredients that decide it.
+- tip: how to make it fit: "grilled instead of fried, sauce on the side", "eat 30 g, not the bag". For an option to avoid, what to have instead. "" if nothing is needed.
+- tier: "plan" = fits the plan's foods; "flex" = weekly-allowance items; "off" = the off-plan list.
+Judge only what you can read or see; never invent a label value. answer at most 40 words, why at most 24, tip at most 16.`;
+const CHECK_SHAPE = '\nReturn exactly one JSON object with these keys: {"kind":"menu|product|dish|none","title":"","answer":"","options":[{"name":"","rating":0,"fit":"good|ok|avoid","portion":"","kcal":0,"p":0,"c":0,"f":0,"fib":0,"facts":"","why":"","tip":"","tier":"plan|flex|off"}]}';
+const CHECK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'title', 'answer', 'options'],
+  properties: {
+    kind: { type: 'string', enum: ['menu', 'product', 'dish', 'none'] },
+    title: { type: 'string' },
+    answer: { type: 'string' },
+    options: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'rating', 'fit', 'portion', 'kcal', 'p', 'c', 'f', 'fib', 'facts', 'why', 'tip', 'tier'],
+        properties: {
+          name: { type: 'string' }, rating: { type: 'number' }, fit: { type: 'string', enum: ['good', 'ok', 'avoid'] },
+          portion: { type: 'string' }, kcal: { type: 'number' }, p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' }, fib: { type: 'number' },
+          facts: { type: 'string' }, why: { type: 'string' }, tip: { type: 'string' }, tier: { type: 'string', enum: ['plan', 'flex', 'off'] },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * @param {{cfg:object, blobs:Blob[], brief:string, onRetry?:Function}} o brief: today's state and the person's note, built by the app
+ * @returns {Promise<{data:{kind:string,title:string,answer:string,options:object[]}, usage:{in:number,out:number}, model:string}>}
+ */
+export async function check(o) {
+  const openai = o.cfg && o.cfg.provider === 'openai';
+  const req = { system: openai ? CHECK_SYSTEM + CHECK_SHAPE : CHECK_SYSTEM, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: openai ? null : CHECK_SCHEMA, json: true, maxTokens: 1400 };
+  const r = await callWithFallback(o.cfg, req, o.onRetry);
+  const str = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
+  const num = (v) => (Number.isFinite(+v) && +v > 0 ? Math.round(+v) : 0);
+  const d = r.data || {};
+  const options = (Array.isArray(d.options) ? d.options : []).slice(0, 6).map((x) => ({
+    name: str(x && x.name, 90), rating: Math.min(5, Math.max(1, Math.round(+(x && x.rating) || 3))),
+    fit: ['good', 'ok', 'avoid'].includes(x && x.fit) ? x.fit : 'ok', portion: str(x && x.portion, 40),
+    kcal: num(x && x.kcal), p: num(x && x.p), c: num(x && x.c), f: num(x && x.f), fib: num(x && x.fib),
+    facts: str(x && x.facts, 160), why: str(x && x.why, 220), tip: str(x && x.tip, 160),
+    tier: ['plan', 'flex', 'off'].includes(x && x.tier) ? x.tier : 'flex',
+  })).filter((x) => x.name);
+  const data = { kind: ['menu', 'product', 'dish', 'none'].includes(d.kind) ? d.kind : 'none', title: str(d.title, 80), answer: str(d.answer, 360), options };
+  if (!data.answer && !options.length) throw new AiError('empty', 'The model returned no verdict');
   return { ...r, data };
 }
 
