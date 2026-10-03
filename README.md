@@ -1,30 +1,35 @@
-<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Kantar icon: a steelyard scale with food in the pan"></p>
+<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Denge icon: a level beam in balance, a plate of greens on one side and a brass weight on the other"></p>
 
-# Kantar
+# Denge
 
-Kantar is a personal weight-loss tracker that runs in the browser. You give it start and end dates
+*Balance over perfection.*
+
+Denge is a personal weight-loss tracker that runs in the browser. You give it start and end dates
 and weights; it draws the schedule between them and helps you stick to a meal plan until you get
 there. You log food by photo, by typing, or with one tap on a planned meal.
 
 It is a single-user web app (PWA) with no backend and no account. You host the files yourself,
 add the page to your phone's Home Screen, and your entries are stored on that phone.
 
-"Kantar" is Turkish for a steelyard, the scale with a sliding weight on a graduated beam. The icon
-shows one: food in the pan, the weight on the beam, the two in balance.
+"Denge" is Turkish for balance, as in *dengeli beslenme*, a balanced diet. The icon shows a level
+beam: a plate of greens on one side, a brass weight on the other, the two in balance. Throughout the
+app the brass weight is you, and the beam runs from your start weight to your target. (The app was
+first called Kantar, a steelyard. Its data, backups and exports from that time carry over.)
 
 ## What it does
 
-- **Today:** the week as seven day circles with your streak; the day's calories as a budget that
-  burns down over the day, with the plan's pace beside it and a forecast for where the day will
-  end; weight against the schedule, protein, the meals of the day with a suggestion for the next
-  one, steps, water and the week's treats. Five daily goals (weigh-in, calories, protein, steps,
-  water) make a perfect day.
+- **Today:** one line on where the day stands and what comes next (calm when the day goes over);
+  the week as seven day tokens, each with a shape for how the day went, and your run of days on
+  plan; the day's calories as a budget that burns down over the day, with the plan's pace beside it
+  and a forecast for where the day will end; weight on the beam against your line, protein, the
+  meals of the day with a suggestion for the next one, steps, water and the week's extras. Five
+  daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
 - **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
   the library, or type. A model estimates calories and macros and lists each item with its amount
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
   what the photo does not show and it revises the items; you can also correct the portion, the
   numbers or the time. Every day with a logged meal carries a review. The verdict is worked out on
-  the device (in line, mostly in line, under target, slightly over, set you back) and, for a surplus,
+  the device (in line, mostly in line, under target, a bit over, well over) and, for a surplus,
   what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal over target: about 0.06 kg,
   69% of what the day was meant to lose"). The model then writes a short note on what helped, what
   cost the most and what would have reduced it, and one thing to do next.
@@ -33,8 +38,9 @@ shows one: food in the pan, the weight on the beam, the two in balance.
   quality in general, says whether it fits your plan and what is left of today, estimates calories
   and protein for a portion, and tells you how to order it so that it fits or what to have instead.
   One tap logs the option you chose.
-- **Progress:** one marker for every kilo collected, streaks and perfect days, the weight chart with
-  a 7-day average, projected arrival date, a consistency calendar and checkpoints.
+- **Progress:** the beam with every kilo marked and the next one named, runs of days on plan, the
+  weight chart (the last two weeks, or the whole plan with where this pace arrives) with a 7-day
+  average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
   and the rules of the plan. The pictures are your own photos: add one from the meal's card, or let
   the first logged photo that matches a plan meal fill it in. Every picture gets the same treatment,
@@ -132,7 +138,7 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
   - `TEMPLATES`: the meal options. Each has an id, a slot and a list of `[food, grams, measure]`.
     Calories and macros are computed from the food table, never typed by hand.
   - `SLOTS`: the meals of the day and their times.
-  - `FLEX`: one-tap treats that count against the weekly budget.
+  - `FLEX`: one-tap weekly extras (a beer, a small dessert) that count against the weekly allowance.
   - `RULES`: the text shown on the Plan tab.
   - `DEFAULTS`: targets used before anything is saved in Settings.
 
@@ -151,20 +157,21 @@ Settings → "Backup and export" → "Export for SQLite" saves one `.sql` file. 
 creates the tables and fills them, so any SQLite tool can load it:
 
 ```sh
-sqlite3 -bail kantar.db < kantar-export-2026-10-12.sql
+sqlite3 -bail denge.db < denge-export-2026-10-12.sql
 ```
 
 `-bail` stops at the first error, so a failed load is rolled back. Loading a newer export into the
-same database replaces the `kantar_*` tables and the view, with anything you added to them, and
+same database replaces the `denge_*` tables and the view, with anything you added to them (and the
+`kantar_*` tables of an export made under the app's first name), and
 leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
 |---|---|---|
-| `kantar_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
-| `kantar_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
-| `kantar_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
-| `kantar_settings` | setting | `key`, `value` (dates, weights, daily targets, and the export's own version and time) |
-| `kantar_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
+| `denge_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
+| `denge_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
+| `denge_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
+| `denge_settings` | setting | `key`, `value` (dates, weights, daily targets, and the export's own version and time) |
+| `denge_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
 
 Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
 have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Targets, so
@@ -173,13 +180,13 @@ exported.
 
 ```sql
 -- weight against the schedule
-SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM kantar_daily ORDER BY day;
+SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM denge_daily ORDER BY day;
 
 -- days over the calorie target
-SELECT day, kcal, target_kcal FROM kantar_daily WHERE kcal > target_kcal;
+SELECT day, kcal, target_kcal FROM denge_daily WHERE kcal > target_kcal;
 
 -- what was off plan, and how much it cost
-SELECT day, title, kcal FROM kantar_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
+SELECT day, title, kcal FROM denge_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
 ```
 
 The export is for analysis. To move or restore the app's data, use the JSON backup.
@@ -207,11 +214,11 @@ They cover the calculations (`js/core.js`), the checks on backup files (`js/back
 layer against a mocked `fetch` (`js/ai.js`) and the SQL export, which is loaded into Node's built-in
 SQLite and queried as in the section above. The screens and the IndexedDB code are not covered.
 
-On `localhost` the app exposes `window.__kantar` for debugging.
+On `localhost` the app exposes `window.__denge` for debugging.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'kantar-v21'`) and `APP_VERSION` in `js/core.js` (`'21'`) together, then
+Bump `VERSION` in `sw.js` (`'denge-v22'`) and `APP_VERSION` in `js/core.js` (`'22'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
@@ -235,6 +242,8 @@ version is shown under Settings → "Version and updates".
 - `sw.js`: offline cache and updates
 - `icons/`: `icon.svg` is the source; the PNG files are rendered from it for the Home Screen and
   the web app manifest
+- `fonts/`: IBM Plex Sans, IBM Plex Mono and Space Grotesk, self-hosted so the app works offline
+  (latin and latin-ext, for Turkish letters), with their licences (SIL Open Font License)
 
 ## Limits
 

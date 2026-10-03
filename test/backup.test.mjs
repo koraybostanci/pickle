@@ -11,9 +11,10 @@ const good = {
 };
 
 test('backupProblem: what can be restored and what cannot', () => {
-  const ok = { app: 'kantar', v: SCHEMA_VERSION, entries: [] };
+  const ok = { app: 'denge', v: SCHEMA_VERSION, entries: [] };
   assert.equal(backupProblem(ok), '');
-  for (const bad of [null, 5, 'x', [], {}, { app: 'other', v: 2, entries: [] }, { app: 'kantar', v: 2 }]) assert.match(backupProblem(bad), /not a Kantar backup/);
+  assert.equal(backupProblem({ ...ok, app: 'kantar' }), ''); // backups made under the app's first name still restore
+  for (const bad of [null, 5, 'x', [], {}, { app: 'other', v: 2, entries: [] }, { app: 'denge', v: 2 }]) assert.match(backupProblem(bad), /not a Denge backup/);
   assert.match(backupProblem({ ...ok, v: 1 }), /first release.*Turkish ids/);
   assert.match(backupProblem({ ...ok, v: SCHEMA_VERSION + 1 }), /newer version/);
   for (const v of [undefined, '2', 2.5, null, NaN]) assert.match(backupProblem({ ...ok, v }), /no valid version/, String(v));

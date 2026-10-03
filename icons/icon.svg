@@ -1,21 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <title>Kantar: a steelyard, its pan holding food and its brass weight on the beam</title>
+  <title>Denge: a level beam in balance, a plate of greens on one side and a brass weight on the other</title>
   <rect width="512" height="512" rx="112" fill="#15201B"/>
-  <g id="art" transform="translate(0 22)">
-    <!-- The hook it hangs from: the fulcrum, close to the pan -->
-    <circle cx="196" cy="84" r="22" fill="none" stroke="#ECEFE8" stroke-width="16"/>
-    <path d="M196 106v54" stroke="#ECEFE8" stroke-width="16"/>
-    <!-- The beam, graduated along its long arm -->
-    <path d="M70 160h372" stroke="#ECEFE8" stroke-width="30" stroke-linecap="square"/>
-    <path d="M268 175v26M332 175v26M412 175v26" stroke="#ECEFE8" stroke-width="12"/>
-    <!-- The sliding weight -->
-    <path d="M372 175v36" stroke="#D9A23A" stroke-width="14"/>
-    <rect x="334" y="206" width="76" height="118" rx="12" fill="#D9A23A"/>
-    <!-- The pan on the short arm, with food in it -->
-    <path d="M112 175 62 308M112 175l50 133" stroke="#9BA39C" stroke-width="12" stroke-linecap="round"/>
-    <path d="M36 308h152a76 62 0 0 1-152 0z" fill="#ECEFE8"/>
-    <circle cx="80" cy="298" r="25" fill="#2BB596"/>
-    <circle cx="118" cy="286" r="29" fill="#D9A23A"/>
-    <circle cx="152" cy="300" r="21" fill="#2BB596"/>
+  <g id="art" transform="translate(0 -26)">
+    <!-- The plate, with food in it -->
+    <path d="M84 226h144a72 50 0 0 1-144 0z" fill="#ECEFE8"/>
+    <circle cx="124" cy="212" r="26" fill="#2BB596"/>
+    <circle cx="166" cy="204" r="30" fill="#D9A23A"/>
+    <circle cx="200" cy="218" r="20" fill="#2BB596"/>
+    <!-- The brass weight -->
+    <rect x="320" y="196" width="100" height="94" rx="14" fill="#D9A23A"/>
+    <!-- The beam, level, with its graduations -->
+    <rect x="62" y="290" width="388" height="28" rx="6" fill="#ECEFE8"/>
+    <path d="M318 330v18M360 330v18M402 330v18" stroke="#9BA39C" stroke-width="10"/>
+    <!-- The point it balances on -->
+    <path d="M256 318 206 418h100z" fill="#ECEFE8"/>
   </g>
 </svg>

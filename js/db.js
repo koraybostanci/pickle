@@ -1,7 +1,44 @@
 // Local data layer: everything lives in IndexedDB on this device.
-const NAME = 'kantar';
+const NAME = 'denge';
+const OLD_NAME = 'kantar'; // the app's first name: that database moves over once (moveFromOldName)
 const VER = 1;
+const STORES = ['entries', 'photos', 'days', 'kv'];
 let dbp;
+
+const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+// Copies everything from the database of the app's first name into this one, one record at a time (photos can be
+// large, so they are never all held in memory), and deletes the old database only when every record has arrived.
+// A record already here is not overwritten. If anything fails, the old database stays and the move runs again on the
+// next launch.
+async function moveFromOldName(db) {
+  if (!indexedDB.databases) return;
+  const list = await indexedDB.databases();
+  if (!list.some((d) => d.name === OLD_NAME)) return;
+  const old = await req(indexedDB.open(OLD_NAME));
+  try {
+    for (const store of STORES) {
+      if (!old.objectStoreNames.contains(store)) continue;
+      const keys = await req(old.transaction(store).objectStore(store).getAllKeys());
+      for (const key of keys) {
+        const here = await req(db.transaction(store).objectStore(store).get(key));
+        if (here !== undefined) continue;
+        const value = await req(old.transaction(store).objectStore(store).get(key));
+        if (value === undefined) continue;
+        await new Promise((res, rej) => {
+          const t = db.transaction(store, 'readwrite');
+          t.objectStore(store).put(value);
+          t.oncomplete = res;
+          t.onerror = () => rej(t.error);
+          t.onabort = () => rej(t.error);
+        });
+      }
+    }
+  } finally {
+    old.close();
+  }
+  await new Promise((res) => { const d = indexedDB.deleteDatabase(OLD_NAME); d.onsuccess = d.onerror = d.onblocked = res; });
+}
 
 function open() {
   if (dbp) return dbp;
@@ -22,7 +59,7 @@ function open() {
       // The browser may close the connection (iOS does after a long time in the background): open a new one next time
       db.onclose = () => { dbp = null; };
       db.onversionchange = () => { db.close(); dbp = null; };
-      res(db);
+      moveFromOldName(db).catch(() => { /* the old database stays; the move runs again next time */ }).then(() => res(db));
     };
     rq.onerror = () => { dbp = null; rej(rq.error); };
   });

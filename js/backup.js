@@ -20,10 +20,10 @@ const itemList = (v) => (Array.isArray(v) ? v : []).slice(0, 12).map((i) => ({ n
 
 // Why a file cannot be restored, or '' when it can be tried
 export function backupProblem(data) {
-  if (!data || typeof data !== 'object' || data.app !== 'kantar' || !Array.isArray(data.entries)) return 'This is not a Kantar backup';
+  if (!data || typeof data !== 'object' || (data.app !== 'denge' && data.app !== 'kantar') || !Array.isArray(data.entries)) return 'This is not a Denge backup'; // kantar: the app's first name
   if (!Number.isInteger(data.v)) return 'This backup has no valid version number, so it cannot be restored';
-  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Kantar. Update the app first';
-  if (data.v < MIN_SCHEMA_VERSION) return 'This backup is from the first release of Kantar (Turkish ids) and can no longer be restored';
+  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Denge. Update the app first';
+  if (data.v < MIN_SCHEMA_VERSION) return 'This backup is from the app’s first release (Turkish ids) and can no longer be restored';
   return '';
 }
 

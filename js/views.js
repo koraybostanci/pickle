@@ -1008,7 +1008,7 @@ function checkpoints() {
 // Data from the first release (Turkish ids) can no longer be converted, so some of it shows wrongly
 function legacyNotice() {
   if (!S.legacy || S.settings.legacyDismissed) return '';
-  return `<div class="notice"><p>This device still holds data from the first release of Kantar, which this version can no longer convert. Some entries may show wrongly. Nothing has been deleted.</p><button type="button" class="btn" data-act="dismiss-legacy">Got it</button></div>`;
+  return `<div class="notice"><p>This device still holds data from the app’s first release, which this version can no longer convert. Some entries may show wrongly. Nothing has been deleted.</p><button type="button" class="btn" data-act="dismiss-legacy">Got it</button></div>`;
 }
 
 function adjustNotice() {
@@ -1301,5 +1301,5 @@ export function renderSettings() {
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
     ${section('reset', 'Reset', '', reset)}
   </div>
-  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Kantar</b><span>Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
+  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Denge</b><span>Balance over perfection. Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
 }

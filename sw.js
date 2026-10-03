@@ -5,7 +5,7 @@
 // A new release arrives only once the new service worker is installed.
 // List every file the app loads in SHELL, so the first launch already works offline. A listed file that
 // does not exist makes the install fail.
-const VERSION = 'kantar-v21';
+const VERSION = 'denge-v21';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/core.js', 'js/views.js', 'js/plan.js', 'js/db.js', 'js/ai.js', 'js/exif.js', 'js/export.js', 'js/picture.js', 'js/backup.js',
@@ -25,9 +25,9 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  // Only this app's caches: other apps on the same host share the origin
+  // Only this app's caches (kantar- was its first name): other apps on the same host share the origin
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('kantar-') && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('denge-') || k.startsWith('kantar-')) && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
   );
 });
 
