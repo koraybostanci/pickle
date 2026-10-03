@@ -506,6 +506,7 @@ function startCard() {
     4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
   }[n];
   return `<section class="start" aria-labelledby="start-title">
+    <p class="start-brand"><b>Pickle</b> · Good things take time</p>
     <div class="start-head"><p>Getting started, step ${n} of 4</p><button type="button" class="link" data-act="hide-start">${n === 4 ? 'Done' : 'Hide'}</button></div>
     <h2 id="start-title">${step[0]}</h2>
     <p class="start-note">${step[1]}</p>
@@ -1340,5 +1341,5 @@ export function renderSettings() {
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
     ${section('reset', 'Reset', '', reset)}
   </div>
-  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle</b><span>Good things take time. Version ${APP_VERSION}. Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
+  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.</span><span>Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
 }
