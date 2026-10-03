@@ -287,6 +287,24 @@ button.tile:active, .tile-main:active, .chip:active, .btn:active { transform: sc
 .log-tape.is-on { background: var(--good-soft); }
 .log-tape.is-over i { background: var(--over); }
 .log-tape.is-over { background: var(--over-track); }
+/* The day's review: the verdict from the numbers, then the model's notes */
+.review { margin-top: 10px; }
+.review-verdict { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 8px; font-size: 14px; line-height: 1.4; color: var(--ink2); }
+.review-verdict span { flex: 1 1 12em; padding-top: 1px; }
+.pill-plain { background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
+.review-ai { margin-top: 2px; }
+.review-ai summary { list-style: none; position: relative; display: block; padding: 6px 30px 6px 0; min-height: 44px; font: 600 15px/1.4 var(--txt); cursor: pointer; }
+.review-ai summary::-webkit-details-marker { display: none; }
+.review-ai summary::after { content: ""; position: absolute; right: 6px; top: 14px; width: 8px; height: 8px; border-right: 2px solid var(--ink3); border-bottom: 2px solid var(--ink3); transform: rotate(45deg); transition: transform .15s; }
+.review-ai[open] summary::after { transform: translateY(4px) rotate(-135deg); }
+.review-ai dl { display: grid; gap: 6px; }
+.review-ai dl div { display: grid; grid-template-columns: 72px 1fr; gap: 6px 10px; font-size: 14px; line-height: 1.4; }
+.review-ai dd { grid-column: 2; }
+.review-ai dt { padding-top: 1px; font-size: 12.5px; font-weight: 600; color: var(--ink3); }
+.review-foot, .review-wait { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; font-size: 12.5px; color: var(--ink3); }
+.review-wait { min-height: 44px; gap: 8px; }
+.review-foot .link { font-size: 13px; }
+.review .note { margin-top: 2px; }
 .log-list { margin-top: 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); overflow: hidden; }
 .log-list li + li { border-top: 1px solid var(--line); }
 .log-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 14px 10px 12px; text-align: left; }
@@ -561,7 +579,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
   .burn-head { animation: none; }
   button.tile, .tile-main, .day b, .chip, .btn, .log-row, .meal-main { transition: none; }
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }
-  .toggle i, .toggle i::after, .setting summary::after, .rule-group summary::after, .plan-card { transition: none; }
+  .toggle i, .toggle i::after, .setting summary::after, .rule-group summary::after, .review-ai summary::after, .plan-card { transition: none; }
 }
 @media (max-width: 350px) {
   .day b { width: 32px; height: 32px; font-size: 13px; }

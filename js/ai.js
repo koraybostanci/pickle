@@ -1,7 +1,7 @@
 // Model calls. Two routes: Claude (Anthropic Messages API) or any OpenAI-compatible endpoint
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
-import { planDigest } from './plan.js';
+import { planDigest, RULES, SLOTS } from './plan.js';
 
 export const MODELS = {
   'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
@@ -243,17 +243,21 @@ export async function analyze(o) {
   if (o.hint) lines.push(o.hint);
   const openai = o.cfg && o.cfg.provider === 'openai';
   const req = { system: openai ? SYSTEM + SHAPE : SYSTEM, text: lines.join('\n'), blobs: o.blobs || [], schema: openai ? null : SCHEMA, json: true };
+  return callWithFallback(o.cfg, req, o.onRetry);
+}
+
+// One request; when the model is busy or out of quota (quotas are per model), the same provider's fallback models get one try each
+async function callWithFallback(cfg, req, onRetry) {
   try {
-    const r = await callModel(o.cfg, { ...req, onRetry: o.onRetry });
-    return { data: parseLoose(r.text), usage: r.usage, model: o.cfg.model };
+    const r = await callModel(cfg, { ...req, onRetry });
+    return { data: parseLoose(r.text), usage: r.usage, model: cfg.model };
   } catch (e) {
     if (!FALLBACK_ON.includes(e.code)) throw e;
-    // Busy or out of quota (quotas are per model): try the same provider's fallback models once each
-    const preset = openai ? PRESETS.find((p) => p.base === o.cfg.base) : null;
-    for (const model of ((preset && preset.alt) || []).filter((m) => m !== o.cfg.model)) {
-      if (o.onRetry) o.onRetry(0, 0, model, e.code);
+    const preset = cfg.provider === 'openai' ? PRESETS.find((p) => p.base === cfg.base) : null;
+    for (const model of ((preset && preset.alt) || []).filter((m) => m !== cfg.model)) {
+      if (onRetry) onRetry(0, 0, model, e.code);
       try {
-        const r = await callModel({ ...o.cfg, model }, { ...req, retry: false });
+        const r = await callModel({ ...cfg, model }, { ...req, retry: false });
         return { data: parseLoose(r.text), usage: r.usage, model, fallbackFrom: e };
       } catch (e2) {
         if (!FALLBACK_ON.includes(e2.code) && e2.code !== 'bad_model') throw e2;
@@ -263,6 +267,46 @@ export async function analyze(o) {
   }
 }
 const FALLBACK_ON = ['server', 'rate', 'no_quota'];
+
+// ——— The day's review: text only, a few hundred tokens ———
+const REVIEW_SYSTEM = `You review one day of a food log for one person on a weight-loss plan, against the plan and the goal. Reply with JSON only, in English.
+The plan: the calorie and protein targets given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
+Weekly allowance: ${RULES.weekly.join(' ')}
+Off plan: ${RULES.off.join(' ')}
+Use only the foods and numbers given; never invent an amount. Name the actual foods. Be direct and concrete, like a coach reading the numbers: no praise for its own sake, no moralising, no medical advice.
+head: one sentence. Was the day in line with the plan or did it set the goal back, and what is the main reason? Follow the app's verdict, which is computed from the numbers. If the log is clearly incomplete, say that instead of judging.
+good: up to 2 things that helped, each naming the food or habit. Empty if there were none.
+cut: up to 2 things that cost the most and what would have reduced them, with the kcal that would save. Empty if nothing needed cutting.
+next: one concrete thing to do tomorrow; for a day still in progress, for the rest of today.
+Every string at most 22 words.`;
+const REVIEW_SHAPE = '\nReturn exactly one JSON object with these keys: {"head":"","good":[""],"cut":[""],"next":""}';
+const REVIEW_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['head', 'good', 'cut', 'next'],
+  properties: {
+    head: { type: 'string' },
+    good: { type: 'array', items: { type: 'string' } },
+    cut: { type: 'array', items: { type: 'string' } },
+    next: { type: 'string' },
+  },
+};
+
+/**
+ * @param {{cfg:object, brief:string, onRetry?:Function}} o brief: the day in plain lines, built by the app
+ * @returns {Promise<{data:{head:string,good:string[],cut:string[],next:string}, usage:{in:number,out:number}, model:string}>}
+ */
+export async function review(o) {
+  const openai = o.cfg && o.cfg.provider === 'openai';
+  const req = { system: openai ? REVIEW_SYSTEM + REVIEW_SHAPE : REVIEW_SYSTEM, text: o.brief, schema: openai ? null : REVIEW_SCHEMA, json: true, maxTokens: 400 };
+  const r = await callWithFallback(o.cfg, req, o.onRetry);
+  const str = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 240);
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []).map(str).filter(Boolean).slice(0, 2);
+  const d = r.data || {};
+  const data = { head: str(d.head), good: list(d.good), cut: list(d.cut), next: str(d.next) };
+  if (!data.head) throw new AiError('empty', 'The model returned no review');
+  return { ...r, data };
+}
 
 // The useful part of a provider's error text: for quota errors the limit, the model and the wait, otherwise the start of the message
 export function errorDetail(err, max = 200) {
