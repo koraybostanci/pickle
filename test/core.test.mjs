@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
-  isPerfect, weekStart, parseCount, drinkTally,
+  isPerfect, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
 import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -192,4 +192,76 @@ test('coffee and beer never touch the goals, the perfect day, the status or the 
   meal(d, 215, 2, { src: 'flex', tier: 'flex', slot: 'late', flags: ['alcohol'] });
   assert.equal(dayGoals(d).length, 5);
   assert.deepEqual(openSlots(d).map((s) => s.id), before.open); // a beer in the late slot closes no planned meal
+});
+
+test('the plan spends the budget over four meal times, from lunch at 12:00 to dinner at 18:00', () => {
+  const steps = planSteps(1550);
+  assert.deepEqual(steps.map((x) => x.at), [12, 14.5, 16, 18]);
+  assert.ok(!steps.some((x) => x.id === 'late'));
+  assert.ok(Math.abs(steps.reduce((a, x) => a + x.kcal, 0) - 1550) < 1e-6);
+  assert.ok(Math.abs(planSteps(1750).reduce((a, x) => a + x.kcal, 0) - 1750) < 1e-6);
+});
+
+test('what the plan has spent by an hour starts at lunch, never falls and ends at the budget', () => {
+  assert.equal(plannedBy(1550, 11.99), 0);
+  assert.ok(Math.abs(plannedBy(1550, 12) - planSteps(1550)[0].kcal) < 1e-6);
+  let last = 0;
+  for (let h = 6; h <= 24; h += 0.25) { const v = plannedBy(1550, h); assert.ok(v >= last); last = v; }
+  assert.ok(Math.abs(plannedBy(1550, 18) - 1550) < 1e-6);
+  assert.ok(Math.abs(plannedBy(1550, 24) - 1550) < 1e-6);
+});
+
+test('the budget verdict today: no pill before the plan starts, then the plan\'s pace, then the budget', () => {
+  const target = 1550;
+  assert.equal(budgetVerdict({ target, eaten: 300, planned: 0 }).text, '');
+  assert.equal(budgetVerdict({ target, eaten: 0, planned: 500 }).text, 'Nothing eaten yet');
+  assert.deepEqual(budgetVerdict({ target, eaten: 500, planned: 500 }), { level: '', tone: 'good', text: 'On plan pace' });
+  const fast = budgetVerdict({ target, eaten: 650, planned: 500 });
+  assert.equal(fast.tone, 'warn'); assert.match(fast.text, /^150 over plan pace$/);
+  const slow = budgetVerdict({ target, eaten: 250, planned: 500 });
+  assert.equal(slow.tone, 'calm'); assert.match(slow.text, /^250 under plan pace$/);
+  assert.deepEqual(budgetVerdict({ target, eaten: target * 1.05, planned: target }), { level: '', tone: 'good', text: 'Budget used' });
+  const over = budgetVerdict({ target, eaten: target * 1.10, planned: target });
+  assert.equal(over.level, 'over'); assert.equal(over.tone, 'warn');
+  const back = budgetVerdict({ target, eaten: target * 1.20, planned: target });
+  assert.equal(back.level, 'back'); assert.equal(back.tone, 'bad');
+});
+
+test('a budget used before the plan has spent it is "used early", never a tick', () => {
+  const target = 1550;
+  assert.deepEqual(budgetVerdict({ target, eaten: target, planned: target - 0.5 }), { level: '', tone: 'good', text: 'Budget used' });
+  assert.deepEqual(budgetVerdict({ target, eaten: target + 1, planned: 486 }), { level: '', tone: 'warn', text: 'Budget used early' });
+  assert.deepEqual(budgetVerdict({ target, eaten: target + 1, planned: 0 }), { level: '', tone: 'warn', text: 'Budget used early' });
+  assert.deepEqual(budgetVerdict({ target, eaten: target, planned: 486 }), { level: '', tone: 'warn', text: 'Budget used early' });
+});
+
+test('the budget verdict on a past day says how it ended, without praising an under-logged day', () => {
+  const target = 1550;
+  const at = (eaten) => budgetVerdict({ target, eaten, planned: null });
+  assert.deepEqual(at(0), { level: '', tone: 'calm', text: 'Nothing logged' });
+  assert.equal(at(target * 0.5).tone, 'calm'); assert.match(at(target * 0.5).text, /^Ended .+ under$/);
+  assert.equal(at(target * 0.9).tone, 'good');
+  assert.equal(at(target + 10).text, 'Ended on budget');
+  assert.equal(at(target - 10).text, 'Ended on budget');
+});
+
+test('the budget verdict and the day verdict agree on over and well over', () => {
+  for (const share of [1.10, 1.20]) {
+    reset(); meal(day(-1), 1550 * share, 135);
+    assert.equal(budgetVerdict({ target: 1550, eaten: 1550 * share, planned: null }).level, dayVerdict(day(-1)).level);
+  }
+  for (const [target, kcal] of [[1500, 1500 + 105.3], [1550, 1550 + 108.5], [1550, 1550 + 232.5]]) {
+    reset(); S.settings.kcalRest = target; meal(day(-1), kcal, 135);
+    const level = dayVerdict(day(-1)).level;
+    assert.equal(budgetVerdict({ target, eaten: kcal, planned: null }).level, level === 'over' || level === 'back' ? level : '');
+  }
+});
+
+test('the budget meter is as wide as the budget, or what was eaten when that is more; the plan tick sits inside it', () => {
+  assert.deepEqual(budgetMeter({ target: 1550, eaten: 775, planned: null }), { eat: 0.5, cap: 1, plan: null });
+  const over = budgetMeter({ target: 1500, eaten: 1800, planned: null });
+  assert.equal(over.eat, 1); assert.ok(Math.abs(over.cap - 1500 / 1800) < 1e-9);
+  assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 0 }).plan, null);
+  assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 1549.5 }).plan, null);
+  assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 620 }).plan, 620 / 1550);
 });
