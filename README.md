@@ -20,8 +20,8 @@ your start weight to your goal.
 
 - **Today:** one line on where the day stands and what comes next (calm when the day goes over);
   the week as seven day tokens, each with a shape for how the day went, and your run of days on
-  plan; the day's calories as a budget that burns down over the day, with the plan's pace beside it
-  and a forecast for where the day will end; weight against your line, protein, the
+  plan; the day's calories as a budget meter: what is left, how far the day has got and where the
+  plan would have you by now; weight against your line, protein, the
   meals of the day with a suggestion for the next one, steps, water, coffee, beer and the week's
   extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
   Coffee and beer are counted with no goal: each tile shows the day and the week. A tap on Beer logs
@@ -227,7 +227,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v29'`) and `APP_VERSION` in `js/core.js` (`'29'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v30'`) and `APP_VERSION` in `js/core.js` (`'30'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
