@@ -6,7 +6,7 @@ import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listM
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, isBeer, parseCount,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -71,7 +71,10 @@ async function logMeal(tpl, src, day = S.viewDay) {
   await saveEntry(e);
   render();
   toast(`${tpl.name} logged`, { label: 'Undo', fn: () => removeEntry(e.id, true) });
+  return e.id;
 }
+// A beer from the tile or typed: a 0.5 l, in the late slot, so it never stands in for a planned meal
+const logBeer = (day) => logMeal({ ...FLEX.find((f) => f.id === 'F-BEER50'), slot: 'late', tier: 'flex' }, 'flex', day);
 
 async function removeEntry(id, silent) {
   const e = S.entries.find((x) => x.id === id);
@@ -141,6 +144,8 @@ export function parseLocal(text) {
   if (flex) return { type: 'flex', flex };
   const favorite = (S.settings.favorites || []).find((x) => norm(x.name) === t);
   if (favorite) return { type: 'favorite', favorite };
+  const c = parseCount(t);
+  if (c) return { type: 'count', ...c };
   return null;
 }
 
@@ -159,6 +164,21 @@ async function submitText(text) {
     if (local.type === 'plan') return logMeal(local.meal, 'plan', today());
     if (local.type === 'flex') return logMeal({ ...local.flex, slot: 'any', tier: 'flex' }, 'flex', today());
     if (local.type === 'favorite') return logMeal({ ...local.favorite, slot: 'any' }, 'favorite', today());
+    if (local.type === 'count' && local.key === 'coffee') {
+      const cur = (S.days[today()] && S.days[today()].coffee) || 0;
+      const next = Math.min(COUNT_MAX, cur + local.n);
+      const added = next - cur;
+      await saveDay(today(), { coffee: next });
+      render();
+      return toast(!added ? 'Coffee is at the day’s maximum' : added === 1 ? 'A coffee added' : `${added} coffees added`);
+    }
+    if (local.type === 'count') {
+      const ids = [];
+      for (let i = 0; i < local.n; i++) ids.push(await logBeer(today()));
+      // One toast whose Undo takes back every beer just logged
+      if (local.n > 1) toast(`${local.n} beers logged`, { label: 'Undo', fn: async () => { for (const id of ids) await removeEntry(id, true); } });
+      return;
+    }
   }
   const now = new Date();
   const e = {
@@ -1008,6 +1028,21 @@ const ACT = {
     render();
     if (next > cur) toast('A glass of water added', { label: 'Undo', fn: async () => { await saveDay(day, { water: cur }); render(); } });
   },
+  'coffee': async (el) => {
+    const day = S.viewDay;
+    const cur = (S.days[day] && S.days[day].coffee) || 0;
+    const next = Math.max(0, Math.min(COUNT_MAX, cur + Number(el.dataset.v)));
+    await saveDay(day, { coffee: next });
+    render();
+    if (next > cur) toast('A coffee added', { label: 'Undo', fn: async () => { await saveDay(day, { coffee: cur }); render(); } });
+  },
+  'beer': async (el) => {
+    if (el.dataset.v === '1') return logBeer(S.viewDay);
+    const last = S.entries.filter((e) => e.day === S.viewDay && isBeer(e)).sort((a, b) => b.ts - a.ts)[0];
+    if (!last) return;
+    await removeEntry(last.id, true);
+    toast('Beer removed');
+  },
   'mult': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) { await saveEntry({ ...e, mult: Number(el.dataset.v) }); render(); }
@@ -1237,7 +1272,7 @@ const ACT = {
   },
   'wipe': async () => {
     if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
-    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
+    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {

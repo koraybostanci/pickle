@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '27'; // bump together with VERSION in sw.js
+export const APP_VERSION = '28'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -197,6 +197,28 @@ export function weekFlex(day) {
     }
   }
   return r;
+}
+
+// Coffee and beer are counted, with no goal
+export const COUNT_MAX = 30; // a day's coffee tally is never above this, typed, tapped or restored
+// A beer is a planned extra flagged alcohol (the Beer tile and chips, or "beer 0.33 l" typed); a photo the model tags alcohol is not counted
+export const isBeer = (e) => e.kind === 'meal' && e.status === 'ok' && e.src === 'flex' && (e.flags || []).includes('alcohol');
+// "coffee", "a beer", "2 coffees", "beer 3". "Beer 0.33 l" has a decimal, so it never matches (it is a planned extra)
+export function parseCount(t) {
+  const m = /^(?:(\d{1,2}|an?|one)\s+)?(coffees?|beers?)(?:\s+(\d{1,2}))?$/.exec(t);
+  if (!m || (m[1] && m[3])) return null;
+  const lead = m[1] && /^\d/.test(m[1]) ? Number(m[1]) : 1;
+  const n = m[3] ? Number(m[3]) : lead;
+  if (n < 1 || n > 12) return null;
+  return { key: m[2].startsWith('coffee') ? 'coffee' : 'beer', n };
+}
+// A day's count and the totals for the Monday-to-Sunday week of `day` and the week before
+export function drinkTally(key, day) {
+  const on = key === 'coffee'
+    ? (from, to) => Object.entries(S.days).reduce((a, [d, r]) => a + (d >= from && d <= to ? (r && Number.isFinite(r.coffee) ? r.coffee : 0) : 0), 0)
+    : (from, to) => S.entries.filter((e) => e.day >= from && e.day <= to && isBeer(e)).length;
+  const ws = weekStart(day);
+  return { today: on(day, day), week: on(ws, addDays(ws, 6)), prev: on(addDays(ws, -7), addDays(ws, -1)) };
 }
 
 export function streak() {

@@ -242,7 +242,7 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .glasses i { border-radius: 1px; background: var(--track); }
 .glasses i.on { background: var(--fill); }
 .is-done > .bar i, .is-done .glasses i.on { background: var(--good); }
-.tile-water { padding: 0; }
+.tile-water, .tile-count { padding: 0; }
 .tile-main { display: grid; gap: 7px; width: 100%; padding: 12px 14px; border-radius: var(--r-card); text-align: left; }
 .tile-minus { position: absolute; top: 0; right: 0; width: 44px; height: 44px; border-radius: 0 var(--r-card) 0 var(--r-ctl); font-size: 22px; line-height: 1; color: var(--ink2); }
 
@@ -735,7 +735,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
   .tile-val b { font-size: 22px; }
   .tile { padding: 10px 11px; }
   .tile-main { padding: 10px 11px; }
-  .tile-water { padding: 0; }
+  .tile-water, .tile-count { padding: 0; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .log-row { gap: 10px; padding-left: 10px; padding-right: 12px; }
   .log-time { width: 36px; }

@@ -5,7 +5,7 @@
 // internal id, APP_ID in core.js, which stays when the app is renamed, so queries keep working).
 import { targetAt, dayKey } from './plan.js';
 
-export const EXPORT_SCHEMA = 1;
+export const EXPORT_SCHEMA = 2;
 export const exportName = (now = new Date()) => `pickle-export-${dayKey(now)}.sql`;
 
 const text = (v) => (v == null || v === '' ? 'NULL' : `'${String(v).replace(/\u0000/g, '').replace(/'/g, "''")}'`);
@@ -28,6 +28,7 @@ CREATE TABLE weightplan_days (
   weight_kg        REAL,                        -- that day's weigh-in
   steps            INTEGER,
   water_ml         INTEGER,
+  coffee_cups      INTEGER,                     -- the day's coffee tally; NULL when none was ever added
   workout          INTEGER NOT NULL DEFAULT 0,  -- 1 on workout days
   target_kcal      INTEGER NOT NULL,            -- the day's calorie budget under the current Goals, so changing them changes past rows
   target_weight_kg REAL                         -- where the schedule stood on the day; NULL before the start date
@@ -68,6 +69,7 @@ CREATE TABLE weightplan_meal_items (
 );
 
 -- One row per day: the day's own values, the 7-day weight average the app uses, and the meal totals.
+-- beers: the planned extras flagged alcohol (Beer 0.33 l, Beer 0.5 l), as the app's Beer tile counts them.
 CREATE VIEW weightplan_daily AS
 SELECT
   d.day,
@@ -77,9 +79,11 @@ SELECT
   d.target_weight_kg,
   d.steps,
   d.water_ml,
+  d.coffee_cups,
   d.workout,
   d.target_kcal,
   COALESCE(m.meals, 0)                AS meals,
+  COALESCE(m.beers, 0)                AS beers,
   ROUND(COALESCE(m.kcal, 0), 1)       AS kcal,
   ROUND(COALESCE(m.protein_g, 0), 1)  AS protein_g,
   ROUND(COALESCE(m.carbs_g, 0), 1)    AS carbs_g,
@@ -88,7 +92,8 @@ SELECT
 FROM weightplan_days d
 LEFT JOIN (
   SELECT day, COUNT(*) AS meals, SUM(kcal) AS kcal, SUM(protein_g) AS protein_g,
-         SUM(carbs_g) AS carbs_g, SUM(fat_g) AS fat_g, SUM(fibre_g) AS fibre_g
+         SUM(carbs_g) AS carbs_g, SUM(fat_g) AS fat_g, SUM(fibre_g) AS fibre_g,
+         SUM(CASE WHEN source = 'flex' AND flags LIKE '%alcohol%' THEN 1 ELSE 0 END) AS beers
   FROM weightplan_meals WHERE status = 'ok' GROUP BY day
 ) m ON m.day = d.day;
 `;
@@ -131,7 +136,7 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
   const dayRows = Array.from(byDay.values()).filter((d) => d.day).sort((a, b) => (a.day < b.day ? -1 : 1));
   for (const d of dayRows) {
     const targetKg = d.day >= s.startDate ? targetAt(d.day, s) : null;
-    out.push(`INSERT INTO weightplan_days (day, weight_kg, steps, water_ml, workout, target_kcal, target_weight_kg) VALUES (${text(d.day)}, ${num(d.kg)}, ${int(d.steps)}, ${int(d.water)}, ${d.train ? 1 : 0}, ${int(d.train ? s.kcalTrain : s.kcalRest)}, ${num(targetKg)});`);
+    out.push(`INSERT INTO weightplan_days (day, weight_kg, steps, water_ml, coffee_cups, workout, target_kcal, target_weight_kg) VALUES (${text(d.day)}, ${num(d.kg)}, ${int(d.steps)}, ${int(d.water)}, ${int(d.coffee)}, ${d.train ? 1 : 0}, ${int(d.train ? s.kcalTrain : s.kcalRest)}, ${num(targetKg)});`);
   }
   out.push('');
 
