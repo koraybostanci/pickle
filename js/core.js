@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '23'; // bump together with VERSION in sw.js
+export const APP_VERSION = '24'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -257,7 +257,7 @@ export function dayVerdict(day) {
 }
 export const VERDICT = {
   open: 'In progress', thin: 'Too little logged', on: 'In line', near: 'Mostly in line',
-  under: 'Under target', over: 'A bit over', back: 'Well over',
+  under: 'Under budget', over: 'A bit over', back: 'Well over',
 };
 // The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
 export function verdictText(v) {
@@ -270,9 +270,9 @@ export function verdictText(v) {
     const kg = v.kg >= 0.005 ? `: about ${v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '';
     const cost = !kg || v.share <= 0 ? '' : v.share >= 1.5 ? `, ${v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} days of the schedule`
       : v.share >= 0.95 ? ', all of what the day was meant to lose' : `, ${Math.round(v.share * 100)}% of what the day was meant to lose`;
-    out.push(`${kcal} kcal over target${kg}${cost}.`);
-  } else if (v.delta < -25) out.push(`${kcal} kcal under target${v.level === 'under' ? '; check that everything is logged' : ''}.`);
-  else out.push('On target.');
+    out.push(`${kcal} kcal over budget${kg}${cost}.`);
+  } else if (v.delta < -25) out.push(`${kcal} kcal under budget${v.level === 'under' ? '; check that everything is logged' : ''}.`);
+  else out.push('On budget.');
   if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short.`);
   if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
   return out;
