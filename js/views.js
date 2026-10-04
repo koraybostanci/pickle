@@ -1,7 +1,7 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
-  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow,
+  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
@@ -264,7 +264,7 @@ function budgetTile(day) {
 }
 
 // ——— The day at a glance: the calorie budget with weight and protein beside it. Steps and water, which fill up
-// over the day, come as a second pair after the meals. ———
+// over the day, come as a second pair after the meals, with coffee and beer (counted, no goal) below them. ———
 function bento(day, part) {
   const s = S.settings;
   const isToday = day === today();
@@ -302,6 +302,21 @@ function bento(day, part) {
   const pct = (v, of) => Math.min(100, (v / of) * 100).toFixed(1);
   const pLeft = Math.max(1, Math.ceil(s.protein - tot.p - 1e-6)); // only shown while the goal is open
   const glassesLeft = Math.max(0, Math.ceil((s.water - water) / 250));
+  // Coffee and beer: the day's count and the week's, never a goal, so never ticked
+  const thisWeek = weekStart(day) === weekStart(today());
+  const counter = (key, name, unit, hint, add) => {
+    const c = drinkTally(key, day);
+    const units = c.today === 1 ? unit : `${unit}s`;
+    const week = thisWeek ? `${c.week} this week${c.prev ? `, ${c.prev} last week` : ''}` : `${c.week} that week`;
+    return `<div class="tile tile-count">
+      <button type="button" class="tile-main" data-act="${key}" data-v="1" aria-label="${esc(`${name}: ${c.today} ${units} ${isToday ? 'today' : 'on this day'}, ${c.week} ${thisWeek ? 'this' : 'that'} week. ${add}`)}">
+        ${top(name, false, c.today ? '' : hint)}
+        <span class="tile-val"><b>${c.today}</b> ${units}</span>
+        ${note(week)}
+      </button>
+      ${c.today ? `<button type="button" class="tile-minus" data-act="${key}" data-v="-1" aria-label="Remove one ${key}">−</button>` : ''}
+    </div>`;
+  };
   if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
     ${budgetTile(day)}
     ${weight}
@@ -312,7 +327,7 @@ function bento(day, part) {
       ${note(pDone ? 'Enough for today' : `${n0(pLeft)} g to go`)}
     </div>
   </section>`;
-  return `<section class="bento bento-more" aria-label="Steps and water">
+  return `<section class="bento bento-more" aria-label="Steps, water, coffee and beer">
     <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="Steps: ${steps ? n0(steps) : 'none'} of ${n0(s.steps)}. Enter">
       ${top('Steps', stepsDone)}
       <span class="tile-val"><b>${steps ? n0(steps) : '–'}</b> / ${n0(s.steps)}</span>
@@ -328,6 +343,8 @@ function bento(day, part) {
       </button>
       ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
     </div>
+    ${counter('coffee', 'Coffee', 'cup', 'tap +1', 'Add one')}
+    ${counter('beer', 'Beer', 'beer', 'tap +1 · 0.5 l', 'Add a 0.5 l beer')}
   </section>`;
 }
 
@@ -1326,7 +1343,7 @@ export function renderSettings() {
       <h3>Clear my log</h3>
       <p class="note">Starts your tracking over; the app stays set up as it is.</p>
       <dl class="reset-diff">
-        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, workout days, day reviews and Check verdicts.</dd></div>
+        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, coffee, workout days, day reviews and Check verdicts.</dd></div>
         <div><dt class="is-kept">Keeps</dt><dd>Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.</dd></div>
       </dl>
       <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Clear my log</button></div>

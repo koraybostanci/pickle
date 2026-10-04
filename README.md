@@ -22,8 +22,10 @@ your start weight to your goal.
   the week as seven day tokens, each with a shape for how the day went, and your run of days on
   plan; the day's calories as a budget that burns down over the day, with the plan's pace beside it
   and a forecast for where the day will end; weight against your line, protein, the
-  meals of the day with a suggestion for the next one, steps, water and the week's extras. Five
-  daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
+  meals of the day with a suggestion for the next one, steps, water, coffee, beer and the week's
+  extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
+  Coffee and beer are counted with no goal: each tile shows the day and the week. A tap on Beer logs
+  a 0.5 l beer (215 kcal) as an extra, and the tile counts the week's beers, the Beer chips included.
 - **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
   the library, or type. A model estimates calories and macros and lists each item with its amount
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
@@ -48,8 +50,8 @@ your start weight to your goal.
   light, colour and contrast are evened out.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
-water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
-on the device.
+water, coffee, beer and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses`, `coffee`,
+`2 beers` or `workout` is understood on the device.
 
 ## Privacy and data
 
@@ -78,7 +80,7 @@ on the device.
   both takes the backup's version); its goals, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
 - Settings → "Reset" has two levels. "Clear my log" deletes what you tracked (meals and their photos,
-  weigh-ins, steps, water, workout days, day reviews, checks) and keeps every setting, the plan's
+  weigh-ins, steps, water, coffee, workout days, day reviews, checks) and keeps every setting, the plan's
   pictures and your API key. "Factory reset" empties the app as it was on its first launch, including
   goals, favourites, saved places, the plan's pictures and the usage totals; the API key and provider
   stay unless you untick the box. It asks you to type DELETE. Both refuse while something is being
@@ -167,11 +169,11 @@ leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
 |---|---|---|
-| `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
+| `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `coffee_cups`, `workout`, `target_kcal`, `target_weight_kg` |
 | `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
 | `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
 | `weightplan_settings` | setting | `key`, `value` (dates, weights, daily goals, and the export's own version and time) |
-| `weightplan_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
+| `weightplan_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals with the day's `beers` |
 
 Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
 have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Goals, so
@@ -187,6 +189,9 @@ SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal;
 
 -- what was off plan, and how much it cost
 SELECT day, title, kcal FROM weightplan_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
+
+-- beers and coffees per week
+SELECT date(day, 'weekday 0', '-6 days') AS week, SUM(beers) AS beers, SUM(COALESCE(coffee_cups, 0)) AS coffees FROM weightplan_daily GROUP BY week ORDER BY week;
 ```
 
 The export is for analysis. To move or restore the app's data, use the JSON backup.
@@ -222,7 +227,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v25'`) and `APP_VERSION` in `js/core.js` (`'25'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v29'`) and `APP_VERSION` in `js/core.js` (`'29'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,

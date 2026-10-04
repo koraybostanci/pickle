@@ -53,6 +53,15 @@ test('a day: a review whose lists are strings or null does not break; bad days a
   assert.equal(cleanDay({ day: '2026-10-01' }).kg, null);
 });
 
+test('a day: the coffee tally is a whole number up to 30, or null', () => {
+  const coffee = (v) => cleanDay({ day: '2026-10-01', coffee: v }).coffee;
+  assert.equal(coffee(3), 3);
+  assert.equal(coffee(-2), 0);
+  assert.equal(coffee(1e9), 30);
+  assert.equal(coffee('x'), null);
+  assert.equal(cleanDay({ day: '2026-10-01' }).coffee, null);
+});
+
 test('settings: what the app talks to is never taken from a file', () => {
   const s = cleanSettings({
     provider: 'openai', oaBase: 'https://evil.example/v1', oaModel: 'm', model: 'm', apiKey: 'k', oaKey: 'k', usage: { in: 1 }, lastBackup: 9,

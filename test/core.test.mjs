@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
+  isPerfect, weekStart, parseCount, drinkTally,
 } from '../js/core.js';
 import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -149,4 +150,46 @@ test('the whole-plan chart starts at the plan, or a little before it when weigh-
   assert.equal(w(addDays(s.startDate, -30)).x0, addDays(s.startDate, -21));
   assert.equal(w('').x1, s.targetDate);
   assert.equal(w('').ticks, null);
+});
+
+test('"coffee", "a beer", "2 coffees" and "beer 3" are counts; a beer size, words after it or a second number are not', () => {
+  assert.deepEqual(parseCount('coffee'), { key: 'coffee', n: 1 });
+  assert.deepEqual(parseCount('a beer'), { key: 'beer', n: 1 });
+  assert.deepEqual(parseCount('2 coffees'), { key: 'coffee', n: 2 });
+  assert.deepEqual(parseCount('beer 3'), { key: 'beer', n: 3 });
+  assert.deepEqual(parseCount('2 beers'), { key: 'beer', n: 2 });
+  for (const t of ['beer 0.33 l', 'beer 0.5 l', 'coffee with milk', '2 coffee 3', '20 beers', '0 coffees']) assert.equal(parseCount(t), null, t);
+});
+
+test('coffee and beer are counted for the day, its Monday-to-Sunday week and the week before', () => {
+  reset();
+  const W = weekStart(T);
+  const beer = (d, extra = {}) => meal(d, 215, 2, { src: 'flex', tier: 'flex', slot: 'late', flags: ['alcohol'], ...extra });
+  for (const [d, n] of [[W, 2], [addDays(W, 6), 1], [addDays(W, -1), 4], [addDays(W, -7), 1], [addDays(W, -8), 9]]) S.days[d] = { day: d, coffee: n };
+  S.days[addDays(W, 1)] = { day: addDays(W, 1), water: 500 }; // no coffee field
+  assert.deepEqual(drinkTally('coffee', W), { today: 2, week: 3, prev: 5 });
+  assert.deepEqual(drinkTally('coffee', addDays(W, 1)), { today: 0, week: 3, prev: 5 });
+  assert.deepEqual(drinkTally('coffee', addDays(W, -1)), { today: 4, week: 5, prev: 9 });
+  beer(W); beer(addDays(W, 6)); beer(addDays(W, -1)); beer(addDays(W, -8));
+  beer(W, { src: 'photo' }); // the model's alcohol tag on a photo is not a counted beer
+  beer(W, { status: 'pending' });
+  meal(W, 300, 10, { src: 'flex', tier: 'flex' }); // a planned extra that is not alcohol
+  assert.deepEqual(drinkTally('beer', W), { today: 1, week: 2, prev: 1 });
+  assert.deepEqual(drinkTally('beer', addDays(W, -7)), { today: 0, week: 1, prev: 1 });
+});
+
+test('coffee and beer never touch the goals, the perfect day, the status or the open meals', () => {
+  reset();
+  const d = day(-1);
+  S.days[d] = { day: d, kg: 85, steps: 9000, water: 3000 };
+  meal(d, 1500, 135);
+  const before = { perfect: isPerfect(d), status: dayStatus(d), open: openSlots(d).map((s) => s.id) };
+  assert.equal(before.perfect, true);
+  S.days[d].coffee = 6;
+  assert.equal(dayGoals(d).length, 5);
+  assert.equal(isPerfect(d), before.perfect);
+  assert.equal(dayStatus(d), before.status);
+  meal(d, 215, 2, { src: 'flex', tier: 'flex', slot: 'late', flags: ['alcohol'] });
+  assert.equal(dayGoals(d).length, 5);
+  assert.deepEqual(openSlots(d).map((s) => s.id), before.open); // a beer in the late slot closes no planned meal
 });
