@@ -246,40 +246,33 @@ h3 { font: 600 16px/1.3 var(--txt); }
 .tile-main { display: grid; gap: 7px; width: 100%; padding: 12px 14px; border-radius: var(--r-card); text-align: left; }
 .tile-minus { position: absolute; top: 0; right: 0; width: 44px; height: 44px; border-radius: 0 var(--r-card) 0 var(--r-ctl); font-size: 22px; line-height: 1; color: var(--ink2); }
 
-/* Calorie budget: what is left, and how it burned down over the day */
-.tile-budget { grid-column: 1 / -1; gap: 4px; padding: 16px 18px 14px; }
-.budget-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+/* Calorie budget: what is left, how far the day has got, and where the plan would have it by now */
+.tile-budget { grid-column: 1 / -1; gap: 6px; padding: 14px 18px; }
+.tile-budget .tile-top { flex-wrap: wrap; }
+.tile-budget .tile-top .pill { margin-left: auto; letter-spacing: 0; text-transform: none; }
 .budget-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
-.budget-big b { font: 600 52px/1 var(--display); letter-spacing: -.035em; }
+.budget-big b { font: 600 52px/1 var(--display); letter-spacing: -.035em; font-variant-numeric: normal; }
 .budget-big span { font-size: 14px; color: var(--ink2); }
 .tile-budget.is-over .budget-big b { color: var(--warn); }
 .tile-budget.is-way-over .budget-big b { color: var(--over); }
-.burn { display: block; width: 100%; height: auto; margin-top: 6px; overflow: visible; }
-.burn-area { fill: var(--tape-track); opacity: .75; }
-.burn-red { fill: var(--over-track); opacity: .6; }
-.burn-plan { fill: none; stroke: var(--ink3); stroke-width: 1.2; stroke-dasharray: 1 3.5; stroke-linecap: round; }
-.burn-zero { stroke: var(--ink); stroke-width: 1; opacity: .5; }
-.burn-line { fill: none; stroke: var(--tape); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
-.burn-ahead { fill: none; stroke: var(--tape); stroke-width: 2; stroke-dasharray: 4 4; stroke-linejoin: round; opacity: .8; }
-.burn-ahead.is-bad { stroke: var(--warn); }
-.tile-budget.is-over .burn-line { stroke: var(--warn); }
-.tile-budget.is-over .burn-area { fill: var(--warn-soft); }
-.tile-budget.is-way-over .burn-line { stroke: var(--over); }
-.tile-budget.is-way-over .burn-area { fill: var(--over-track); }
-.burn-dot { fill: var(--raised); stroke: var(--ink); stroke-width: 1.4; }
-.burn-now { stroke: var(--ink3); stroke-width: 1; opacity: .5; }
-.burn-head { fill: var(--ink); stroke: var(--raised); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: burn-pulse 2.6s ease-in-out infinite; }
-@keyframes burn-pulse { 50% { transform: scale(1.3); } }
+.meter { position: relative; display: block; height: 12px; margin: 10px 0 4px; background: var(--tape-track); box-shadow: inset 0 0 0 1px var(--line); }
+.meter i { position: absolute; top: 0; bottom: 0; }
+.meter-fill { left: 0; width: min(var(--eat), var(--cap)); background: var(--tape); }
+.meter-spill { left: var(--cap); right: 0; border-left: 2px solid var(--raised); background: var(--tape); }
+.is-over .meter-spill { background: var(--warn); }
+.is-way-over .meter-spill { background: var(--over); }
+.meter .meter-plan { left: var(--plan); top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); box-shadow: 0 0 0 1.5px var(--raised); }
+.budget-key { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--ink2); }
+.budget-key span { white-space: nowrap; }
+.budget-key b { font-weight: 700; color: var(--ink); }
+.key-eat { display: inline-block; width: 10px; height: 8px; margin-right: 6px; background: var(--tape); }
+.key-plan { display: inline-block; width: 2px; height: 12px; margin-right: 6px; vertical-align: -2px; background: var(--ink); }
 /* Things you can press give a little */
 button.tile, .tile-main, .day b, .chip, .btn, .meal-main { transition: transform .12s ease; }
 button.tile:active, .tile-main:active, .chip:active, .btn:active { transform: scale(.975); }
 .meal-main:active { transform: scale(.99); }
 .day:active b { transform: scale(.92); }
 .log-row:active, .icon-btn:active, .week-nav:active, .tabs button:active, .seg button:active { background: color-mix(in srgb, var(--line) 60%, transparent); }
-.burn-axis { font: 500 9.5px var(--mono); fill: var(--ink3); }
-.budget-foot { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--ink2); }
-.budget-foot b { font-weight: 700; color: var(--ink); }
-.budget-foot .is-bad { color: var(--warn); font-weight: 600; }
 
 /* Workout-day toggle, beside the meals heading */
 .meals-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -718,7 +711,6 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 @keyframes confetti { from { transform: translate(0, 0) rotate(0); opacity: 1; } 70% { opacity: 1; } to { transform: translate(var(--x), 64vh) rotate(var(--r)); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .burn-head { animation: none; }
   button.tile, .tile-main, .day b, .chip, .btn, .meal-main { transition: none; }
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }
   .toggle i, .toggle i::after, .setting summary::after, .rule-group summary::after, .review-ai summary::after, .table-details summary::after, .plan-card { transition: none; }
@@ -728,7 +720,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
   .meals-head { flex-wrap: wrap; gap: 0 12px; }
   .day b { height: 36px; font-size: 14px; }
   .budget-big b { font-size: 42px; }
-  .budget-foot { flex-wrap: wrap; gap: 0 10px; }
+  .budget-key { flex-wrap: wrap; gap: 0 10px; }
   .plan-name { -webkit-line-clamp: 3; line-clamp: 3; min-height: calc(3.75em + 8px); }
   .plan-meta { font-size: 11px; }
   .plan-meta b { font-size: 12px; }
