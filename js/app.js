@@ -1237,7 +1237,7 @@ const ACT = {
   },
   'wipe': async () => {
     if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
-    if (!window.confirm('All entries, their photos, weigh-ins and checks on this device will be deleted. Do you have a backup? Continue?')) return;
+    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {
@@ -1251,15 +1251,15 @@ const ACT = {
     S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
     closeSheet();
     render();
-    toast('All entries deleted');
+    toast('Log cleared');
   },
   // Back to how the app was on its first launch: the database is emptied and the settings start again.
   // The API key and provider can stay, so they need not be typed in again.
   'wipe-all': async () => {
     if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
-    const typed = window.prompt('Everything on this device will be deleted: entries, photos, weigh-ins, the plan’s pictures, targets, favourites and saved places. This cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
-    if (!typed || typed.trim().toLowerCase() !== 'delete') return;
     const keepKey = !!($('#keep-key') && $('#keep-key').checked);
+    const typed = window.prompt('Factory reset: this deletes everything on this device: your log and photos, goals, favourites, saved places, the plan’s pictures and the usage totals. ' + (keepKey ? 'Your API key and provider stay.' : 'Your API key and provider are deleted too.') + ' It cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
+    if (!typed || typed.trim().toLowerCase() !== 'delete') return;
     const kept = {};
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
     for (const store of ['entries', 'days', 'photos', 'kv']) await db.clear(store);
@@ -1274,7 +1274,7 @@ const ACT = {
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
     closeSheet();
     go('today');
-    toast(keepKey ? 'The app is empty again. Your API key is kept' : 'The app is empty again');
+    toast(keepKey ? 'Factory reset done. Your API key is kept' : 'Factory reset done');
   },
 };
 // Work that a wipe must not run into: it would write its result into the emptied app

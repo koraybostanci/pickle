@@ -1323,12 +1323,27 @@ export function renderSettings() {
     <p class="note" id="update-out" role="status"></p>`;
 
   const reset = `
-    <p class="note">All entries and their photos, weigh-ins, steps, water, workout days and checks are deleted from this device. The plan’s pictures, settings and keys stay.</p>
-    <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Delete all entries</button></div>
-    <h3 class="sub-head">Start from scratch</h3>
-    <p class="note">Deletes everything on this device and returns the app to how it was on its first launch: entries, photos, weigh-ins, the plan’s pictures, targets, favourites, saved places and the usage totals. Save a backup first if you may want any of it back.</p>
-    <label class="check"><input type="checkbox" id="keep-key" checked> Keep my API key and provider</label>
-    <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe-all">Reset everything</button></div>`;
+    <p class="note">Neither can be undone. <button type="button" class="link link-inline" data-act="export">Save a backup first</button></p>
+    <section class="reset-card">
+      <h3>Clear my log</h3>
+      <p class="note">Starts your tracking over; the app stays set up as it is.</p>
+      <dl class="reset-diff">
+        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, workout days, day reviews and Check verdicts.</dd></div>
+        <div><dt class="is-kept">Keeps</dt><dd>Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.</dd></div>
+      </dl>
+      <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Clear my log</button></div>
+    </section>
+    <section class="reset-card">
+      <h3>Factory reset</h3>
+      <p class="note">Back to how the app was on its first launch.</p>
+      <dl class="reset-diff">
+        <div><dt class="is-gone">Deletes</dt><dd>Everything above, plus your goals and dates, favourites, saved places, the plan’s pictures, the usage totals and your other settings. The getting-started steps come back.</dd></div>
+        <div><dt class="is-kept">Keeps</dt><dd>Nothing, except your API key and provider if the box is ticked.</dd></div>
+      </dl>
+      <label class="check"><input type="checkbox" id="keep-key" checked> Keep my API key and provider</label>
+      <div class="actions"><button type="button" class="btn btn-danger btn-danger-solid" data-act="wipe-all">Factory reset</button></div>
+      <p class="note">You will be asked to type DELETE.</p>
+    </section>`;
 
   return `
   <header class="sheet-top"><h2 id="sheet-title">Settings</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
@@ -1339,7 +1354,7 @@ export function renderSettings() {
     ${section('location', 'Location', s.useLocation ? (places.length ? 'On: ' + places.map((p) => p.name).join(', ') : 'On, no saved places') : 'Off', location)}
     ${section('favorites', 'Favourites', favorites.length ? `${favorites.length} ${favorites.length === 1 ? 'meal' : 'meals'}` : 'None yet', favoritesBody)}
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
-    ${section('reset', 'Reset', '', reset)}
+    ${section('reset', 'Reset', 'Clear my log, or factory reset', reset)}
   </div>
   <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.</span><span>Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
 }
