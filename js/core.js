@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '26'; // bump together with VERSION in sw.js
+export const APP_VERSION = '27'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -35,7 +35,7 @@ export const S = {
   persisted: null,
   storage: null,
   calPick: null,
-  chartRange: 'weeks', // the weight chart: the last two weeks, or the whole plan
+  chartRange: 'weeks', // the weight chart: 'week' (7 days), 'weeks' (14) or 'whole' (the plan)
   sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num'|'slot'|'plan'|'plan-frame', ...}
   openSetting: '', // expanded section in Settings
 };
@@ -165,6 +165,19 @@ export function projection() {
     if (daysLeft <= 0) out.eta = today();
   }
   return out;
+}
+
+// The days the weight chart spans and where its date ticks go. range: 'week', 'weeks' or 'whole'; firstDay: the first weigh-in, or ''
+export function chartWindow(range, t, s, firstDay) {
+  if (range === 'whole') {
+    let x0 = s.startDate;
+    if (firstDay && firstDay < x0) x0 = diffDays(firstDay, s.startDate) > 21 ? addDays(s.startDate, -21) : firstDay;
+    return { x0, x1: s.targetDate, ticks: null };
+  }
+  const week = range === 'week';
+  const x0 = addDays(t, week ? -6 : -13);
+  const at = (i, anchor) => [addDays(x0, i), anchor];
+  return { x0, x1: t, ticks: week ? [at(0, 'start'), at(2, 'middle'), at(4, 'middle'), at(6, 'end')] : [at(0, 'start'), at(7, 'middle'), at(13, 'end')] };
 }
 
 export function weekStart(day) {

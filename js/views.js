@@ -1,7 +1,7 @@
 import {
   S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
-  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg,
+  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
@@ -14,6 +14,7 @@ const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' }
 const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });
 const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
 const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
+const dWd = new Intl.DateTimeFormat(LOCALE, { weekday: 'short', day: 'numeric' });
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const dayWord = (n) => (n === 1 ? 'day' : 'days');
 const days = (n) => `${n} ${dayWord(n)}`;
@@ -827,29 +828,24 @@ export function renderCheck() {
 // ——— Progress ———
 let chartData = null;
 
-// The weight chart. Two ranges: the last two weeks, where every weigh-in can be read, and the whole plan, which
-// shows where it is going and when you arrive at this pace. Brass is you (the 7-day average), the dashed teal line
-// is your line (the schedule), grey dots are the daily weigh-ins. The height never spans less than 2 kg, so a
-// normal day-to-day wobble does not look like a cliff.
+const RANGE_TEXT = { week: 'the last 7 days', weeks: 'the last two weeks', whole: 'the whole plan' };
+
+// The weight chart. Three ranges: the last 7 days or the last two weeks, where every weigh-in can be read, and the
+// whole plan, which shows where it is going and when you arrive at this pace. Brass is you (the 7-day average),
+// the dashed teal line is your line (the schedule), grey dots are the daily weigh-ins. The height never spans less
+// than 2 kg, so a normal day-to-day wobble does not look like a cliff.
 function weightChart() {
   const s = S.settings;
   const whole = S.chartRange === 'whole';
+  const week = S.chartRange === 'week';
+  const rangeText = RANGE_TEXT[S.chartRange] || RANGE_TEXT.weeks;
   const series = weightSeries();
   const t = today();
   const pr = projection();
   const W = 340;
   const H = 214;
   const m = { l: 34, r: whole ? 42 : 64, t: 14, b: 26 };
-  let x0;
-  let x1;
-  if (whole) {
-    x0 = s.startDate;
-    if (series.length && series[0].day < x0) x0 = diffDays(series[0].day, s.startDate) > 21 ? addDays(s.startDate, -21) : series[0].day;
-    x1 = s.targetDate;
-  } else {
-    x0 = addDays(t, -13);
-    x1 = t;
-  }
+  const { x0, x1, ticks } = chartWindow(S.chartRange, t, s, series.length ? series[0].day : '');
   const span = Math.max(1, diffDays(x0, x1));
   const lineAt = (d) => (d < s.startDate ? s.startKg : targetAt(d, s));
   const visible = series.filter((d) => d.day >= x0 && d.day <= x1);
@@ -886,11 +882,12 @@ function weightChart() {
       }
     }
   } else {
-    xTicks = [[x0, 'start'], [addDays(x0, 7), 'middle'], [x1, 'end']]
-      .map(([d, anchor]) => `<text x="${f(X(d))}" y="${H - 8}" text-anchor="${anchor}" class="c-axis">${esc(dTiny.format(parseDay(d)))}</text>`).join('');
+    const dTick = week ? dWd : dTiny;
+    xTicks = ticks
+      .map(([d, anchor]) => `<text x="${f(X(d))}" y="${H - 8}" text-anchor="${anchor}" class="c-axis">${esc(dTick.format(parseDay(d)))}</text>`).join('');
   }
   const linePts = lineDays.slice().sort().map((d) => `${f(X(d))},${f(Y(lineAt(d)))}`).join(' ');
-  const r = whole ? 2.4 : 3.2;
+  const r = whole ? 2.4 : week ? 4 : 3.2;
   const dots = visible.map((d) => `<circle cx="${f(X(d.day))}" cy="${f(Y(d.kg))}" r="${r}" class="c-dot"/>`).join('');
   const path = avgPoints.map((p, i) => `${i ? 'L' : 'M'}${f(X(p.day))} ${f(Y(p.kg))}`).join(' ');
 
@@ -919,13 +916,14 @@ function weightChart() {
   const todayLine = whole && t >= x0 && t <= x1 ? `<line x1="${f(X(t))}" x2="${f(X(t))}" y1="${m.t}" y2="${H - m.b}" class="c-today"/>` : '';
   chartData = { x0, span, m, W, H, avg: Object.fromEntries(avgPoints.map((p) => [p.day, p.kg])) };
   const alt = end
-    ? `Weight ${whole ? 'over the whole plan' : 'over the last two weeks'}: 7-day average ${n1(end.kg)} kg, your line ${n1(lineAt(t < x1 ? t : x1))} kg${whole && pr && pr.eta ? `, at this pace you arrive on ${dShort.format(parseDay(pr.eta))}` : ''}.`
-    : `Weight chart: no weigh-ins ${whole ? 'yet' : 'in the last two weeks'}.`;
+    ? `Weight over ${rangeText}: 7-day average ${n1(end.kg)} kg, your line ${n1(lineAt(t < x1 ? t : x1))} kg${whole && pr && pr.eta ? `, at this pace you arrive on ${dShort.format(parseDay(pr.eta))}` : ''}.`
+    : `Weight chart: no weigh-ins ${whole ? 'yet' : `in ${rangeText}`}.`;
   return `<div class="chart">
     <div class="chart-head"><h2>Weight</h2>
       <div class="seg" role="group" aria-label="Chart range">
-        <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!whole}">2 weeks</button>
-        <button type="button" data-act="chart-range" data-v="whole" aria-pressed="${whole}">Whole plan</button>
+        <button type="button" data-act="chart-range" data-v="week" aria-pressed="${week}">Week</button>
+        <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!week && !whole}">2 weeks</button>
+        <button type="button" data-act="chart-range" data-v="whole" aria-label="Whole plan" aria-pressed="${whole}">Overall</button>
       </div>
     </div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(alt)}">
@@ -938,7 +936,7 @@ function weightChart() {
       <line id="c-cross" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" class="c-cross" visibility="hidden"/>
     </svg>
     <div class="tip" id="c-tip" hidden></div>
-    ${!end && !whole ? '<p class="note">No weigh-ins in the last two weeks.</p>' : ''}
+    ${!end && !whole ? `<p class="note">No weigh-ins in ${rangeText}.</p>` : ''}
     <p class="legend"><span><i class="key-avg"></i>You (7-day average)</span><span><i class="key-target"></i>Your line</span><span><i class="key-dot"></i>Daily weigh-in</span>${proj ? '<span><i class="key-proj"></i>At this pace</span>' : ''}</p>
   </div>`;
 }
