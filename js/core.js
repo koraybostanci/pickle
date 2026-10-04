@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '28'; // bump together with VERSION in sw.js
+export const APP_VERSION = '29'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -311,6 +311,48 @@ export function verdictText(v) {
   if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short.`);
   if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
   return out;
+}
+
+// ——— The day's calories as one budget ———
+export const PACE = { fast: 1.25, slow: 0.7 }; // eaten / planned-by-now: above fast is ahead of the plan, below slow behind it
+// What the plan has spent at each meal time: each main slot spends the average of its options, scaled so the day ends at its budget
+export function planSteps(target) {
+  const steps = SLOTS.filter((x) => x.id !== 'late').map((x) => {
+    const options = MEALS.filter((m) => m.slot === x.id);
+    const [h, m] = x.time.split(':').map(Number);
+    return { id: x.id, name: x.name, time: x.time, at: h + m / 60, kcal: options.reduce((a, o) => a + o.kcal, 0) / (options.length || 1) };
+  });
+  const scale = target / (steps.reduce((a, x) => a + x.kcal, 0) || 1);
+  steps.forEach((x) => { x.kcal *= scale; });
+  return steps;
+}
+export const plannedBy = (target, hour) => planSteps(target).filter((x) => x.at <= hour).reduce((a, x) => a + x.kcal, 0);
+// The day's calories against its budget and, for a day in progress (planned = kcal the plan has spent by now), against the plan's pace.
+// planned === null means a finished day. → { level: '' | 'over' | 'back', tone: 'good' | 'warn' | 'bad' | 'calm', text }
+export function budgetVerdict({ target, eaten: kcal, planned }) {
+  const eaten = Math.round(kcal); // as dayVerdict rounds it
+  const rem = target - eaten;
+  const n = (x) => fmtInt(Math.abs(x));
+  const past = planned == null;
+  const level = rem < -target * (BAND.near - 1) ? 'back' : rem < -target * (BAND.high - 1) ? 'over' : '';
+  if (level) return { level, tone: level === 'back' ? 'bad' : 'warn', text: past ? `Ended ${n(rem)} over` : level === 'back' ? 'Well over budget' : 'A bit over budget' };
+  if (past) {
+    if (!eaten) return { level, tone: 'calm', text: 'Nothing logged' };
+    const text = Math.abs(rem) <= 25 ? 'Ended on budget' : rem > 0 ? `Ended ${n(rem)} under` : `Ended ${n(rem)} over`;
+    return { level, tone: eaten < target * BAND.low ? 'calm' : 'good', text };
+  }
+  if (rem <= 0) return planned >= target - 1 ? { level, tone: 'good', text: 'Budget used' } : { level, tone: 'warn', text: 'Budget used early' }; // within the slack still counts as on target, once the plan has spent it too
+  if (!planned) return { level, tone: 'calm', text: '' };
+  if (!eaten) return { level, tone: 'calm', text: 'Nothing eaten yet' };
+  const rate = eaten / planned;
+  if (rate > PACE.fast) return { level, tone: 'warn', text: `${n(eaten - planned)} over plan pace` };
+  if (rate < PACE.slow) return { level, tone: 'calm', text: `${n(eaten - planned)} under plan pace` };
+  return { level, tone: 'good', text: 'On plan pace' };
+}
+// Where the bar's marks sit, as shares of its width: the width is the budget, or what was eaten when that is more
+export function budgetMeter({ target, eaten, planned }) {
+  const D = Math.max(target, eaten) || 1;
+  return { eat: eaten / D, cap: target / D, plan: planned > 0 && planned < target - 1 ? planned / D : null };
 }
 
 // A review belongs to the log it was written for: it goes stale when the day's meals change, or when it was written before the day ended

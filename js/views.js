@@ -1,7 +1,8 @@
 import {
-  S, today, eff, mealsOf, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
+  S, today, eff, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
+  plannedBy, planSteps, budgetVerdict, budgetMeter,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
@@ -28,6 +29,7 @@ const ICON = {
 };
 ICON.close = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
 const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
+const ALERT = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v5.5M8 12v.5"/></svg>';
 const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l2.5 1.5"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
 const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
@@ -159,107 +161,27 @@ function weekStrip(day) {
   <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}">${count}</span></p>`;
 }
 
-// ——— The day's calories as a budget that burns down, the way an error budget does.
-// The solid line is what is left after each meal, the dashed line is the plan's pace,
-// and from "now" the forecast runs on with the meals still to come. ———
+// ——— The day's calories as one budget: what is left, how far the day has got, and where the plan would have it by now ———
 function budgetTile(day) {
   const isToday = day === today();
   const target = dayTarget(day);
-  const meals = mealsOf(day).slice().sort((a, b) => a.ts - b.ts);
-  const eaten = meals.reduce((a, e) => a + eff(e).kcal, 0);
+  const eaten = Math.round(dayTotals(day).kcal);
   const rem = target - eaten;
-  const hourOf = (ts) => { const d = new Date(ts); return d.getHours() + d.getMinutes() / 60; };
-  const H0 = 6;
-  const H1 = 24;
-  const now = isToday ? Math.min(H1, Math.max(H0, hourOf(Date.now()))) : H1;
-
-  // The plan's pace: each slot spends its average plan meal, scaled so the day ends at zero
-  const slots = SLOTS.filter((x) => x.id !== 'late').map((x) => {
-    const options = MEALS.filter((m) => m.slot === x.id);
-    const [h, m] = x.time.split(':').map(Number);
-    return { id: x.id, at: h + m / 60, kcal: options.reduce((a, o) => a + o.kcal, 0) / (options.length || 1) };
-  });
-  const scale = target / (slots.reduce((a, x) => a + x.kcal, 0) || 1);
-  slots.forEach((x) => { x.kcal *= scale; });
-  const plannedByNow = slots.filter((x) => x.at <= now).reduce((a, x) => a + x.kcal, 0);
-  const logged = new Set(meals.map((e) => e.slot));
-  const open = isToday ? slots.filter((x) => !logged.has(x.id)) : [];
-  const forecast = rem - open.reduce((a, x) => a + x.kcal, 0);
-
-  // Geometry
-  const X0 = 30;
-  const X1 = 322;
-  const YT = 8;
-  const Y0 = 66;
-  const YB = 78;
-  const x = (h) => X0 + ((Math.min(H1, Math.max(H0, h)) - H0) / (H1 - H0)) * (X1 - X0);
-  const y = (v) => (v >= 0 ? YT + ((target - Math.min(v, target)) / target) * (Y0 - YT) : Y0 + Math.min(1, -v / (target * 0.25)) * (YB - Y0));
-  const f = (n) => n.toFixed(1);
-  let plan = `M${f(x(H0))} ${f(y(target))}`;
-  let left = target;
-  for (const sl of slots) { plan += `H${f(x(sl.at))}`; left -= sl.kcal; plan += `V${f(y(left))}`; }
-  plan += `H${f(x(H1))}`;
-  let actual = `M${f(x(H0))} ${f(y(target))}`;
-  let r = target;
-  let dots = '';
-  for (const e of meals) {
-    const t = Math.min(now, Math.max(H0, hourOf(e.ts)));
-    actual += `H${f(x(t))}`;
-    r -= eff(e).kcal;
-    actual += `V${f(y(r))}`;
-    dots += `<circle cx="${f(x(t))}" cy="${f(y(r))}" r="2.6" class="burn-dot"/>`;
-  }
-  actual += `H${f(x(now))}`;
-  const area = `${actual}V${f(Y0)}H${f(x(H0))}Z`;
-  let ahead = '';
-  if (isToday && now < H1) {
-    ahead = `M${f(x(now))} ${f(y(rem))}`;
-    let v = rem;
-    for (const sl of open) { ahead += `H${f(x(Math.max(now, sl.at)))}`; v -= sl.kcal; ahead += `V${f(y(v))}`; }
-    ahead += `H${f(x(H1))}`;
-  }
-
-  // The verdict, in the budget's own terms
-  const slack = target * (BAND.high - 1); // how far over still counts as on target
-  const over = rem < -slack;
-  const wayOver = rem < -target * (BAND.near - 1); // well over: red; a little over: amber
-  const rate = plannedByNow > 0 ? eaten / plannedByNow : 0;
-  let tone = 'calm';
-  let verdict;
-  if (!isToday) {
-    verdict = rem >= 0 ? `Ended ${n0(rem)} under` : `Ended ${n0(-rem)} over`;
-    tone = wayOver ? 'bad' : over ? 'warn' : meals.length ? 'good' : 'calm';
-  } else if (rem < 0) { verdict = wayOver ? 'Well over' : 'A bit over'; tone = wayOver ? 'bad' : 'warn'; }
-  else if (!meals.length) verdict = plannedByNow > 0 ? 'Nothing spent yet' : 'Full budget';
-  else if (plannedByNow === 0) verdict = 'Early start';
-  else if (rate > 1.25) { verdict = `${rate.toLocaleString(LOCALE, { maximumFractionDigits: 1 })}× the plan's pace`; tone = 'warn'; }
-  else if (rate < 0.7) verdict = 'Under plan so far';
-  else { verdict = 'On pace'; tone = 'good'; }
-  let foot;
-  if (!isToday || now >= H1) foot = ''; // "eaten" on the left says it all
-  else if (!open.length) foot = rem >= 0 ? `All meals in, ${n0(rem)} kcal to spare` : `All meals in, ${n0(-rem)} kcal over`;
-  else foot = Math.abs(forecast) < 10 ? 'Forecast: ends on budget' : forecast > 0 ? `Forecast: ends ${n0(forecast)} kcal under` : `Forecast: ends ${n0(-forecast)} kcal over`;
-  const forecastBad = isToday && open.length > 0 && forecast < -slack;
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal spent, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}. ${verdict}.${foot ? ` ${foot}.` : ''}`;
-  return `<div class="tile tile-budget${rem < 0 ? ' is-over' : ''}${wayOver ? ' is-way-over' : ''}" role="group" aria-label="${esc(label)}">
-    <div class="budget-head">
-      <p class="budget-big"><b>${n0(Math.abs(rem))}</b><span>${rem >= 0 ? `kcal left of ${n0(target)}` : 'kcal over'}</span></p>
-      <i class="pill pill-${tone}">${tone === 'good' ? CHECK : ''}${esc(verdict)}</i>
-    </div>
-    <svg class="burn" viewBox="0 0 330 92" aria-hidden="true">
-      <rect x="${X0}" y="${Y0}" width="${X1 - X0}" height="${YB - Y0}" class="burn-red"/>
-      <path d="${area}" class="burn-area"/>
-      <path d="${plan}" class="burn-plan"/>
-      <path d="M${X0} ${Y0}H${X1}" class="burn-zero"/>
-      ${ahead ? `<path d="${ahead}" class="burn-ahead${forecastBad ? ' is-bad' : ''}"/>` : ''}
-      <path d="${actual}" class="burn-line"/>
-      ${dots}
-      ${isToday && now < H1 ? `<path d="M${f(x(now))} ${YT - 4}V${YB}" class="burn-now"/><circle cx="${f(x(now))}" cy="${f(y(rem))}" r="4.5" class="burn-head"/>` : ''}
-      <text x="${X0 - 5}" y="${YT + 4}" text-anchor="end" class="burn-axis">${target >= 1000 ? (target / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 2 }) + 'k' : n0(target)}</text>
-      <text x="${X0 - 5}" y="${Y0 + 4}" text-anchor="end" class="burn-axis">0</text>
-      ${[6, 12, 18, 24].map((h) => `<text x="${f(x(h))}" y="90" text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}" class="burn-axis">${String(h).padStart(2, '0')}</text>`).join('')}
-    </svg>
-    <p class="budget-foot"><span><b>${n0(eaten)}</b> eaten</span>${foot ? `<span${forecastBad ? ' class="is-bad"' : ''}>${esc(foot)}</span>` : ''}</p>
+  const now = new Date();
+  const planned = isToday ? plannedBy(target, now.getHours() + now.getMinutes() / 60) : null;
+  const v = budgetVerdict({ target, eaten, planned });
+  const m = budgetMeter({ target, eaten, planned });
+  const pct = (x) => `${(x * 100).toFixed(1)}%`;
+  const due = planned != null && planned >= target - 1;
+  const ref = planned == null ? '' : due ? 'All planned meals are due' : planned > 0 ? `Plan by now <b>${n0(planned)}</b>` : planSteps(target)[0] ? `Plan starts at ${planSteps(target)[0].time}` : '';
+  const big = !isToday ? [n0(eaten), `kcal eaten of ${n0(target)}`] : rem >= 0 ? [n0(rem), `kcal left of ${n0(target)}`] : [n0(-rem), 'kcal over budget'];
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${v.text ? ` ${v.text}.` : ''}`;
+  const icon = v.tone === 'good' ? CHECK : v.tone === 'calm' ? '' : ALERT;
+  return `<div class="tile tile-budget${v.level ? ` is-${v.level === 'back' ? 'way-over' : 'over'}` : ''}" role="group" aria-label="${esc(label)}">
+    <span class="tile-top"><span>Calorie budget</span>${v.text ? `<i class="pill${v.tone === 'calm' ? '' : ` pill-${v.tone}`}">${icon}${esc(v.text)}</i>` : ''}</span>
+    <p class="budget-big"><b>${big[0]}</b><span>${big[1]}</span></p>
+    <span class="meter" style="--eat:${pct(m.eat)};--cap:${pct(m.cap)}${m.plan == null ? '' : `;--plan:${pct(m.plan)}`}" aria-hidden="true"><i class="meter-fill"></i>${eaten > target ? '<i class="meter-spill"></i>' : ''}${m.plan == null ? '' : '<i class="meter-plan"></i>'}</span>
+    <p class="budget-key"><span><i class="key-eat"></i><b>${n0(eaten)}</b> eaten</span>${ref ? `<span>${m.plan == null ? '' : '<i class="key-plan"></i>'}${ref}</span>` : ''}</p>
   </div>`;
 }
 
