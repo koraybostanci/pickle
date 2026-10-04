@@ -3,7 +3,7 @@
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanVerdict } from './ai.js';
-import { SCHEMA_VERSION, APP_ID } from './core.js';
+import { SCHEMA_VERSION, APP_ID, COUNT_MAX } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -65,7 +65,8 @@ export function cleanEntry(e) {
 
 export function cleanDay(d) {
   if (!d || typeof d !== 'object' || !isDay(d.day)) return null;
-  const out = { day: d.day, kg: orNull(d.kg, 400), steps: orNull(d.steps, 200000), water: pos(d.water, 20000), train: d.train === true };
+  const out = { day: d.day, kg: orNull(d.kg, 400), steps: orNull(d.steps, 200000), water: pos(d.water, 20000), train: d.train === true,
+    coffee: isNum(d.coffee) ? Math.round(pos(d.coffee, COUNT_MAX)) : null };
   if (d.review && typeof d.review === 'object') {
     const r = cleanReview(d.review);
     if (r.head) out.review = { ...r, ts: pos(d.review.ts, 1e14), sig: txt(d.review.sig, 4000), live: d.review.live === true, model: txt(d.review.model, 60) };

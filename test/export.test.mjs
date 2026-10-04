@@ -10,8 +10,9 @@ const entries = [
   meal('a', '2026-10-06', {}),
   meal('b', '2026-10-06', { kcal: 1000, tier: 'off', title: "semi;colon -- and 'quotes'\nnewline", mult: 1.5 }),
   meal('c', '2026-10-07', { status: 'pending', kcal: 0 }),
+  meal('d', '2026-10-06', { title: 'Beer 0.5 l', src: 'flex', tier: 'flex', slot: 'late', kcal: 215, flags: ['alcohol'], items: [] }),
 ];
-const days = [{ day: '2026-10-06', kg: 85.4, steps: 8200, water: 2000 }, { day: '2026-10-07', kg: 85.0, train: true }];
+const days = [{ day: '2026-10-06', kg: 85.4, steps: 8200, water: 2000, coffee: 2 }, { day: '2026-10-07', kg: 85.0, train: true }];
 const load = (db) => db.exec(buildSql({ settings, entries, days, appVersion: 'test' }).sql);
 const rows = (db, sql) => db.prepare(sql).all();
 
@@ -19,7 +20,7 @@ test('the file loads, twice, and the numbers are multiplied by the portion', () 
   const db = new DatabaseSync(':memory:');
   load(db);
   load(db); // a newer export replaces the tables
-  assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_meals')[0].n, 3);
+  assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_meals')[0].n, 4);
   const b = rows(db, "SELECT kcal, title, portion FROM weightplan_meals WHERE id = 'b'")[0];
   assert.equal(b.kcal, 1500);
   assert.equal(b.portion, 1.5);
@@ -38,6 +39,16 @@ test('the README queries run', () => {
   assert.equal(rows(db, 'SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM weightplan_daily ORDER BY day').length, 2);
   assert.equal(rows(db, 'SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal')[0].day, '2026-10-06');
   assert.equal(rows(db, "SELECT day, title, kcal FROM weightplan_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC").length, 1);
+  assert.deepEqual(rows(db, "SELECT date(day, 'weekday 0', '-6 days') AS week, SUM(beers) AS beers, SUM(COALESCE(coffee_cups, 0)) AS coffees FROM weightplan_daily GROUP BY week ORDER BY week").map((r) => ({ ...r })),
+    [{ week: '2026-10-05', beers: 1, coffees: 2 }]);
+});
+
+test('coffee and beers per day: the tally, and the flex entries flagged alcohol', () => {
+  const db = new DatabaseSync(':memory:');
+  load(db);
+  const [a, b] = rows(db, 'SELECT coffee_cups, beers FROM weightplan_daily ORDER BY day');
+  assert.deepEqual({ ...a }, { coffee_cups: 2, beers: 1 });
+  assert.deepEqual({ ...b }, { coffee_cups: null, beers: 0 });
 });
 
 test('loading leaves other tables in the database alone', () => {
