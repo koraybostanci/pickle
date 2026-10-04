@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
-  fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION,
+  fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText,
 } from '../js/core.js';
 import { addDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -39,6 +39,17 @@ test('calorie bands decide the verdict level', () => {
   assert.equal(dayVerdict(day(-1)).level, 'over');
   assert.equal(dayStatus(day(-1)), 'near');
   assert.ok(BAND.low < BAND.high && BAND.high < BAND.near);
+});
+
+test('the verdict wording says budget and plan, never target', () => {
+  reset();
+  const texts = Object.values(VERDICT);
+  for (const kcal of [1550 * 1.16, 1550 * 1.10, 1550 * 0.7, 1550]) {
+    S.entries = []; meal(day(-1), kcal, 135);
+    texts.push(...verdictText(dayVerdict(day(-1))));
+  }
+  assert.ok(texts.length > Object.keys(VERDICT).length);
+  for (const t of texts) assert.doesNotMatch(t, /target/i);
 });
 
 test('a week without weighing keeps the last average, so progress does not reset', () => {
