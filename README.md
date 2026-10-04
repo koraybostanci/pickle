@@ -39,8 +39,8 @@ your start weight to your goal.
   and protein for a portion, and tells you how to order it so that it fits or what to have instead.
   One tap logs the option you chose.
 - **Progress:** the beam with every kilo marked and the next one named, runs of days on plan, the
-  weight chart (the last two weeks, or the whole plan with where this pace arrives) with a 7-day
-  average, projected arrival date, a consistency calendar and checkpoints.
+  weight chart (the last 7 days, the last two weeks, or the whole plan with where this pace
+  arrives) with a 7-day average, projected arrival date, a consistency calendar and checkpoints.
 - **Plan:** every meal option as a compact card with a picture, two to a row, its ingredients and
   amounts one tap away, and the rules of the plan. The pictures are your own photos: add one from
   the meal's card, or let the first logged photo that matches a plan meal fill it in. Every picture
