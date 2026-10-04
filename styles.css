@@ -519,9 +519,8 @@ button.cell::before { content: ""; position: absolute; inset: -8px -2px; } /* th
 #view > .plan-slot { margin-top: 24px; }
 .plan-slot h2 small { margin-left: 8px; font: 500 12px var(--mono); color: var(--ink2); }
 .plan-slot .note { margin-top: 2px; }
-.plan-row { display: flex; gap: 10px; margin: 10px calc(-16px - var(--sar)) 0 calc(-16px - var(--sal)); padding: 0 calc(16px + var(--sar)) 4px calc(16px + var(--sal)); overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none; }
-.plan-row::-webkit-scrollbar { display: none; }
-.plan-card { flex: 0 0 min(46%, 190px); scroll-snap-align: start; display: grid; align-content: start; gap: 4px; padding: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--raised); text-align: left; overflow: hidden; transition: transform .12s ease; }
+.plan-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.plan-card { display: grid; align-content: start; gap: 2px; width: 100%; min-width: 0; padding: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--raised); text-align: left; overflow: hidden; transition: transform .12s ease; }
 .plan-card:active { transform: scale(.98); }
 .plan-pic { position: relative; display: block; aspect-ratio: 1; background: var(--table); overflow: hidden; border-bottom: 1px solid var(--line); }
 /* The house format: every picture is a round plate with the same rim, on the same table */
@@ -531,9 +530,14 @@ button.cell::before { content: ""; position: absolute; inset: -8px -2px; } /* th
 .plan-pic-empty { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 6px; color: var(--ink2); text-align: center; padding: 0 16px; }
 .plan-pic-empty svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 1.5; opacity: .7; }
 .plan-pic-empty em { font-style: normal; font-size: 12.5px; }
-.plan-name { padding: 6px 12px 0; font: 600 14.5px/1.25 var(--txt); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-height: calc(2.5em + 6px); }
-.plan-meta { padding: 0 12px; font: 500 12px var(--mono); color: var(--ink2); }
-.plan-meta b { font: inherit; color: var(--ink); }
+.plan-card .plan-pic { aspect-ratio: 2 / 1; }
+.plan-card .plan-pic img { box-shadow: 0 0 0 2px var(--rim), 0 3px 8px -4px rgb(0 0 0 / .25); }
+.plan-card .plan-pic-empty { gap: 4px; padding: 0 8px; }
+.plan-card .plan-pic-empty svg { width: 34px; height: 34px; }
+.plan-card .plan-pic-empty em { font-size: 12px; }
+.plan-name { padding: 8px 10px 0; font: 600 14px/1.25 var(--txt); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-height: calc(2.5em + 8px); }
+.plan-meta { padding: 0 10px; font: 500 12px var(--txt); color: var(--ink2); }
+.plan-meta b { font: 600 13px var(--mono); color: var(--ink); }
 .plan-meta > span { white-space: nowrap; }
 .plan-photo { margin-top: 4px; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; }
 .plan-photo .plan-pic { aspect-ratio: 3 / 2; border-bottom: 0; }
@@ -724,6 +728,9 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
   .day b { height: 36px; font-size: 14px; }
   .budget-big b { font-size: 42px; }
   .budget-foot { flex-wrap: wrap; gap: 0 10px; }
+  .plan-name { -webkit-line-clamp: 3; line-clamp: 3; min-height: calc(3.75em + 8px); }
+  .plan-meta { font-size: 11px; }
+  .plan-meta b { font-size: 12px; }
   .tile-val b { font-size: 22px; }
   .tile { padding: 10px 11px; }
   .tile-main { padding: 10px 11px; }

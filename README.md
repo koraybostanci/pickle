@@ -41,11 +41,11 @@ your start weight to your goal.
 - **Progress:** the beam with every kilo marked and the next one named, runs of days on plan, the
   weight chart (the last two weeks, or the whole plan with where this pace arrives) with a 7-day
   average, projected arrival date, a consistency calendar and checkpoints.
-- **Plan:** every meal option as a card with a picture, its ingredients and amounts one tap away,
-  and the rules of the plan. The pictures are your own photos: add one from the meal's card, or let
-  the first logged photo that matches a plan meal fill it in. Every picture gets the same treatment,
-  so the plan looks like one set: you frame the plate in a circle, and light, colour and contrast are
-  evened out.
+- **Plan:** every meal option as a compact card with a picture, two to a row, its ingredients and
+  amounts one tap away, and the rules of the plan. The pictures are your own photos: add one from
+  the meal's card, or let the first logged photo that matches a plan meal fill it in. Every picture
+  gets the same treatment, so the plan looks like one set: you frame the plate in a circle, and
+  light, colour and contrast are evened out.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
 water and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses` or `workout` is understood
