@@ -286,7 +286,7 @@ const FALLBACK_ON = ['server', 'rate', 'no_quota'];
 
 // ——— The day's review: text only, a few hundred tokens ———
 const REVIEW_SYSTEM = `You review one day of a food log for one person on a weight-loss plan, against the plan and the goal. Reply with JSON only, in English.
-The plan: the calorie and protein targets given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
+The plan: the calorie budget and protein goal given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
 Use only the foods and numbers given; never invent an amount. Name the actual foods. Be direct and concrete, like a coach reading the numbers: no praise for its own sake, no moralising, no medical advice.

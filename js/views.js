@@ -63,9 +63,9 @@ function progressSummary() {
     if (a.kg <= s.targetKg) {
       head = `You reached ${s.targetKg} kg`;
       line = `${moved} since ${dShort.format(parseDay(s.startDate))}.`;
-      tag = 'Target reached';
+      tag = 'Goal reached';
     } else {
-      if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the target`;
+      if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the goal`;
       else if (Math.abs(diff) <= 0.2) head = 'On schedule';
       else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
       else head = `${n1(diff)} kg behind schedule`;
@@ -129,7 +129,7 @@ function beam(a, target, started) {
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
-const STATUS_LABEL = { on: 'on target', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
+const STATUS_LABEL = { on: 'on plan', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
 
 // ——— Week strip: the seven days of the week as tokens. The colour is how the day went; tap one to open it. ———
 function weekStrip(day) {
@@ -481,7 +481,7 @@ function coachLine(day) {
     head = 'Meals done.';
     line = `Protein is ${n0(sg.remP)} g short.`;
   } else {
-    head = 'All meals in, on target.';
+    head = 'All meals in, on budget.';
     line = 'Nicely done.';
   }
   return `<section class="coach${over ? ' is-over' : ''}">${POISE}<p><b>${esc(head)}</b> ${esc(line)}</p></section>`;
@@ -545,7 +545,7 @@ export function renderNumSheet(kind, day) {
   return `
   <header class="sheet-top"><h2 id="sheet-title">${title}</h2><button type="button" class="btn" data-act="close-sheet">Cancel</button></header>
   <form id="num-form" class="num" data-kind="${kind}" data-day="${day}" autocomplete="off">
-    <label for="num-in" class="note">${isKg ? 'Weigh in the morning under the same conditions. A single day fluctuates; the maths uses the 7-day average.' : `Your daily step count from the phone’s Health app. Target ${n0(S.settings.steps)}.`}</label>
+    <label for="num-in" class="note">${isKg ? 'Weigh in the morning under the same conditions. A single day fluctuates; the maths uses the 7-day average.' : `Your daily step count from the phone’s Health app. Goal ${n0(S.settings.steps)}.`}</label>
     <div class="num-row"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? esc(isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.settings.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : 'steps'}</span></div>
     <p class="note is-error" id="num-err" role="alert" hidden></p>
     <button type="submit" class="btn btn-primary btn-wide">Save</button>
@@ -964,7 +964,7 @@ export function attachChart(root) {
     const rows = [[dShort.format(parseDay(day)), '']];
     if (d && d.kg) rows.push([n1(d.kg) + ' kg', 'weigh-in']);
     if (chartData.avg[day]) rows.push([n1(chartData.avg[day]) + ' kg', 'average']);
-    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', 'target']);
+    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', 'line']);
     tip.innerHTML = '';
     rows.forEach(([value, label], k) => {
       const p = document.createElement('p');
@@ -1014,7 +1014,7 @@ function calendar() {
   return `<div class="calendar card">
     <div class="cal-row cal-head"><span class="cal-month"></span>${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}</div>
     ${rows}
-    <p class="legend"><span><i class="cell cell-on"></i>on target</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>over</span><span><i class="cell cell-none"></i>nothing logged</span></p>
+    <p class="legend"><span><i class="cell cell-on"></i>on plan</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>over</span><span><i class="cell cell-none"></i>nothing logged</span></p>
     ${pick}
   </div>`;
 }
@@ -1026,7 +1026,7 @@ function checkpoints() {
   for (let i = 28; i < total - 6; i += 28) points.push(addDays(s.startDate, i));
   points.push(s.targetDate);
   const t = today();
-  return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Target</th><th scope="col">Your average</th></tr></thead><tbody>
+  return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Your line</th><th scope="col">Your average</th></tr></thead><tbody>
     ${points.map((d) => { const a = d <= t ? avg7(d) : null; return `<tr><td>${esc(dShort.format(parseDay(d)))}</td><td>${n1(targetAt(d, s))} kg</td><td>${a ? n1(a.kg) + ' kg' : '–'}</td></tr>`; }).join('')}
   </tbody></table>`;
 }
@@ -1039,7 +1039,7 @@ function adjustNotice() {
   const b = avg7(addDays(t, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
   if (a.kg - targetAt(t, s) > 0.7 && b.kg - targetAt(addDays(t, -7), s) > 0.7) {
-    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(KCAL_FLOOR, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open targets</button></div>`;
+    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(KCAL_FLOOR, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open goals</button></div>`;
   }
   return '';
 }
@@ -1064,7 +1064,7 @@ export function renderProgress() {
     let arrive = '';
     if (pr && pr.eta && a.kg > s.targetKg) {
       const early = diffDays(pr.eta, s.targetDate);
-      arrive = ` At this pace you arrive on <b>${esc(dShort.format(parseDay(pr.eta)))}</b>${early > 0 ? `, ${days(early)} early` : early < 0 ? `, ${days(-early)} after the target date` : ', right on the date'}.`;
+      arrive = ` At this pace you arrive on <b>${esc(dShort.format(parseDay(pr.eta)))}</b>${early > 0 ? `, ${days(early)} early` : early < 0 ? `, ${days(-early)} after the goal date` : ', right on the date'}.`;
     }
     note = `${esc(head)}.${arrive}`;
   } else {
@@ -1095,7 +1095,7 @@ export function renderProgress() {
   </section>
   <section>
     <h2>Consistency calendar</h2>
-    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on target or close build a run.'}</p>
+    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on plan or close build a run.'}</p>
     ${calendar()}
   </section>
   <section>
@@ -1105,7 +1105,7 @@ export function renderProgress() {
   <section>
     <details class="table-details">
       <summary>Weigh-in table</summary>
-      ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Target</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
+      ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Line</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
     </details>
   </section>`;
 }
@@ -1169,7 +1169,7 @@ export function renderPlan() {
     <div><h1>Plan</h1><p class="sub">${pictured ? `${pictured} of ${MEALS.length} meals show your own photo.` : 'Tap a meal for its ingredients, and to add a photo of your own plate.'}</p></div>
     <div class="top-actions">${settingsButton}</div>
   </header>
-  <ul class="plan-targets" aria-label="Daily targets">
+  <ul class="plan-targets" aria-label="Daily goals">
     <li>Rest day <b>${n0(s.kcalRest)}</b> kcal</li>
     <li>Workout day <b>${n0(s.kcalTrain)}</b> kcal</li>
     <li>Protein <b>${esc(s.protein)}</b> g</li>
@@ -1284,12 +1284,12 @@ export function renderSettings() {
       <label for="set-start">Start<input id="set-start" type="date" value="${esc(s.startDate)}"></label>
       <label for="set-end">End<input id="set-end" type="date" value="${esc(s.targetDate)}"></label>
       <label for="set-startkg">Start weight<input id="set-startkg" type="text" inputmode="decimal" value="${n1(s.startKg)}"></label>
-      <label for="set-endkg">Target weight<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
+      <label for="set-endkg">Goal weight<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
       <label for="set-rest">Rest-day kcal<input id="set-rest" type="text" inputmode="numeric" value="${esc(s.kcalRest)}"></label>
       <label for="set-train">Workout-day kcal<input id="set-train" type="text" inputmode="numeric" value="${esc(s.kcalTrain)}"></label>
       <label for="set-prot">Protein (g)<input id="set-prot" type="text" inputmode="numeric" value="${esc(s.protein)}"></label>
     </div>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">Save targets</button></div>`;
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">Save goals</button></div>`;
 
   const location = `
     <label class="check"><input type="checkbox" data-act="loc-toggle"${s.useLocation ? ' checked' : ''}> Use the photo’s location</label>
@@ -1308,7 +1308,7 @@ export function renderSettings() {
       <button type="button" class="btn" data-act="import">Restore from backup</button>
     </div>
     <input id="set-import" type="file" accept="application/json,.json" hidden>
-    <p class="note">For analysis on a computer: one .sql file with your days, meals and targets that loads into any SQLite database. Photos, keys and saved places are left out.</p>
+    <p class="note">For analysis on a computer: one .sql file with your days, meals and goals that loads into any SQLite database. Photos, keys and saved places are left out.</p>
     <div class="actions"><button type="button" class="btn" data-act="export-sql">Export for SQLite</button></div>
     <p class="note">${S.persisted === true ? 'Persistent storage is on.' : S.persisted === false ? 'Persistent storage has not been granted yet. Adding the app to the Home Screen makes that more likely.' : ''} ${storage && storage.usage != null ? `Space used: ${mb(storage.usage)} MB.` : ''}</p>
     ${S.persisted === false ? '<div class="actions"><button type="button" class="btn" data-act="persist">Request persistent storage</button></div>' : ''}`;
@@ -1334,7 +1334,7 @@ export function renderSettings() {
   <header class="sheet-top"><h2 id="sheet-title">Settings</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
   <div class="settings">
     ${section('analysis', 'Photo and text analysis', analysisStatus, analysis)}
-    ${section('targets', 'Targets', `${n1(s.startKg)} kg to ${n1(s.targetKg)} kg by ${dShort.format(parseDay(s.targetDate))}`, targets)}
+    ${section('targets', 'Goals', `${n1(s.startKg)} kg to ${n1(s.targetKg)} kg by ${dShort.format(parseDay(s.targetDate))}`, targets)}
     ${section('backup', 'Backup and export', backupStatus, backup)}
     ${section('location', 'Location', s.useLocation ? (places.length ? 'On: ' + places.map((p) => p.name).join(', ') : 'On, no saved places') : 'Off', location)}
     ${section('favorites', 'Favourites', favorites.length ? `${favorites.length} ${favorites.length === 1 ? 'meal' : 'meals'}` : 'None yet', favoritesBody)}
