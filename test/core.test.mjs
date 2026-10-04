@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
-  fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText,
+  fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
 } from '../js/core.js';
-import { addDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
+import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
 const T = today();
 const day = (off) => addDays(T, off);
@@ -121,4 +121,32 @@ test('fresh settings are those of a new install, as new objects each time', () =
   const c = freshCheck();
   c.photos.push(1);
   assert.deepEqual(freshCheck().photos, []);
+});
+
+test('the weight chart spans 7 or 14 days with its date ticks inside and in order; anything unknown is two weeks', () => {
+  reset();
+  for (const [range, days] of [['week', 6], ['weeks', 13], ['bogus', 13], [undefined, 13]]) {
+    const w = chartWindow(range, T, S.settings, '');
+    assert.equal(w.x1, T);
+    assert.equal(diffDays(w.x0, w.x1), days);
+    const ds = w.ticks.map(([d]) => d);
+    assert.ok(ds.every((d) => d >= w.x0 && d <= w.x1));
+    assert.deepEqual(ds, ds.slice().sort().filter((d, i, a) => d !== a[i - 1]));
+    assert.equal(w.ticks[0][1], 'start');
+    assert.equal(w.ticks[w.ticks.length - 1][1], 'end');
+  }
+  assert.deepEqual(chartWindow('week', T, S.settings, '').ticks.map(([d]) => diffDays(T, d)), [-6, -4, -2, 0]);
+  assert.deepEqual(chartWindow('weeks', T, S.settings, '').ticks.map(([d]) => diffDays(T, d)), [-13, -6, 0]);
+});
+
+test('the whole-plan chart starts at the plan, or a little before it when weigh-ins came earlier', () => {
+  reset();
+  const s = S.settings;
+  const w = (first) => chartWindow('whole', T, s, first);
+  assert.equal(w('').x0, s.startDate);
+  assert.equal(w(addDays(s.startDate, 3)).x0, s.startDate); // a weigh-in after the start changes nothing
+  assert.equal(w(addDays(s.startDate, -10)).x0, addDays(s.startDate, -10));
+  assert.equal(w(addDays(s.startDate, -30)).x0, addDays(s.startDate, -21));
+  assert.equal(w('').x1, s.targetDate);
+  assert.equal(w('').ticks, null);
 });

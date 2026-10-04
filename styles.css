@@ -455,7 +455,8 @@ input[type="text"], input[type="password"], input[type="time"], input[type="date
 /* Chart */
 .chart { position: relative; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px 8px; }
 .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding-left: 8px; }
-.chart-head .seg { flex: 1; max-width: 240px; }
+.chart-head .seg { flex: 1; max-width: 260px; }
+.chart-head .seg button { padding: 0 2px; font-size: 13px; white-space: nowrap; }
 .chart svg { display: block; width: 100%; height: auto; touch-action: pan-y; overflow: visible; } /* the target label sits past the plot */
 .chart .legend { padding: 0 8px; }
 .c-grid { stroke: var(--line); stroke-width: 1; }

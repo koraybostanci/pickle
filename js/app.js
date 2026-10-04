@@ -1067,7 +1067,7 @@ const ACT = {
     render();
     toast('Entry updated');
   },
-  'chart-range': (el) => { S.chartRange = el.dataset.v === 'whole' ? 'whole' : 'weeks'; render(); },
+  'chart-range': (el) => { S.chartRange = ['week', 'whole'].includes(el.dataset.v) ? el.dataset.v : 'weeks'; render(); },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
   'goto-day': (el) => { if (el.dataset.day <= today()) { S.viewDay = el.dataset.day; go('today'); } },
   // Settings
