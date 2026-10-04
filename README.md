@@ -14,7 +14,7 @@ add the page to your phone's Home Screen, and your entries are stored on that ph
 A cucumber becomes a pickle through time and steady conditions, not one big effort. That is what
 the app asks of you: a steady average along your line, day after day. The icon shows the pickle in a
 measuring jar. Throughout the app brass is you and teal is your line; on Progress the beam runs from
-your start weight to your target.
+your start weight to your goal.
 
 ## What it does
 
@@ -29,8 +29,8 @@ your start weight to your target.
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
   what the photo does not show and it revises the items; you can also correct the portion, the
   numbers or the time. Every day with a logged meal carries a review. The verdict is worked out on
-  the device (in line, mostly in line, under target, a bit over, well over) and, for a surplus,
-  what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal over target: about 0.06 kg,
+  the device (in line, mostly in line, under budget, a bit over, well over) and, for a surplus,
+  what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal over budget: about 0.06 kg,
   69% of what the day was meant to lose"). The model then writes a short note on what helped, what
   cost the most and what would have reduced it, and one thing to do next.
 - **Check:** a verdict before you order or buy. Photograph a restaurant menu, a dish, or a product
@@ -63,7 +63,7 @@ on the device.
   640 px framed and colour-corrected one. Both are re-encoded, so the stored file carries no
   location, capture time or camera details. The capture time is read once, to time the entry.
 - The day's review sends text only: that day's meals with their numbers, steps, water, weigh-in,
-  your targets, the weight schedule and where you stand against it. No photos.
+  your goals, the weight schedule and where you stand against it. No photos.
 - Photos taken for a check are sent at up to 1536 px, so small print stays readable, together with
   where your day stands. They are not stored; the last 30 verdicts are, as text.
 - The API key is stored on the device only, unencrypted like the rest of the app's data, and is
@@ -71,11 +71,11 @@ on the device.
 - Photo location is off by default. When on, it is read on the device and matched to places you
   saved; the model only receives a label such as "Home" or "out", never coordinates.
 - There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can
-  restore on the same or another device. It holds your entries, targets, favourites, the plan's
+  restore on the same or another device. It holds your entries, goals, favourites, the plan's
   pictures, the verdicts of your checks and your saved places with their coordinates. Photos of
   logged meals are included only when you choose "With photos". Restoring adds the backup's
   entries, days, checks and plan pictures to what is on the device (an entry or day that is in
-  both takes the backup's version); its targets, favourites and saved places replace yours. The
+  both takes the backup's version); its goals, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
 - Settings → "Reset" has two levels. "Delete all entries" removes what you logged (entries, photos,
   weigh-ins, checks) and keeps your settings and the plan's pictures. "Reset everything" empties the
@@ -93,7 +93,7 @@ on the device.
    host nothing else there, or use a custom domain for this app.
 3. Open that address on your phone and add it to the Home Screen (on iPhone: Share → Add to Home
    Screen). The app then opens full screen and works offline.
-4. Open Settings (top right) → Targets and enter your own dates, weights and daily targets.
+4. Open Settings (top right) → Goals and enter your own dates, weights and daily budget.
 
 The app is built for and used on an iPhone. Other modern mobile browsers should work but have
 had less testing.
@@ -129,7 +129,7 @@ it is off.
 The repository ships with one example plan: about 1,550 kcal on rest days and 1,750 kcal on
 workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
-- **Targets** (dates, weights, calories, protein) are changed in the app under Settings → Targets.
+- **Goals** (dates, weights, calories, protein) are changed in the app under Settings → Goals.
   Daily calories below `KCAL_FLOOR` (1,500) are refused, as the plan's rules say. The goals for
   steps, water and fibre come from `DEFAULTS` in `js/plan.js` and apply only before the app is first
   opened on a device.
@@ -140,12 +140,12 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
   - `SLOTS`: the meals of the day and their times.
   - `FLEX`: one-tap weekly extras (a beer, a small dessert) that count against the weekly allowance.
   - `RULES`: the text shown on the Plan tab.
-  - `DEFAULTS`: targets used before anything is saved in Settings.
+  - `DEFAULTS`: goals used before anything is saved in Settings.
 
   The model receives a short digest of the plan with every request, so it follows your changes
   to meals and foods without further setup. Two things are not generated from the file: the numbers
   in `RULES` come from `DEFAULTS`, `KCAL_FLOOR` and `SMALL_TREAT_KCAL`, not from what you saved in
-  Settings → Targets, so keep them in step; and the meal slots are also named in `SLOT_NAME`,
+  Settings → Goals, so keep them in step; and the meal slots are also named in `SLOT_NAME`,
   `slotByTime`, the prompt in `js/ai.js` and the notes on the Plan tab in `js/views.js`, so
   changing the slots means editing those too.
 
@@ -169,11 +169,11 @@ leaves everything else in that database alone.
 | `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `workout`, `target_kcal`, `target_weight_kg` |
 | `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
 | `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
-| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily targets, and the export's own version and time) |
+| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily goals, and the export's own version and time) |
 | `weightplan_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals |
 
 Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
-have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Targets, so
+have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Goals, so
 changing them changes past rows. Photos, API keys and the coordinates of saved places are not
 exported.
 
@@ -181,7 +181,7 @@ exported.
 -- weight against the schedule
 SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM weightplan_daily ORDER BY day;
 
--- days over the calorie target
+-- days over the calorie budget
 SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal;
 
 -- what was off plan, and how much it cost
@@ -221,7 +221,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v24'`) and `APP_VERSION` in `js/core.js` (`'24'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v25'`) and `APP_VERSION` in `js/core.js` (`'25'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
@@ -235,7 +235,7 @@ version is shown under Settings → "Version and updates".
   DOM and no storage, so it loads in Node and can be tested there
 - `js/app.js`: storage, event handling, the analysis queue, backup and restore
 - `js/views.js`: the screens
-- `js/plan.js`: food table, meal templates, targets, rules
+- `js/plan.js`: food table, meal templates, goals, rules
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
 - `js/backup.js`: checks everything read from a backup file before it is stored
 - `js/exif.js`: reads capture time and location from a photo
@@ -254,4 +254,4 @@ version is shown under Settings → "Version and updates".
 - Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
   less likely, and a regular backup covers the rest.
 - This is a tracking tool, not medical or dietary advice. The example plan was written for one
-  person; check your own targets with a professional if you have a health condition.
+  person; check your own goals with a professional if you have a health condition.

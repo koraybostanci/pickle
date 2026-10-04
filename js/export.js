@@ -29,7 +29,7 @@ CREATE TABLE weightplan_days (
   steps            INTEGER,
   water_ml         INTEGER,
   workout          INTEGER NOT NULL DEFAULT 0,  -- 1 on workout days
-  target_kcal      INTEGER NOT NULL,            -- the day's calorie target under the current Targets, so changing them changes past rows
+  target_kcal      INTEGER NOT NULL,            -- the day's calorie budget under the current Goals, so changing them changes past rows
   target_weight_kg REAL                         -- where the schedule stood on the day; NULL before the start date
 );
 

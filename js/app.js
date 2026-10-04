@@ -155,7 +155,7 @@ async function submitText(text) {
       render();
       return toast(`${local.ml} ml of water added`);
     }
-    if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(`Today is a workout day: target ${fmtInt(S.settings.kcalTrain)} kcal`); }
+    if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(`Today is a workout day: budget ${fmtInt(S.settings.kcalTrain)} kcal`); }
     if (local.type === 'plan') return logMeal(local.meal, 'plan', today());
     if (local.type === 'flex') return logMeal({ ...local.flex, slot: 'any', tier: 'flex' }, 'flex', today());
     if (local.type === 'favorite') return logMeal({ ...local.favorite, slot: 'any' }, 'favorite', today());
@@ -290,7 +290,7 @@ function reviewBrief(day) {
   const meals = mealsOf(day).sort((a, b) => a.ts - b.ts);
   const lines = [
     `Day: ${date(day)}, ${dd.train ? 'workout day' : 'rest day'}, ${v.live ? `still in progress, now ${hhmm(Date.now())}` : 'finished'}.`,
-    `Targets: ${v.target} kcal, protein ${s.protein} g (at least ${proteinFloor()}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
+    `Daily budget and goals: ${v.target} kcal, protein ${s.protein} g (at least ${proteinFloor()}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
     `Eaten: ${r(t.kcal)} kcal, protein ${r(t.p)} g, carbs ${r(t.c)} g, fat ${r(t.f)} g, fibre ${r(t.fib)} g.`,
     'Meals:',
   ];
@@ -411,7 +411,7 @@ function checkBrief(note) {
     tot.n
       ? `Today so far: ${r(tot.kcal)} of ${target} kcal eaten, ${r(target - tot.kcal) >= 0 ? `${r(target - tot.kcal)} kcal left` : `${r(tot.kcal - target)} kcal over`}; protein ${r(tot.p)} of ${s.protein} g.${open.length ? ` Not eaten yet: ${open.join(', ')}.` : ' All meals of the day are logged.'}`
       : `Nothing eaten yet today: the whole ${target} kcal and ${s.protein} g of protein are open. The plan's meals: ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.`,
-    `Daily targets: ${s.kcalRest} kcal on rest days, ${s.kcalTrain} on workout days, protein ${s.protein} g, fibre ${s.fiber} g.`,
+    `Daily budget and goals: ${s.kcalRest} kcal on rest days, ${s.kcalTrain} on workout days, protein ${s.protein} g, fibre ${s.fiber} g.`,
   ];
   const f = weekFlex(t);
   lines.push(`This week: flexible dinner ${f.meal} of 1 used, beer or small dessert ${f.small} of 1 used, off-plan entries ${f.off}.`);
@@ -1178,12 +1178,12 @@ const ACT = {
       kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), protein: Math.round(num('#set-prot')),
     };
     if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= KCAL_FLOOR) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
-      return toast(`Check the values: the end must be after the start, the target weight below the start weight, and calories at least ${fmtInt(KCAL_FLOOR)}, as the plan's rules say`);
+      return toast(`Check the values: the end must be after the start, the goal weight below the start weight, and calories at least ${fmtInt(KCAL_FLOOR)}, as the plan's rules say`);
     }
     S.settings = { ...S.settings, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
     await saveSettings();
     render();
-    toast('Targets saved');
+    toast('Goals saved');
   },
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
