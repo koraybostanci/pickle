@@ -73,7 +73,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
   toast(`${tpl.name} logged`, { label: 'Undo', fn: () => removeEntry(e.id, true) });
   return e.id;
 }
-// A typed beer: a 0.5 l, in the late slot, so it never stands in for a planned meal
+// A beer, typed or tapped, goes in the late slot, so it never stands in for a planned meal. A typed count is 0.5 l each
 const logBeer = (day) => logMeal({ ...FLEX.find((f) => f.id === 'F-BEER50'), slot: 'late', tier: 'flex' }, 'flex', day);
 
 async function removeEntry(id, silent) {
@@ -162,7 +162,7 @@ async function submitText(text) {
     }
     if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(`Today is a workout day: budget ${fmtInt(S.settings.kcalTrain)} kcal`); }
     if (local.type === 'plan') return logMeal(local.meal, 'plan', today());
-    if (local.type === 'flex') return logMeal({ ...local.flex, slot: 'any', tier: 'flex' }, 'flex', today());
+    if (local.type === 'flex') return logMeal({ ...local.flex, slot: (local.flex.flags || []).includes('alcohol') ? 'late' : 'any', tier: 'flex' }, 'flex', today());
     if (local.type === 'favorite') return logMeal({ ...local.favorite, slot: 'any' }, 'favorite', today());
     if (local.type === 'count' && local.key === 'coffee') {
       const cur = (S.days[today()] && S.days[today()].coffee) || 0;
@@ -979,7 +979,7 @@ const ACT = {
   'slot': (el) => openSheet(renderSlotSheet(el.dataset.slot, S.viewDay), { type: 'slot', slot: el.dataset.slot }),
   'slot-camera': () => { closeSheet(); photoTarget = null; $('#f-cam').click(); },
   'compose': () => { closeSheet(); const inp = $('#composer-input'); inp.focus(); },
-  'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any', tier: 'flex' }, 'flex', today()); },
+  'log-flex': (el) => { const f = FLEX.find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: (f.flags || []).includes('alcohol') ? 'late' : 'any', tier: 'flex' }, 'flex', today()); },
   'log-favorite': (el) => { const f = (S.settings.favorites || []).find((x) => x.id === el.dataset.id); if (f) logMeal({ ...f, slot: 'any' }, 'favorite', today()); },
   'open-entry': (el) => {
     const html = renderEntrySheet(el.dataset.id);
