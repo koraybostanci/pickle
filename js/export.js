@@ -69,7 +69,7 @@ CREATE TABLE weightplan_meal_items (
 );
 
 -- One row per day: the day's own values, the 7-day weight average the app uses, and the meal totals.
--- beers: the planned extras flagged alcohol (Beer 0.33 l, Beer 0.5 l), as the app's Beer tile counts them.
+-- beers: the planned extras flagged alcohol (Beer 0.33 l, Beer 0.5 l, or a typed "2 beers").
 CREATE VIEW weightplan_daily AS
 SELECT
   d.day,

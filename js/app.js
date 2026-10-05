@@ -6,7 +6,7 @@ import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listM
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, isBeer, parseCount,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseCount,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -73,7 +73,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
   toast(`${tpl.name} logged`, { label: 'Undo', fn: () => removeEntry(e.id, true) });
   return e.id;
 }
-// A beer from the tile or typed: a 0.5 l, in the late slot, so it never stands in for a planned meal
+// A typed beer: a 0.5 l, in the late slot, so it never stands in for a planned meal
 const logBeer = (day) => logMeal({ ...FLEX.find((f) => f.id === 'F-BEER50'), slot: 'late', tier: 'flex' }, 'flex', day);
 
 async function removeEntry(id, silent) {
@@ -1035,13 +1035,6 @@ const ACT = {
     await saveDay(day, { coffee: next });
     render();
     if (next > cur) toast('A coffee added', { label: 'Undo', fn: async () => { await saveDay(day, { coffee: cur }); render(); } });
-  },
-  'beer': async (el) => {
-    if (el.dataset.v === '1') return logBeer(S.viewDay);
-    const last = S.entries.filter((e) => e.day === S.viewDay && isBeer(e)).sort((a, b) => b.ts - a.ts)[0];
-    if (!last) return;
-    await removeEntry(last.id, true);
-    toast('Beer removed');
   },
   'mult': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
