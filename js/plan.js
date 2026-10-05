@@ -136,7 +136,7 @@ export const FLEX = [
 
 export const DEFAULTS = {
   startDate: '2026-10-05',
-  startKg: 86,
+  startKg: 87,
   targetDate: '2026-12-31',
   targetKg: 78,
   kcalRest: 1550,
