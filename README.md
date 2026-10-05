@@ -226,7 +226,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v31'`) and `APP_VERSION` in `js/core.js` (`'31'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v32'`) and `APP_VERSION` in `js/core.js` (`'32'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
