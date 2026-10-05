@@ -22,10 +22,9 @@ your start weight to your goal.
   the week as seven day tokens, each with a shape for how the day went, and your run of days on
   plan; the day's calories as a budget meter: what is left, how far the day has got and where the
   plan would have you by now; weight against your line, protein, the
-  meals of the day with a suggestion for the next one, steps, water, coffee, beer and the week's
-  extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
-  Coffee and beer are counted with no goal: each tile shows the day and the week. A tap on Beer logs
-  a 0.5 l beer (215 kcal) as an extra, and the tile counts the week's beers, the Beer chips included.
+  meals of the day with a suggestion for the next one, steps, water and coffee in one row, and the
+  week's extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
+  Coffee is counted with no goal: its tile shows the day and the week.
 - **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
   the library, or type. A model estimates calories and macros and lists each item with its amount
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
@@ -51,7 +50,7 @@ your start weight to your goal.
 
 Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
 water, coffee, beer and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses`, `coffee`,
-`2 beers` or `workout` is understood on the device.
+`2 beers` or `workout` is understood on the device; each typed beer is logged as the Beer 0.5 l extra.
 
 ## Privacy and data
 
@@ -227,7 +226,7 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (`'weightplan-v30'`) and `APP_VERSION` in `js/core.js` (`'30'`) together, then
+Bump `VERSION` in `sw.js` (`'weightplan-v31'`) and `APP_VERSION` in `js/core.js` (`'31'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
 that does not exist makes the install fail. Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,

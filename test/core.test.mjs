@@ -161,21 +161,14 @@ test('"coffee", "a beer", "2 coffees" and "beer 3" are counts; a beer size, word
   for (const t of ['beer 0.33 l', 'beer 0.5 l', 'coffee with milk', '2 coffee 3', '20 beers', '0 coffees']) assert.equal(parseCount(t), null, t);
 });
 
-test('coffee and beer are counted for the day, its Monday-to-Sunday week and the week before', () => {
+test('coffee is counted for the day, its Monday-to-Sunday week and the week before', () => {
   reset();
   const W = weekStart(T);
-  const beer = (d, extra = {}) => meal(d, 215, 2, { src: 'flex', tier: 'flex', slot: 'late', flags: ['alcohol'], ...extra });
   for (const [d, n] of [[W, 2], [addDays(W, 6), 1], [addDays(W, -1), 4], [addDays(W, -7), 1], [addDays(W, -8), 9]]) S.days[d] = { day: d, coffee: n };
   S.days[addDays(W, 1)] = { day: addDays(W, 1), water: 500 }; // no coffee field
-  assert.deepEqual(drinkTally('coffee', W), { today: 2, week: 3, prev: 5 });
-  assert.deepEqual(drinkTally('coffee', addDays(W, 1)), { today: 0, week: 3, prev: 5 });
-  assert.deepEqual(drinkTally('coffee', addDays(W, -1)), { today: 4, week: 5, prev: 9 });
-  beer(W); beer(addDays(W, 6)); beer(addDays(W, -1)); beer(addDays(W, -8));
-  beer(W, { src: 'photo' }); // the model's alcohol tag on a photo is not a counted beer
-  beer(W, { status: 'pending' });
-  meal(W, 300, 10, { src: 'flex', tier: 'flex' }); // a planned extra that is not alcohol
-  assert.deepEqual(drinkTally('beer', W), { today: 1, week: 2, prev: 1 });
-  assert.deepEqual(drinkTally('beer', addDays(W, -7)), { today: 0, week: 1, prev: 1 });
+  assert.deepEqual(drinkTally(W), { today: 2, week: 3, prev: 5 });
+  assert.deepEqual(drinkTally(addDays(W, 1)), { today: 0, week: 3, prev: 5 });
+  assert.deepEqual(drinkTally(addDays(W, -1)), { today: 4, week: 5, prev: 9 });
 });
 
 test('coffee and beer never touch the goals, the perfect day, the status or the open meals', () => {

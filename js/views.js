@@ -186,7 +186,7 @@ function budgetTile(day) {
 }
 
 // ——— The day at a glance: the calorie budget with weight and protein beside it. Steps and water, which fill up
-// over the day, come as a second pair after the meals, with coffee and beer (counted, no goal) below them. ———
+// over the day, come after the meals in one row with coffee (counted, no goal). ———
 function bento(day, part) {
   const s = S.settings;
   const isToday = day === today();
@@ -224,10 +224,10 @@ function bento(day, part) {
   const pct = (v, of) => Math.min(100, (v / of) * 100).toFixed(1);
   const pLeft = Math.max(1, Math.ceil(s.protein - tot.p - 1e-6)); // only shown while the goal is open
   const glassesLeft = Math.max(0, Math.ceil((s.water - water) / 250));
-  // Coffee and beer: the day's count and the week's, never a goal, so never ticked
+  // Coffee: the day's count and the week's, never a goal, so never ticked
   const thisWeek = weekStart(day) === weekStart(today());
   const counter = (key, name, unit, hint, add) => {
-    const c = drinkTally(key, day);
+    const c = drinkTally(day);
     const units = c.today === 1 ? unit : `${unit}s`;
     const week = thisWeek ? `${c.week} this week${c.prev ? `, ${c.prev} last week` : ''}` : `${c.week} that week`;
     return `<div class="tile tile-count">
@@ -249,7 +249,7 @@ function bento(day, part) {
       ${note(pDone ? 'Enough for today' : `${n0(pLeft)} g to go`)}
     </div>
   </section>`;
-  return `<section class="bento bento-more" aria-label="Steps, water, coffee and beer">
+  return `<section class="bento bento-more" aria-label="Steps, water and coffee">
     <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="Steps: ${steps ? n0(steps) : 'none'} of ${n0(s.steps)}. Enter">
       ${top('Steps', stepsDone)}
       <span class="tile-val"><b>${steps ? n0(steps) : '–'}</b> / ${n0(s.steps)}</span>
@@ -266,7 +266,6 @@ function bento(day, part) {
       ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
     </div>
     ${counter('coffee', 'Coffee', 'cup', 'tap +1', 'Add one')}
-    ${counter('beer', 'Beer', 'beer', 'tap +1 · 0.5 l', 'Add a 0.5 l beer')}
   </section>`;
 }
 
