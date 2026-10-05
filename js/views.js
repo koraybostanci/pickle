@@ -175,7 +175,7 @@ function budgetTile(day) {
   const due = planned != null && planned >= target - 1;
   const ref = planned == null ? '' : due ? 'All planned meals are due' : planned > 0 ? `Plan by now <b>${n0(planned)}</b>` : planSteps(target)[0] ? `Plan starts at ${planSteps(target)[0].time}` : '';
   const big = !isToday ? [n0(eaten), `kcal eaten of ${n0(target)}`] : rem >= 0 ? [n0(rem), `kcal left of ${n0(target)}`] : [n0(-rem), 'kcal over budget'];
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${v.text ? ` ${v.text}.` : ''}`;
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${planned === 0 && ref ? ` ${ref}.` : ''}${v.text ? ` ${v.text}.` : ''}`;
   const icon = v.tone === 'good' ? CHECK : v.tone === 'calm' ? '' : ALERT;
   return `<div class="tile tile-budget${v.level ? ` is-${v.level === 'back' ? 'way-over' : 'over'}` : ''}" role="group" aria-label="${esc(label)}">
     <span class="tile-top"><span>Calorie budget</span>${v.text ? `<i class="pill${v.tone === 'calm' ? '' : ` pill-${v.tone}`}">${icon}${esc(v.text)}</i>` : ''}</span>
@@ -226,19 +226,8 @@ function bento(day, part) {
   const glassesLeft = Math.max(0, Math.ceil((s.water - water) / 250));
   // Coffee: the day's count and the week's, never a goal, so never ticked
   const thisWeek = weekStart(day) === weekStart(today());
-  const counter = (key, name, unit, hint, add) => {
-    const c = drinkTally(day);
-    const units = c.today === 1 ? unit : `${unit}s`;
-    const week = thisWeek ? `${c.week} this week${c.prev ? `, ${c.prev} last week` : ''}` : `${c.week} that week`;
-    return `<div class="tile tile-count">
-      <button type="button" class="tile-main" data-act="${key}" data-v="1" aria-label="${esc(`${name}: ${c.today} ${units} ${isToday ? 'today' : 'on this day'}, ${c.week} ${thisWeek ? 'this' : 'that'} week. ${add}`)}">
-        ${top(name, false, c.today ? '' : hint)}
-        <span class="tile-val"><b>${c.today}</b> ${units}</span>
-        ${note(week)}
-      </button>
-      ${c.today ? `<button type="button" class="tile-minus" data-act="${key}" data-v="-1" aria-label="Remove one ${key}">−</button>` : ''}
-    </div>`;
-  };
+  const cups = drinkTally(day);
+  const cupUnit = cups.today === 1 ? 'cup' : 'cups';
   if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
     ${budgetTile(day)}
     ${weight}
@@ -258,14 +247,21 @@ function bento(day, part) {
     </button>
     <div class="tile tile-water${waterDone ? ' is-done' : ''}">
       <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="Water: ${litres(water)} of ${litres(s.water)} litres. Add a glass">
-        ${top('Water', waterDone, water ? '' : 'tap +1 glass')}
+        ${top('Water', waterDone)}
         <span class="tile-val"><b>${litres(water)}</b> / ${litres(s.water)} l</span>
         <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
         ${note(waterDone ? 'Goal reached' : `${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'} to go`)}
       </button>
       ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
     </div>
-    ${counter('coffee', 'Coffee', 'cup', 'tap +1', 'Add one')}
+    <div class="tile tile-count">
+      <button type="button" class="tile-main" data-act="coffee" data-v="1" aria-label="${esc(`Coffee: ${cups.today} ${cupUnit} ${isToday ? 'today' : 'on this day'}, ${cups.week} ${thisWeek ? 'this' : 'that'} week. Add one`)}">
+        ${top('Coffee', false)}
+        <span class="tile-val"><b>${cups.today}</b> ${cupUnit}</span>
+        ${note(thisWeek ? `${cups.week} this week${cups.prev ? `, ${cups.prev} last week` : ''}` : `${cups.week} that week`)}
+      </button>
+      ${cups.today ? '<button type="button" class="tile-minus" data-act="coffee" data-v="-1" aria-label="Remove one coffee">−</button>' : ''}
+    </div>
   </section>`;
 }
 
@@ -861,7 +857,7 @@ function weightChart() {
       <div class="seg" role="group" aria-label="Chart range">
         <button type="button" data-act="chart-range" data-v="week" aria-pressed="${week}">Week</button>
         <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!week && !whole}">2 weeks</button>
-        <button type="button" data-act="chart-range" data-v="whole" aria-label="Whole plan" aria-pressed="${whole}">Overall</button>
+        <button type="button" data-act="chart-range" data-v="whole" aria-pressed="${whole}">Overall</button>
       </div>
     </div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(alt)}">
