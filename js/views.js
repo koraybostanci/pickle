@@ -419,20 +419,25 @@ function coachLine(day) {
     head = 'All meals in, on budget.';
     line = 'Nicely done.';
   }
-  return `<section class="coach${over ? ' is-over' : ''}">${POISE}<div><p><b>${esc(head)}</b> ${esc(line)}</p>${coachAi(day)}</div></section>`;
+  return `<section class="coach${over ? ' is-over' : ''}">${POISE}<div><p class="coach-line"><b>${esc(head)}</b> ${esc(line)}</p>${coachAi(day)}</div></section>`;
 }
 
 // The model's quick note on the day so far, under the coach line: asked for, never sent by itself
 function coachAi(day) {
   if (day !== today() || !dayTotals(day).n) return '';
   const c = S.days[day] && S.days[day].coach;
+  if (!c && !hasKey()) return '';
   const err = S.coachErr.get(day);
+  const busy = S.coaching.has(day);
   const ask = (label) => `<button type="button" class="link" data-act="coach-day" data-day="${day}">${label}</button>`;
-  if (S.coaching.has(day)) return '<p class="coach-ai review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing a note…</p>';
   const fresh = coachState(day) === 'fresh';
-  return `${c ? `<p class="coach-ai">${esc(c.note)}</p>` : ''}
-    ${hasKey() ? `<p class="coach-ai review-foot">${c && fresh ? `AI note, ${hhmm(c.ts)}.` : ''} ${ask(!c ? 'How am I doing so far?' : fresh ? 'Ask again' : 'Update the note')}</p>` : ''}
-    ${err ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}`;
+  const open = busy || !!err || S.reviewOpen.get(`coach:${day}`) === true;
+  return `<details class="coach-ai" data-day="${day}"${open ? ' open' : ''}>
+    <summary><span class="sr-only">AI note</span></summary>
+    ${busy ? '<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing a note…</p>' : `${c ? `<p>${esc(c.note)}</p>` : ''}
+    ${hasKey() ? `<p class="review-foot">${c && fresh ? `AI note, ${hhmm(c.ts)}.` : ''} ${ask(!c ? 'How am I doing so far?' : fresh ? 'Ask again' : 'Update the note')}</p>` : ''}
+    ${err ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}`}
+  </details>`;
 }
 
 // First use: shows the single next step; disappears when finished or hidden
