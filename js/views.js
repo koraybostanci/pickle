@@ -252,7 +252,7 @@ function bento(day, part) {
         <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
         ${note(waterDone ? 'Goal reached' : `${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'} to go`)}
       </button>
-      ${water ? '<button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water">−</button>' : ''}
+      <button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water"${water ? '' : ' disabled'}>−</button>
     </div>
     <div class="tile tile-count">
       <button type="button" class="tile-main" data-act="coffee" data-v="1" aria-label="${esc(`Coffee: ${cups.today} ${cupUnit} ${isToday ? 'today' : 'on this day'}, ${cups.week} ${thisWeek ? 'this' : 'that'} week. Add one`)}">
@@ -260,7 +260,7 @@ function bento(day, part) {
         <span class="tile-val"><b>${cups.today}</b> ${cupUnit}</span>
         ${note(thisWeek ? `${cups.week} this week${cups.prev ? `, ${cups.prev} last week` : ''}` : `${cups.week} that week`)}
       </button>
-      ${cups.today ? '<button type="button" class="tile-minus" data-act="coffee" data-v="-1" aria-label="Remove one coffee">−</button>' : ''}
+      <button type="button" class="tile-minus" data-act="coffee" data-v="-1" aria-label="Remove one coffee"${cups.today ? '' : ' disabled'}>−</button>
     </div>
   </section>`;
 }
