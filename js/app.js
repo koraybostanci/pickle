@@ -403,6 +403,7 @@ function queueCoach(day) {
   if (S.coaching.has(day) || !dayTotals(day).n) return;
   S.coaching.add(day);
   S.coachErr.delete(day);
+  S.reviewOpen.set(`coach:${day}`, true);
   render();
   chain = chain.then(() => runCoach(day)).catch(() => {});
 }
@@ -1430,6 +1431,7 @@ document.addEventListener('toggle', (ev) => {
     } else if (S.openSetting === d.dataset.sec) S.openSetting = '';
   }
   if (d.matches('details.review-ai')) S.reviewOpen.set(d.dataset.day, d.open);
+  if (d.matches('details.coach-ai')) S.reviewOpen.set(`coach:${d.dataset.day}`, d.open);
 }, true);
 
 // Tapping an example chip must not take focus away from the composer input
