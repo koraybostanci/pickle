@@ -2,7 +2,7 @@ import {
   S, today, eff, dayTotals, dayTarget, dayStatus, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
-  plannedBy, planSteps, budgetVerdict, budgetMeter,
+  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
@@ -363,6 +363,18 @@ export function renderSlotSheet(slotId, day) {
   <div class="actions"><button type="button" class="btn" data-act="slot-camera">Take a photo</button><button type="button" class="btn" data-act="compose">Type it</button></div>` : ''}`;
 }
 
+// The daily supplements: one chip each, tap to tick; the ones not yet taken stay outlined
+function suppCard(day) {
+  const list = S.settings.supplements || [];
+  if (!list.length) return '';
+  const taken = new Set(suppTaken(day));
+  const n = list.filter((x) => taken.has(x.id)).length;
+  return `<section class="supp" aria-label="Supplements">
+    <div class="supp-head"><h2>Supplements</h2><span class="${n === list.length ? 'is-done' : ''}">${n} of ${list.length}</span></div>
+    <div class="chips">${list.map((x) => `<button type="button" class="chip${taken.has(x.id) ? ' is-on' : ''}" data-act="supp" data-id="${esc(x.id)}" aria-pressed="${taken.has(x.id)}">${taken.has(x.id) ? CHECK : ''}<b>${esc(x.name)}</b>${x.dose ? `<span>${esc(x.dose)}</span>` : ''}</button>`).join('')}</div>
+  </section>`;
+}
+
 // The week's extras: one small one and one flexible dinner. A weight is whole until it is used.
 function treats(day) {
   const f = weekFlex(day);
@@ -483,6 +495,7 @@ export function renderToday() {
   ${bento(day, 'top')}
   ${dayList(day)}
   ${bento(day, 'more')}
+  ${suppCard(day)}
   ${treats(day)}`;
 }
 
@@ -1267,6 +1280,17 @@ export function renderSettings() {
     ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">Remove</button></li>`).join('')}</ul>`
     : '<p class="note">Open an entry and tap “Add to favourites”. It then logs with one tap from the Log tab.</p>';
 
+  const supps = s.supplements || [];
+  const suppEdit = supps.find((x) => x.id === S.suppEdit);
+  const suppBody = `
+    <p class="note">The vitamins and minerals you take every day. They appear as chips on Today, and a tap ticks one for the day, so you can see at a glance what you forgot. They are not part of the daily goals.</p>
+    ${supps.length ? `<ul class="items">${supps.map((x) => `<li><span>${esc(x.name)}${x.dose ? `, ${esc(x.dose)}` : ''}</span><span><button type="button" class="link" data-act="supp-edit" data-id="${esc(x.id)}">Edit</button> <button type="button" class="link link-danger" data-act="supp-remove" data-id="${esc(x.id)}">Remove</button></span></li>`).join('')}</ul>` : '<p class="note">None yet.</p>'}
+    <div class="field-grid">
+      <label for="supp-name">Name<input id="supp-name" type="text" maxlength="40" enterkeyhint="done" autocomplete="off" placeholder="Magnesium" value="${esc(suppEdit ? suppEdit.name : '')}"></label>
+      <label for="supp-dose">Dose (optional)<input id="supp-dose" type="text" maxlength="30" enterkeyhint="done" autocomplete="off" placeholder="400 mg" value="${esc(suppEdit ? suppEdit.dose : '')}"></label>
+    </div>
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="supp-save">${suppEdit ? 'Save changes' : 'Add supplement'}</button>${suppEdit ? '<button type="button" class="btn" data-act="supp-cancel">Cancel</button>' : ''}</div>`;
+
   const version = `
     <p class="note">The app looks for a new version when it opens and when it comes to the front; if it finds one it reloads. Your entries are not affected.</p>
     <div class="actions"><button type="button" class="btn btn-primary" data-act="check-update">Check for updates</button><button type="button" class="btn" data-act="hard-reload">Clear cache and reload</button></div>
@@ -1278,7 +1302,7 @@ export function renderSettings() {
       <h3>Clear my log</h3>
       <p class="note">Starts your tracking over; the app stays set up as it is.</p>
       <dl class="reset-diff">
-        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, coffee, workout days, day reviews and Check verdicts.</dd></div>
+        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.</dd></div>
         <div><dt class="is-kept">Keeps</dt><dd>Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.</dd></div>
       </dl>
       <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Clear my log</button></div>
@@ -1303,6 +1327,7 @@ export function renderSettings() {
     ${section('backup', 'Backup and export', backupStatus, backup)}
     ${section('location', 'Location', s.useLocation ? (places.length ? 'On: ' + places.map((p) => p.name).join(', ') : 'On, no saved places') : 'Off', location)}
     ${section('favorites', 'Favourites', favorites.length ? `${favorites.length} ${favorites.length === 1 ? 'meal' : 'meals'}` : 'None yet', favoritesBody)}
+    ${section('supplements', 'Supplements', supps.length ? supps.map((x) => x.name).join(', ') : 'None yet', suppBody)}
     ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
     ${section('reset', 'Reset', 'Clear my log, or factory reset', reset)}
   </div>

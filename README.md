@@ -25,6 +25,9 @@ your start weight to your goal.
   meals of the day with a suggestion for the next one, steps, water and coffee in one row, and the
   week's extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
   Coffee is counted with no goal: its tile shows the day and the week.
+- **Supplements:** the vitamins and minerals you take every day (magnesium, B12, D …), set up under
+  Settings → Supplements with a name and an optional dose. On Today each is a chip: one tap ticks it
+  for the day, and the card says how many you have taken. They are tracked, not a daily goal.
 - **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
   the library, or type. A model estimates calories and macros and lists each item with its amount
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
@@ -79,7 +82,7 @@ water, coffee, beer and workout days. Typing `85.4`, `8200 steps`, `water 2 glas
   both takes the backup's version); its goals, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
 - Settings → "Reset" has two levels. "Clear my log" deletes what you tracked (meals and their photos,
-  weigh-ins, steps, water, coffee, workout days, day reviews, checks) and keeps every setting, the plan's
+  weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews, checks) and keeps every setting, the plan's
   pictures and your API key. "Factory reset" empties the app as it was on its first launch, including
   goals, favourites, saved places, the plan's pictures and the usage totals; the API key and provider
   stay unless you untick the box. It asks you to type DELETE. Both refuse while something is being
@@ -172,6 +175,8 @@ leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
 |---|---|---|
+| `weightplan_supplements` | id | `id`, `name`, `dose` |
+| `weightplan_supplement_log` | day, supplement_id | `day`, `supplement_id` (one row per supplement ticked that day) |
 | `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `coffee_cups`, `workout`, `target_kcal`, `target_weight_kg` |
 | `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
 | `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |

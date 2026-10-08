@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
-  isPerfect, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
+  isPerfect, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
 import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -267,4 +267,12 @@ test('the budget meter is as wide as the budget, or what was eaten when that is 
   assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 0 }).plan, null);
   assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 1549.5 }).plan, null);
   assert.equal(budgetMeter({ target: 1550, eaten: 500, planned: 620 }).plan, 620 / 1550);
+});
+
+test('supplements taken: only ids still in the list count', () => {
+  reset();
+  S.settings.supplements = [{ id: 's1', name: 'D', dose: '' }, { id: 's2', name: 'B12', dose: '' }];
+  S.days[T] = { day: T, taken: ['s1', 'removed'] };
+  assert.deepEqual(suppTaken(T), ['s1']);
+  assert.deepEqual(suppTaken(day(-1)), []);
 });

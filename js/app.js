@@ -6,7 +6,7 @@ import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseCount,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, suppTaken, SUPP_MAX, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseCount,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -983,6 +983,7 @@ function openSheet(html, state, focusSel, keepFocus) {
   hydratePhotos();
 }
 function closeSheet() {
+  if (S.sheet && S.sheet.type === 'settings') S.suppEdit = '';
   $('#sheet').hidden = true;
   S.sheet = null;
   frame = null; // a photo being framed is dropped with the sheet
@@ -991,11 +992,11 @@ function closeSheet() {
   if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
   sheetOpener = null;
 }
-async function openSettings(section) {
+async function openSettings(section, focusSel) {
   if (section) S.openSetting = section;
   await refreshStorage();
   const wasOpen = !!(S.sheet && S.sheet.type === 'settings');
-  openSheet(renderSettings(), { type: 'settings' }, null, wasOpen);
+  openSheet(renderSettings(), { type: 'settings' }, focusSel || null, wasOpen && !focusSel);
 }
 
 // ——— Actions ———
@@ -1066,6 +1067,38 @@ const ACT = {
     await saveDay(day, { coffee: next });
     render();
     if (next > cur) toast('A coffee added', { label: 'Undo', fn: async () => { await saveDay(day, { coffee: cur }); render(); } });
+  },
+  'supp': async (el) => {
+    const day = S.viewDay;
+    const id = el.dataset.id;
+    const cur = (S.days[day] && S.days[day].taken) || [];
+    await saveDay(day, { taken: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+    render();
+  },
+  'supp-save': async () => {
+    const name = $('#supp-name').value.replace(/\s+/g, ' ').trim().slice(0, 40);
+    const dose = $('#supp-dose').value.replace(/\s+/g, ' ').trim().slice(0, 30);
+    if (!name) return toast('Give the supplement a name');
+    const list = S.settings.supplements || [];
+    const edit = list.find((x) => x.id === S.suppEdit);
+    if (!edit && list.length >= SUPP_MAX) return toast(`At most ${SUPP_MAX} supplements`);
+    if (list.some((x) => x.id !== S.suppEdit && x.name.toLowerCase() === name.toLowerCase())) return toast('Already in the list');
+    S.settings.supplements = edit ? list.map((x) => (x.id === edit.id ? { ...x, name, dose } : x)) : [...list, { id: db.uid(), name, dose }];
+    S.suppEdit = '';
+    await saveSettings();
+    render();
+    openSettings('', '#supp-name');
+  },
+  'supp-edit': (el) => { S.suppEdit = el.dataset.id; openSettings('', '#supp-name'); },
+  'supp-cancel': () => { S.suppEdit = ''; openSettings('', '#supp-name'); },
+  'supp-remove': async (el) => {
+    const x = (S.settings.supplements || []).find((y) => y.id === el.dataset.id);
+    if (!x || !window.confirm(`Remove ${x.name}? Its history is no longer shown.`)) return;
+    S.settings.supplements = S.settings.supplements.filter((y) => y.id !== x.id);
+    if (S.suppEdit === x.id) S.suppEdit = '';
+    await saveSettings();
+    render();
+    openSettings('', '#supp-name');
   },
   'mult': async (el) => {
     const e = S.entries.find((x) => x.id === el.dataset.id);
@@ -1301,7 +1334,7 @@ const ACT = {
   },
   'wipe': async () => {
     if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
-    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
+    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {
@@ -1333,7 +1366,7 @@ const ACT = {
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
     S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
-    S.viewDay = today(); S.calPick = null; S.openSetting = '';
+    S.viewDay = today(); S.calPick = null; S.openSetting = ''; S.suppEdit = '';
     S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.coaching.clear(); S.coachErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
     closeSheet();
@@ -1450,6 +1483,7 @@ $('#composer').addEventListener('submit', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && !$('#sheet').hidden) closeSheet();
   // Enter in the correction box sends it
+  if (ev.key === 'Enter' && (ev.target.id === 'supp-name' || ev.target.id === 'supp-dose')) { ev.preventDefault(); guard(ACT['supp-save']); }
   if (ev.key === 'Enter' && ev.target.id === 'check-note') { ev.preventDefault(); ev.target.blur(); guard(runCheck); }
   if (ev.key === 'Enter' && ev.target.id && ev.target.id.startsWith('answer-')) {
     ev.preventDefault();

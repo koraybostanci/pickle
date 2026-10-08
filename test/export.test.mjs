@@ -64,3 +64,11 @@ test('the 7-day weight average is over the calendar days, as in the app', () => 
   const r = rows(db, "SELECT weight_avg7_kg FROM weightplan_daily WHERE day = '2026-10-07'")[0];
   assert.equal(r.weight_avg7_kg, 85.2); // (85.4 + 85.0) / 2
 });
+
+test('supplements: the list and what was taken each day are exported; unknown ids are left out', () => {
+  const db = new DatabaseSync(':memory:');
+  const s = { ...settings, supplements: [{ id: 's1', name: "Vitamin D", dose: '2000 IU' }, { id: 's2', name: 'B12', dose: '' }] };
+  db.exec(buildSql({ settings: s, entries, days: [{ day: '2026-10-06', taken: ['s1', 'gone'] }, { day: '2026-10-07', taken: ['s1', 's2'] }], appVersion: 'test' }).sql);
+  assert.deepEqual(rows(db, 'SELECT name, dose FROM weightplan_supplements ORDER BY id').map((r) => [r.name, r.dose]), [['Vitamin D', '2000 IU'], [ 'B12', null]]);
+  assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_supplement_log')[0].n, 3);
+});

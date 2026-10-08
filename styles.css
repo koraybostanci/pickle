@@ -351,6 +351,17 @@ button.tile:active, .tile-main:active, .chip:active, .btn:active { transform: sc
 }
 .chip span { font: 500 12px var(--mono); color: var(--ink3); }
 
+/* The daily supplements: chips that fill when taken */
+.supp { margin-top: 22px; }
+.supp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.supp-head span { font: 500 13px var(--mono); color: var(--ink3); }
+.supp-head .is-done { color: var(--good); }
+.supp .chip { gap: 6px; }
+.supp .chip .tick { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--good-ink); stroke-width: 2; stroke-linecap: square; }
+.supp .chip.is-on { background: var(--good-soft); border-color: var(--good); color: var(--good-ink); }
+.supp .chip.is-on span { color: var(--good-ink); }
+.supp .chip b { font-weight: 600; }
+
 /* The week's extras: a brass weight is whole until it is used */
 .treats ul { margin-top: 10px; display: grid; gap: 4px; }
 .treats li { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: 15px; }

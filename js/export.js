@@ -5,7 +5,7 @@
 // internal id, APP_ID in core.js, which stays when the app is renamed, so queries keep working).
 import { targetAt, dayKey } from './plan.js';
 
-export const EXPORT_SCHEMA = 2;
+export const EXPORT_SCHEMA = 3;
 export const exportName = (now = new Date()) => `pickle-export-${dayKey(now)}.sql`;
 
 const text = (v) => (v == null || v === '' ? 'NULL' : `'${String(v).replace(/\u0000/g, '').replace(/'/g, "''")}'`);
@@ -32,6 +32,18 @@ CREATE TABLE weightplan_days (
   workout          INTEGER NOT NULL DEFAULT 0,  -- 1 on workout days
   target_kcal      INTEGER NOT NULL,            -- the day's calorie budget under the current Goals, so changing them changes past rows
   target_weight_kg REAL                         -- where the schedule stood on the day; NULL before the start date
+);
+
+CREATE TABLE weightplan_supplements (
+  id   TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  dose TEXT                                     -- as typed, for example 400 mg; NULL when none
+);
+
+CREATE TABLE weightplan_supplement_log (
+  day           TEXT NOT NULL,                  -- YYYY-MM-DD
+  supplement_id TEXT NOT NULL,                  -- weightplan_supplements.id; one row per supplement ticked that day
+  PRIMARY KEY (day, supplement_id)
 );
 
 CREATE TABLE weightplan_meals (
@@ -113,6 +125,8 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
     '',
     'BEGIN TRANSACTION;',
     'DROP VIEW IF EXISTS weightplan_daily;',
+    'DROP TABLE IF EXISTS weightplan_supplement_log;',
+    'DROP TABLE IF EXISTS weightplan_supplements;',
     'DROP TABLE IF EXISTS weightplan_meal_items;',
     'DROP TABLE IF EXISTS weightplan_meals;',
     'DROP TABLE IF EXISTS weightplan_days;',
@@ -138,6 +152,12 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
     const targetKg = d.day >= s.startDate ? targetAt(d.day, s) : null;
     out.push(`INSERT INTO weightplan_days (day, weight_kg, steps, water_ml, coffee_cups, workout, target_kcal, target_weight_kg) VALUES (${text(d.day)}, ${num(d.kg)}, ${int(d.steps)}, ${int(d.water)}, ${int(d.coffee)}, ${d.train ? 1 : 0}, ${int(d.train ? s.kcalTrain : s.kcalRest)}, ${num(targetKg)});`);
   }
+  out.push('');
+
+  const supps = s.supplements || [];
+  const known = new Set(supps.map((x) => x.id));
+  for (const x of supps) out.push(`INSERT INTO weightplan_supplements (id, name, dose) VALUES (${text(x.id)}, ${text(x.name)}, ${text(x.dose)});`);
+  for (const d of dayRows) for (const id of (d.taken || [])) if (known.has(id)) out.push(`INSERT INTO weightplan_supplement_log (day, supplement_id) VALUES (${text(d.day)}, ${text(id)});`);
   out.push('');
 
   let items = 0;
