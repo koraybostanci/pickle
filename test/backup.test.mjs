@@ -100,3 +100,10 @@ test('a day: the quick note is kept, cleaned, and dropped when empty', () => {
   assert.equal(d.coach.note, 'Nice start.');
   assert.equal(cleanDay({ day: '2026-10-01', coach: { note: '' } }).coach, undefined);
 });
+
+test('supplements: the list and the days taken are cleaned, deduplicated and capped', () => {
+  const s = cleanSettings({ supplements: [{ id: 'a1', name: ' Magnesium ', dose: '400 mg' }, { id: 'a1', name: 'dup' }, { id: '"><x', name: 'bad id' }, { id: 'b2', name: '' }, { id: 'c3', name: 'B12' }, null] });
+  assert.deepEqual(s.supplements, [{ id: 'a1', name: 'Magnesium', dose: '400 mg' }, { id: 'c3', name: 'B12', dose: '' }]);
+  assert.deepEqual(cleanDay({ day: '2026-10-01', taken: ['a1', 'a1', '"><x', 7, 'c3'] }).taken, ['a1', 'c3']);
+  assert.equal(cleanDay({ day: '2026-10-01' }).taken, undefined);
+});
