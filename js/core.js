@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '33'; // bump together with VERSION in sw.js
+export const APP_VERSION = '34'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -12,7 +12,7 @@ export const APP_ID = 'weightplan';
 export const freshSettings = () => ({
   ...DEFAULTS, schema: SCHEMA_VERSION,
   provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
-  useLocation: false, places: [], favorites: [], hideStart: false, autoReview: true,
+  useLocation: false, places: [], favorites: [], supplements: [], hideStart: false, autoReview: true,
   usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
 });
 // What the Check screen is holding while a check is put together; its photos live in memory only
@@ -39,6 +39,7 @@ export const S = {
   calPick: null,
   chartRange: 'weeks', // the weight chart: 'week' (7 days), 'weeks' (14) or 'whole' (the plan)
   sheet: null, // open bottom sheet: {type:'settings'|'entry'|'num'|'slot'|'plan'|'plan-frame', ...}
+  suppEdit: '', // id of the supplement being edited in Settings
   openSetting: '', // expanded section in Settings
 };
 
@@ -369,6 +370,13 @@ export function coachState(day) {
 // ——— Formatting ———
 export const fmtKg = (kg) => (Math.round(kg * 10) / 10 || 0).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); // `|| 0`: never "-0.0"
 export const fmtInt = (n) => Math.round(n).toLocaleString(LOCALE);
+
+export const SUPP_MAX = 12; // supplements in the list
+// The supplements taken on a day, as ids of supplements that are still in the list
+export const suppTaken = (day) => {
+  const have = new Set((S.settings.supplements || []).map((x) => x.id));
+  return ((S.days[day] && S.days[day].taken) || []).filter((id) => have.has(id));
+};
 
 export const CHECK_MAX = 4; // photos per check
 export const checkReady = () => !S.check.busy && (S.check.photos.length > 0 || S.check.note.trim().length > 2);

@@ -3,7 +3,7 @@
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict } from './ai.js';
-import { SCHEMA_VERSION, APP_ID, COUNT_MAX } from './core.js';
+import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -67,6 +67,7 @@ export function cleanDay(d) {
   if (!d || typeof d !== 'object' || !isDay(d.day)) return null;
   const out = { day: d.day, kg: orNull(d.kg, 400), steps: orNull(d.steps, 200000), water: pos(d.water, 20000), train: d.train === true,
     coffee: isNum(d.coffee) ? Math.round(pos(d.coffee, COUNT_MAX)) : null };
+  if (Array.isArray(d.taken)) out.taken = [...new Set(d.taken.filter(isId))].slice(0, SUPP_MAX);
   if (d.review && typeof d.review === 'object') {
     const r = cleanReview(d.review);
     if (r.head) out.review = { ...r, ts: pos(d.review.ts, 1e14), sig: txt(d.review.sig, 4000), live: d.review.live === true, model: txt(d.review.model, 60) };
@@ -114,6 +115,11 @@ export function cleanSettings(s) {
   if (Array.isArray(s.places)) {
     out.places = s.places.filter((p) => p && typeof p.name === 'string' && isNum(p.lat) && isNum(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)
       .slice(0, 10).map((p) => ({ name: p.name.slice(0, 40), lat: p.lat, lon: p.lon }));
+  }
+  if (Array.isArray(s.supplements)) {
+    const seen = new Set();
+    out.supplements = s.supplements.filter((x) => x && isId(x.id) && txt(x.name, 40).trim() && !seen.has(x.id) && seen.add(x.id))
+      .slice(0, SUPP_MAX).map((x) => ({ id: x.id, name: txt(x.name, 40).trim(), dose: txt(x.dose, 30).trim() }));
   }
   if (Array.isArray(s.favorites)) out.favorites = s.favorites.slice(0, 50).map(cleanFavorite).filter(Boolean);
   if (s.planPhotos && typeof s.planPhotos === 'object') {
