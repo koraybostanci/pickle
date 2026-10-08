@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
+  S, BAND, proteinFloor, dayStatus, dayReasons, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
-  isPerfect, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
+  isPerfect, streak, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
 import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
 
@@ -220,14 +220,14 @@ test('the budget verdict today: no pill before the plan starts, then the plan\'s
   assert.equal(budgetVerdict({ target, eaten: 0, planned: 500 }).text, 'Nothing eaten yet');
   assert.deepEqual(budgetVerdict({ target, eaten: 500, planned: 500 }), { level: '', tone: 'good', text: 'On plan pace' });
   const fast = budgetVerdict({ target, eaten: 650, planned: 500 });
-  assert.equal(fast.tone, 'warn'); assert.match(fast.text, /^150 over plan pace$/);
+  assert.equal(fast.tone, 'warn'); assert.match(fast.text, /^150 above plan pace$/);
   const slow = budgetVerdict({ target, eaten: 250, planned: 500 });
   assert.equal(slow.tone, 'calm'); assert.match(slow.text, /^250 under plan pace$/);
   assert.deepEqual(budgetVerdict({ target, eaten: target * 1.05, planned: target }), { level: '', tone: 'good', text: 'Budget used' });
   const over = budgetVerdict({ target, eaten: target * 1.10, planned: target });
   assert.equal(over.level, 'over'); assert.equal(over.tone, 'warn');
   const back = budgetVerdict({ target, eaten: target * 1.20, planned: target });
-  assert.equal(back.level, 'back'); assert.equal(back.tone, 'bad');
+  assert.equal(back.level, 'back'); assert.equal(back.tone, 'warn');
 });
 
 test('a budget used before the plan has spent it is "used early", never a tick', () => {
@@ -275,4 +275,33 @@ test('supplements taken: only ids still in the list count', () => {
   S.days[T] = { day: T, taken: ['s1', 'removed'] };
   assert.deepEqual(suppTaken(T), ['s1']);
   assert.deepEqual(suppTaken(day(-1)), []);
+});
+
+test('today is "open" until it is on plan; a finished day keeps its colour; the reasons say what was short', () => {
+  reset(); meal(T, 600, 40);
+  assert.equal(dayStatus(T), 'open');
+  meal(day(-1), 1500, 119.6);
+  assert.equal(dayStatus(day(-1)), 'near');
+  assert.deepEqual(dayReasons(day(-1)), ['protein 1 g short of your minimum']);
+  S.entries = []; meal(T, 1500, 130);
+  assert.equal(dayStatus(T), 'on');
+  assert.deepEqual(dayReasons(T), []);
+  S.entries = []; meal(T, 1550 * 1.3, 130);
+  assert.equal(dayStatus(T), 'over');
+});
+
+test('a day that is still open does not break or inflate the run; reasons list what was short', () => {
+  reset();
+  for (const o of [-3, -2, -1]) meal(day(o), 1500, 130);
+  meal(T, 600, 40); // today, still being eaten
+  assert.equal(dayStatus(T), 'open');
+  assert.equal(streak(), 3); // today waits; the three days before it stand
+  S.entries = [];
+  meal(day(-1), 1700, 100, { tier: 'off' }); // 110% of the budget, protein short, one off-plan entry
+  assert.equal(dayStatus(day(-1)), 'near');
+  assert.deepEqual(dayReasons(day(-1)), ['protein 20 g short of your minimum', '1 off-plan entry', '150 kcal above the budget']);
+  S.entries = []; meal(day(-1), 700, 60);
+  assert.equal(dayStatus(day(-1)), 'partial');
+  S.entries = []; meal(T, 1700, 135); // 110% today: judged, not open
+  assert.equal(dayStatus(T), 'near');
 });

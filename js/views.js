@@ -1,5 +1,5 @@
 import {
-  S, today, eff, dayTotals, dayTarget, dayStatus, avg7, latestWeight, weightSeries, projection,
+  S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
@@ -131,7 +131,7 @@ function beam(a, target, started) {
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
-const STATUS_LABEL = { on: 'on plan', near: 'close', over: 'over', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
+const STATUS_LABEL = { on: 'on plan', near: 'close', open: 'in progress', over: 'a bigger day', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
 
 // ——— Week strip: the seven days of the week as tokens. The colour is how the day went; tap one to open it. ———
 function weekStrip(day) {
@@ -173,8 +173,8 @@ function budgetTile(day) {
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
   const due = planned != null && planned >= target - 1;
   const ref = planned == null ? '' : due ? 'All planned meals are due' : planned > 0 ? `Plan by now <b>${n0(planned)}</b>` : planSteps(target)[0] ? `Plan starts at ${planSteps(target)[0].time}` : '';
-  const big = !isToday ? [n0(eaten), `kcal eaten of ${n0(target)}`] : rem >= 0 ? [n0(rem), `kcal left of ${n0(target)}`] : [n0(-rem), 'kcal over budget'];
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} over`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${planned === 0 && ref ? ` ${ref}.` : ''}${v.text ? ` ${v.text}.` : ''}`;
+  const big = !isToday ? [n0(eaten), `kcal eaten of ${n0(target)}`] : rem >= 0 ? [n0(rem), `kcal left of ${n0(target)}`] : [n0(-rem), 'kcal above budget'];
+  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} above`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${planned === 0 && ref ? ` ${ref}.` : ''}${v.text ? ` ${v.text}.` : ''}`;
   const icon = v.tone === 'good' ? CHECK : v.tone === 'calm' ? '' : ALERT;
   return `<div class="tile tile-budget${v.level ? ` is-${v.level === 'back' ? 'way-over' : 'over'}` : ''}" role="group" aria-label="${esc(label)}">
     <span class="tile-top"><span>Calorie budget</span>${v.text ? `<i class="pill${v.tone === 'calm' ? '' : ` pill-${v.tone}`}">${icon}${esc(v.text)}</i>` : ''}</span>
@@ -409,11 +409,11 @@ function coachLine(day) {
   let over = false;
   if (rem < -target * (BAND.near - 1)) {
     over = true;
-    head = 'Over today.';
+    head = 'A bigger day today.';
     line = 'One day doesn’t change the trend; the weekly average is what counts. Tomorrow is a normal plan day, and there is no need to skip a meal to make up for it.';
   } else if (rem < 0) {
     over = true;
-    head = 'A bit over today.';
+    head = 'A little above today.';
     line = 'That’s fine. Carry on with the plan as usual tomorrow.';
   } else if (!tot.n) {
     head = 'A fresh day.';
@@ -644,7 +644,7 @@ function logRow(e) {
 function reviewBlock(day) {
   const v = dayVerdict(day);
   if (!v) return '';
-  const pill = { on: 'pill-good', near: 'pill-warn', under: 'pill-warn', over: 'pill-warn', back: 'pill-bad' }[v.level] || 'pill-plain';
+  const pill = { on: 'pill-good', near: 'pill-warn', under: 'pill-warn', over: 'pill-warn', back: 'pill-warn' }[v.level] || 'pill-plain';
   const r = S.days[day] && S.days[day].review;
   const busy = S.reviewing.has(day);
   const err = S.reviewErr.get(day);
@@ -972,12 +972,15 @@ function calendar() {
     const d = S.calPick;
     const tot = dayTotals(d);
     const dd = S.days[d] || {};
-    pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
+    const st = dayStatus(d);
+    const why = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
+      : `${{ near: 'Close', over: 'A bigger day', partial: 'Not much logged' }[st]}${dayReasons(d).length ? `: ${dayReasons(d).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : ''}.`;
+    pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. ${esc(why)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
   }
   return `<div class="calendar card">
     <div class="cal-row cal-head"><span class="cal-month"></span>${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}</div>
     ${rows}
-    <p class="legend"><span><i class="cell cell-on"></i>on plan</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>over</span><span><i class="cell cell-none"></i>nothing logged</span></p>
+    <p class="legend"><span><i class="cell cell-on"></i>on plan</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>a bigger day</span><span><i class="cell cell-none"></i>nothing logged</span></p>
     ${pick}
   </div>`;
 }
