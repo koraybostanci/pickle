@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, avg7, kilosDown, projection, openSlots, suggest,
+  S, BAND, proteinFloor, dayStatus, dayGoals, dayVerdict, currentAvg, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
   isPerfect, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
@@ -61,9 +61,20 @@ test('a week without weighing keeps the last average, so progress does not reset
   assert.equal(kilosDown(T), 2);
 });
 
+test('kilos down follow the latest weigh-in, not the average', () => {
+  reset();
+  for (const [o, kg] of [[-2, 86], [-1, 85], [0, 83.5]]) S.days[day(o)] = { day: day(o), kg };
+  assert.equal(avg7(T).kg, (86 + 85 + 83.5) / 3);
+  assert.equal(latestWeight(T).kg, 83.5);
+  assert.equal(kilosDown(T), 2); // 86.4 kg start; the average, 84.8, would give 1
+  assert.equal(latestWeight(day(-1)).kg, 85);
+  assert.equal(latestWeight(day(-5)), null);
+});
+
 test('no weigh-in at all: no average, no kilos', () => {
   reset();
   assert.equal(currentAvg(T), null);
+  assert.equal(latestWeight(T), null);
   assert.equal(kilosDown(T), 0);
 });
 
