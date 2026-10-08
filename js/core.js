@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '36'; // bump together with VERSION in sw.js
+export const APP_VERSION = '37'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -75,16 +75,33 @@ export const BAND = { partial: 0.6, low: 0.75, high: 1.07, near: 1.15 };
 // The protein a day has to reach: the minimum, but never more than the target itself
 export const proteinFloor = () => Math.min(S.settings.proteinMin || S.settings.protein, S.settings.protein);
 
-// 'on' = on target, 'near' = close, 'over' = above, 'partial' = too little logged, 'none' = nothing logged
+// 'on' = on target, 'near' = close, 'over' = above, 'partial' = too little logged, 'none' = nothing logged,
+// 'open' = today, still being eaten, so not judged yet
 export function dayStatus(day) {
   const t = dayTotals(day);
   if (!t.n) return 'none';
   const target = dayTarget(day);
   const hasOff = mealsOf(day).some((e) => e.tier === 'off');
+  const on = t.kcal <= target * BAND.high && t.kcal >= target * BAND.low && t.p >= proteinFloor() && !hasOff;
+  if (day === today() && !on && t.kcal <= target * BAND.high) return 'open';
   if (t.kcal < target * BAND.partial) return 'partial';
-  if (t.kcal <= target * BAND.high && t.kcal >= target * BAND.low && t.p >= proteinFloor() && !hasOff) return 'on';
+  if (on) return 'on';
   if (t.kcal <= target * BAND.near) return 'near';
   return 'over';
+}
+// What kept a day from being on plan, in a few words each; empty for a day that was
+export function dayReasons(day) {
+  const t = dayTotals(day);
+  if (!t.n) return [];
+  const target = dayTarget(day);
+  const out = [];
+  const gap = Math.ceil(proteinFloor() - t.p - 1e-6);
+  if (gap > 0) out.push(`protein ${gap} g short of your minimum`);
+  const off = mealsOf(day).filter((e) => e.tier === 'off').length;
+  if (off) out.push(`${off} off-plan ${off === 1 ? 'entry' : 'entries'}`);
+  if (t.kcal > target * BAND.high) out.push(`${fmtInt(t.kcal - target)} kcal above the budget`);
+  else if (t.kcal < target * BAND.low) out.push(`${fmtInt(target - t.kcal)} kcal under the budget`);
+  return out;
 }
 
 // The five things a day can get right. Calories count once enough is logged and the total is within budget.
@@ -288,24 +305,24 @@ export function dayVerdict(day) {
   return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
 }
 export const VERDICT = {
-  open: 'In progress', thin: 'Too little logged', on: 'In line', near: 'Mostly in line',
-  under: 'Under budget', over: 'A bit over', back: 'Well over',
+  open: 'In progress', thin: 'Not much logged', on: 'In line', near: 'Mostly in line',
+  under: 'Under budget', over: 'A little above', back: 'A bigger day',
 };
 // The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
 export function verdictText(v) {
   const out = [];
   const kcal = fmtInt(Math.abs(v.delta));
   const judged = v.level !== 'thin' && v.level !== 'open';
-  if (v.level === 'thin') out.push(`Only ${fmtInt(v.kcal)} kcal logged, too little to judge the day.`);
+  if (v.level === 'thin') out.push(`Only ${fmtInt(v.kcal)} kcal logged, not enough to judge the day yet.`);
   else if (v.level === 'open') out.push(v.delta < -25 ? `${kcal} kcal left for today.` : 'The budget for today is used up.');
   else if (v.delta > 25) {
     const kg = v.kg >= 0.005 ? `: about ${v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '';
     const cost = !kg || v.share <= 0 ? '' : v.share >= 1.5 ? `, ${v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} days of the schedule`
       : v.share >= 0.95 ? ', all of what the day was meant to lose' : `, ${Math.round(v.share * 100)}% of what the day was meant to lose`;
-    out.push(`${kcal} kcal over budget${kg}${cost}.`);
+    out.push(`${kcal} kcal above budget${kg}${cost}. One day does not change the trend.`);
   } else if (v.delta < -25) out.push(`${kcal} kcal under budget${v.level === 'under' ? '; check that everything is logged' : ''}.`);
   else out.push('On budget.');
-  if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short.`);
+  if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short of your minimum.`);
   if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
   return out;
 }
@@ -325,24 +342,24 @@ export function planSteps(target) {
 }
 export const plannedBy = (target, hour) => planSteps(target).filter((x) => x.at <= hour).reduce((a, x) => a + x.kcal, 0);
 // The day's calories against its budget and, for a day in progress (planned = kcal the plan has spent by now), against the plan's pace.
-// planned === null means a finished day. → { level: '' | 'over' | 'back', tone: 'good' | 'warn' | 'bad' | 'calm', text }
+// planned === null means a finished day. → { level: '' | 'over' | 'back', tone: 'good' | 'warn' | 'calm', text }
 export function budgetVerdict({ target, eaten: kcal, planned }) {
   const eaten = Math.round(kcal); // as dayVerdict rounds it
   const rem = target - eaten;
   const n = (x) => fmtInt(Math.abs(x));
   const past = planned == null;
   const level = rem < -target * (BAND.near - 1) ? 'back' : rem < -target * (BAND.high - 1) ? 'over' : '';
-  if (level) return { level, tone: level === 'back' ? 'bad' : 'warn', text: past ? `Ended ${n(rem)} over` : level === 'back' ? 'Well over budget' : 'A bit over budget' };
+  if (level) return { level, tone: 'warn', text: past ? `Ended ${n(rem)} above` : level === 'back' ? 'Well above budget' : 'A little above budget' };
   if (past) {
     if (!eaten) return { level, tone: 'calm', text: 'Nothing logged' };
-    const text = Math.abs(rem) <= 25 ? 'Ended on budget' : rem > 0 ? `Ended ${n(rem)} under` : `Ended ${n(rem)} over`;
+    const text = Math.abs(rem) <= 25 ? 'Ended on budget' : rem > 0 ? `Ended ${n(rem)} under` : `Ended ${n(rem)} above`;
     return { level, tone: eaten < target * BAND.low ? 'calm' : 'good', text };
   }
   if (rem <= 0) return planned >= target - 1 ? { level, tone: 'good', text: 'Budget used' } : { level, tone: 'warn', text: 'Budget used early' }; // within the slack still counts as on target, once the plan has spent it too
   if (!planned) return { level, tone: 'calm', text: '' };
   if (!eaten) return { level, tone: 'calm', text: 'Nothing eaten yet' };
   const rate = eaten / planned;
-  if (rate > PACE.fast) return { level, tone: 'warn', text: `${n(eaten - planned)} over plan pace` };
+  if (rate > PACE.fast) return { level, tone: 'warn', text: `${n(eaten - planned)} above plan pace` };
   if (rate < PACE.slow) return { level, tone: 'calm', text: `${n(eaten - planned)} under plan pace` };
   return { level, tone: 'good', text: 'On plan pace' };
 }
