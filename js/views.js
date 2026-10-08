@@ -1,5 +1,5 @@
 import {
-  S, today, eff, dayTotals, dayTarget, dayStatus, avg7, currentAvg, weightSeries, projection,
+  S, today, eff, dayTotals, dayTarget, dayStatus, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
   plannedBy, planSteps, budgetVerdict, budgetMeter,
@@ -38,7 +38,7 @@ const settingsButton = `<button type="button" class="icon-btn" data-act="setting
 function progressSummary() {
   const s = S.settings;
   const t = today();
-  const a = currentAvg(t);
+  const a = latestWeight(t);
   const target = targetAt(t, s);
   const left = diffDays(t, s.targetDate);
   const toStart = diffDays(t, s.startDate);
@@ -91,7 +91,7 @@ function kiloMarks() {
 }
 
 // The beam, on Progress: a graduated scale from the start weight to the target. The teal part is the
-// distance covered, the brass block is you (the 7-day average), the small mark is where your line is today.
+// distance covered, the brass block is you (your latest weigh-in), the small mark is where your line is today.
 function beam(a, target, started) {
   const s = S.settings;
   const span = s.startKg - s.targetKg;
@@ -200,7 +200,8 @@ function bento(day, part) {
     const p = progressSummary();
     const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
     // Today's weigh-in, then the 7-day average beside where you stand: "avg 85.2 · on schedule"
-    const status = dd.kg && p.a && p.started ? `avg ${n1(p.a.kg)} · ${lower(p.tag)}` : p.tag;
+    const avg = avg7(day);
+    const status = dd.kg && avg && p.started ? `avg ${n1(avg.kg)} · ${lower(p.tag)}` : p.tag;
     weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
       ${top('Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
       <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}</span>
@@ -1052,9 +1053,9 @@ function beamCard(a, target, started) {
   const next = marks.find((kg) => s.startKg - kg > lost + 1e-6);
   const note = next == null ? 'Every kilo collected.'
     : a && started ? `Next kilo at <b>${esc(kgLabel(next))}</b>, ${esc(n1(a.kg - next))} kg away.`
-      : 'A kilo is yours when the 7-day average reaches it.';
+      : 'A kilo is yours when a weigh-in reaches it.';
   return `<section class="card beam-card" aria-labelledby="beam-title">
-    <div class="card-head"><h2 id="beam-title" class="label">The beam · 7-day average</h2><span class="label">${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'}</span></div>
+    <div class="card-head"><h2 id="beam-title" class="label">The beam · latest weigh-in</h2><span class="label">${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'}</span></div>
     ${beam(a, target, started)}
     <p class="note">${note}</p>
   </section>`;

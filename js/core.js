@@ -100,9 +100,9 @@ export function dayGoals(day) {
 }
 export const isPerfect = (day) => dayGoals(day).every((g) => g.done);
 
-// Whole kilos lost since the start, by the 7-day average
+// Whole kilos lost since the start, by the latest weigh-in
 export function kilosDown(day = today()) {
-  const a = currentAvg(day);
+  const a = latestWeight(day);
   if (!a || day < S.settings.startDate) return 0;
   return Math.max(0, Math.floor(S.settings.startKg - a.kg + 1e-6));
 }
@@ -138,6 +138,12 @@ export function currentAvg(day = today()) {
   if (a) return a;
   const last = weightSeries().filter((d) => d.day <= day).pop();
   return last ? avg7(last.day) : null;
+}
+
+// The latest recorded weigh-in on or before the day, shaped like an average of one
+export function latestWeight(day = today()) {
+  const last = weightSeries().filter((d) => d.day <= day).pop();
+  return last ? { kg: last.kg, n: 1, day: last.day } : null;
 }
 
 export function weightSeries() {
