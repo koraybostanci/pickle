@@ -1554,11 +1554,16 @@ if (location.hostname === 'localhost') window.__app = { S, parseLocal, render, s
 // Keep the composer above the on-screen keyboard
 if (window.visualViewport) {
   const vv = window.visualViewport;
+  // Only a focused field has a keyboard: pulling the page past its edge or zooming also changes the visual viewport,
+  // and that must not lift the composer or hide the tabs
+  const typing = () => { const t = document.activeElement && document.activeElement.tagName; return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT'; };
   const onViewport = () => {
-    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    const kb = typing() ? Math.max(0, window.innerHeight - vv.height - Math.max(0, vv.offsetTop)) : 0;
     document.documentElement.style.setProperty('--kb', kb + 'px');
     document.body.classList.toggle('kb-open', kb > 120);
   };
   vv.addEventListener('resize', onViewport);
   vv.addEventListener('scroll', onViewport);
+  document.addEventListener('focusin', onViewport);
+  document.addEventListener('focusout', () => setTimeout(onViewport, 0));
 }
