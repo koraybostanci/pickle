@@ -94,3 +94,9 @@ test('a photo is always stored as JPEG, and damaged base64 is skipped', () => {
   const back = cleanPhoto({ id: 'p', b64: b64FromBuf(new Uint8Array(bytes).buffer) }).buf;
   assert.deepEqual([...new Uint8Array(back)], bytes);
 });
+
+test('a day: the quick note is kept, cleaned, and dropped when empty', () => {
+  const d = cleanDay({ day: '2026-10-01', coach: { note: ' Nice  start. ', sig: 's', ts: 1, model: 'm' } });
+  assert.equal(d.coach.note, 'Nice start.');
+  assert.equal(cleanDay({ day: '2026-10-01', coach: { note: '' } }).coach, undefined);
+});
