@@ -2,7 +2,7 @@
 // type and size before it is stored or shown, so a damaged or hostile file cannot break the screens.
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
-import { cleanReview, cleanVerdict } from './ai.js';
+import { cleanReview, cleanCoach, cleanVerdict } from './ai.js';
 import { SCHEMA_VERSION, APP_ID, COUNT_MAX } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -70,6 +70,10 @@ export function cleanDay(d) {
   if (d.review && typeof d.review === 'object') {
     const r = cleanReview(d.review);
     if (r.head) out.review = { ...r, ts: pos(d.review.ts, 1e14), sig: txt(d.review.sig, 4000), live: d.review.live === true, model: txt(d.review.model, 60) };
+  }
+  if (d.coach && typeof d.coach === 'object') {
+    const c = cleanCoach(d.coach);
+    if (c.note) out.coach = { ...c, ts: pos(d.coach.ts, 1e14), sig: txt(d.coach.sig, 4000), model: txt(d.coach.model, 60) };
   }
   return out;
 }

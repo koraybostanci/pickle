@@ -328,6 +328,29 @@ export function cleanReview(d) {
   return { head: clean(d.head, 240), good: list(d.good), cut: list(d.cut), next: clean(d.next, 240) };
 }
 
+// ——— The quick note on the day so far: text only, a few sentences ———
+const COACH_SYSTEM = `You give one person on a weight-loss plan a quick, supportive check-in on their day so far. Reply with JSON only, in English.
+The plan: the calorie budget and protein goal given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
+Weekly allowance: ${RULES.weekly.join(' ')}
+Off plan: ${RULES.off.join(' ')}
+note: two or three short sentences, at most 45 words in all. Say how the day is going so far, then what is left of the budget and which macros (protein first, then fibre) are still worth adding, with a concrete food or meal from the plan for the rest of the day. Warm and encouraging, never scolding; if the day is already over budget, be kind and say what to do next without skipping meals.
+Use only the foods and numbers given; never invent an amount. No medical advice.`;
+const COACH_SHAPE = '\nReturn exactly one JSON object with this key: {"note":""}';
+const COACH_SCHEMA = { type: 'object', additionalProperties: false, required: ['note'], properties: { note: { type: 'string' } } };
+
+/**
+ * @param {{cfg:object, brief:string, onRetry?:Function}} o brief: the day so far in plain lines, built by the app
+ * @returns {Promise<{data:{note:string}, usage:{in:number,out:number}, model:string}>}
+ */
+export async function coach(o) {
+  const req = { system: COACH_SYSTEM, shape: COACH_SHAPE, text: o.brief, schema: COACH_SCHEMA, json: true, maxTokens: 250 };
+  const r = await callWithFallback(o.cfg, req, o.onRetry);
+  const data = cleanCoach(r.data);
+  if (!data.note) throw new AiError('empty', 'The model returned no note');
+  return { ...r, data };
+}
+export const cleanCoach = (d) => ({ note: clean(d && typeof d === 'object' ? d.note : '', 400) });
+
 // ——— Check before ordering or buying: photos of a menu, a dish or a product, judged against the plan ———
 const CHECK_SYSTEM = `You help one person on a weight-loss plan decide what to order or what to buy. They send photos of a restaurant menu, a dish, a shop shelf or a packaged product (front, nutrition table, ingredients), sometimes with a note. Several photos can show one thing or several things to compare. Reply with JSON only, in English. Keep dish and product names as written; add a short English gloss in brackets when the name is in another language.
 The plan is built from: ${planFoods()}.

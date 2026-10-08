@@ -1,7 +1,7 @@
 import {
   S, today, eff, dayTotals, dayTarget, dayStatus, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
-  dayVerdict, verdictText, reviewState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
+  dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
   plannedBy, planSteps, budgetVerdict, budgetMeter,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
@@ -45,7 +45,6 @@ function progressSummary() {
   const started = toStart <= 0;
   const pace = planRate().kg * 7;
   const endDate = dShort.format(parseDay(s.targetDate));
-  const source = !a ? '' : a.n >= 3 ? '7-day average' : a.n === 1 ? 'Last weigh-in' : `Average of ${a.n} weigh-ins`;
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
   const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
   let head; // the status, a few words
@@ -76,7 +75,7 @@ function progressSummary() {
       tag = left <= 0 ? `${toLose} to go` : Math.abs(diff) <= 0.2 ? 'On schedule' : `${n1(Math.abs(diff))} kg ${diff < 0 ? 'ahead' : 'behind'}`;
     }
   }
-  return { head, line, tag, a, target, source, started };
+  return { head, line, tag, a, target, started };
 }
 
 const kgLabel = (kg) => (Number.isInteger(kg) ? String(kg) : n1(kg));
@@ -420,7 +419,20 @@ function coachLine(day) {
     head = 'All meals in, on budget.';
     line = 'Nicely done.';
   }
-  return `<section class="coach${over ? ' is-over' : ''}">${POISE}<p><b>${esc(head)}</b> ${esc(line)}</p></section>`;
+  return `<section class="coach${over ? ' is-over' : ''}">${POISE}<div><p><b>${esc(head)}</b> ${esc(line)}</p>${coachAi(day)}</div></section>`;
+}
+
+// The model's quick note on the day so far, under the coach line: asked for, never sent by itself
+function coachAi(day) {
+  if (day !== today() || !dayTotals(day).n) return '';
+  const c = S.days[day] && S.days[day].coach;
+  const err = S.coachErr.get(day);
+  const ask = (label) => `<button type="button" class="link" data-act="coach-day" data-day="${day}">${label}</button>`;
+  if (S.coaching.has(day)) return '<p class="coach-ai review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing a note…</p>';
+  const fresh = coachState(day) === 'fresh';
+  return `${c ? `<p class="coach-ai">${esc(c.note)}</p>` : ''}
+    ${hasKey() ? `<p class="coach-ai review-foot">${c && fresh ? `AI note, ${hhmm(c.ts)}.` : ''} ${ask(!c ? 'How am I doing so far?' : fresh ? 'Ask again' : 'Update the note')}</p>` : ''}
+    ${err ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}`;
 }
 
 // First use: shows the single next step; disappears when finished or hidden

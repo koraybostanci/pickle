@@ -2,7 +2,7 @@ import * as db from './db.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, review, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
 import {
@@ -375,6 +375,36 @@ function queueReview(day, auto = false) {
   S.reviewErr.delete(day);
   render();
   chain = chain.then(() => runReview(day, auto)).catch(() => {});
+}
+
+// ——— The quick note on the day so far, written by the model ———
+// The review's brief, plus what is left of the budget and the goals
+function coachBrief(day) {
+  const s = S.settings;
+  const t = dayTotals(day);
+  const r = (x) => Math.round(x);
+  return `${reviewBrief(day)}\nLeft today: ${r(Math.max(0, dayTarget(day) - t.kcal))} kcal, protein ${r(Math.max(0, s.protein - t.p))} g, fibre ${r(Math.max(0, s.fiber - t.fib))} g.`;
+}
+async function runCoach(day) {
+  try {
+    const sig = reviewSig(day);
+    const { data, usage, model } = await coach({ cfg: aiCfg(), brief: coachBrief(day) });
+    await addUsage(model, usage);
+    // The day may have been wiped while the request was out
+    if (dayTotals(day).n) await saveDay(day, { coach: { ...data, ts: Date.now(), sig, model } });
+    S.coachErr.delete(day);
+  } catch (err) {
+    S.coachErr.set(day, modelFailure(err, 'note'));
+  }
+  S.coaching.delete(day);
+  render();
+}
+function queueCoach(day) {
+  if (S.coaching.has(day) || !dayTotals(day).n) return;
+  S.coaching.add(day);
+  S.coachErr.delete(day);
+  render();
+  chain = chain.then(() => runCoach(day)).catch(() => {});
 }
 
 // The last finished day is reviewed by itself, once: one small text request a day
@@ -1215,6 +1245,11 @@ const ACT = {
   },
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
+  'coach-day': (el) => {
+    if (!hasKey()) return toast('Add an API key in Settings to get a note');
+    if (navigator.onLine === false) return toast('No connection. Try again when you are online');
+    queueCoach(el.dataset.day);
+  },
   'review-day': (el) => {
     if (!hasKey()) return toast('Add an API key in Settings to get a review');
     if (navigator.onLine === false) return toast('No connection. Try again when you are online');
@@ -1298,7 +1333,7 @@ const ACT = {
     await saveSettings();
     S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = '';
-    S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.reviewOpen.clear();
+    S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.coaching.clear(); S.coachErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
     closeSheet();
     go('today');
@@ -1306,7 +1341,7 @@ const ACT = {
   },
 };
 // Work that a wipe must not run into: it would write its result into the emptied app
-const busyNow = () => S.busy.size > 0 || S.reviewing.size > 0 || preparing > 0 || S.check.busy;
+const busyNow = () => S.busy.size > 0 || S.reviewing.size > 0 || S.coaching.size > 0 || preparing > 0 || S.check.busy;
 
 // A handler that fails (storage full, a database that will not open) says so, instead of the screen showing
 // something that was never saved. Runs fn straight away: file pickers need the tap's own turn.
@@ -1443,7 +1478,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && newDay()) { re
 let swReg = null;
 function safeToReload() {
   const c = S.check;
-  const working = S.busy.size || S.reviewing.size || preparing || c.busy || c.photos.length || c.note; // nothing in flight or half-written
+  const working = S.busy.size || S.reviewing.size || S.coaching.size || preparing || c.busy || c.photos.length || c.note; // nothing in flight or half-written
   return $('#sheet').hidden && !$('#composer-input').value && !working && !(document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
 }
 function setupUpdates() {
