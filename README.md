@@ -18,7 +18,7 @@ your start weight to your goal.
 
 ## What it does
 
-- **Today:** one line on where the day stands and what comes next (calm when the day goes over);
+- **Today:** one line on where the day stands and what comes next (calm when the day goes above budget);
   the week as seven day tokens, each with a shape for how the day went, and your run of days on
   plan; the day's calories as a budget meter: what is left, how far the day has got and where the
   plan would have you by now; weight against your line, protein, the
@@ -33,8 +33,8 @@ your start weight to your goal.
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
   what the photo does not show and it revises the items; you can also correct the portion, the
   numbers or the time. Every day with a logged meal carries a review. The verdict is worked out on
-  the device (in line, mostly in line, under budget, a bit over, well over) and, for a surplus,
-  what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal over budget: about 0.06 kg,
+  the device (in line, mostly in line, under budget, a little above, a bigger day) and, for a surplus,
+  what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal above budget: about 0.06 kg,
   69% of what the day was meant to lose"). The model then writes a short note on what helped, what
   cost the most and what would have reduced it, and one thing to do next.
 - **Check:** a verdict before you order or buy. Photograph a restaurant menu, a dish, or a product
