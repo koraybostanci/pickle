@@ -1,7 +1,7 @@
 // The model layer (js/ai.js) against a fetch that never leaves the machine. `node --test`
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, review, check, AI_ERRORS, WAITING } from '../js/ai.js';
+import { analyze, review, coach, check, AI_ERRORS, WAITING } from '../js/ai.js';
 
 const sonnet = { provider: 'anthropic', key: 'sk-ant-secretsecret', model: 'claude-sonnet-5-5' };
 const haiku = { ...sonnet, model: 'claude-haiku-4-5-20251001' };
@@ -98,4 +98,12 @@ test('a review whose list is a plain string is accepted', async () => {
   mockFetch(() => reply(200, claudeBody(JSON.stringify({ head: 'h', good: 'one', cut: [], next: 'n' }))));
   const { data } = await review({ cfg: haiku, brief: 'b' });
   assert.deepEqual(data.good, ['one']);
+});
+
+test('a quick note: text is cleaned, an empty one is an error', async () => {
+  mockFetch(() => reply(200, claudeBody(JSON.stringify({ note: '  Good  start.\n Add protein. ' }))));
+  const { data } = await coach({ cfg: haiku, brief: 'b' });
+  assert.equal(data.note, 'Good start. Add protein.');
+  mockFetch(() => reply(200, claudeBody(JSON.stringify({ note: '' }))));
+  await assert.rejects(() => coach({ cfg: haiku, brief: 'b' }), { code: 'empty' });
 });

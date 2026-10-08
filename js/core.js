@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '32'; // bump together with VERSION in sw.js
+export const APP_VERSION = '33'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -28,6 +28,8 @@ export const S = {
   retry: new Map(), // status note shown while an analysis is retrying
   reviewing: new Set(), // days whose review is being written
   reviewErr: new Map(), // day → why the last review failed
+  coaching: new Set(), // days whose quick note is being written
+  coachErr: new Map(), // day → why the last quick note failed
   reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
   check: freshCheck(), // the check being put together
   checks: [], // earlier verdicts, newest first, without photos
@@ -132,14 +134,6 @@ export function avg7(day) {
   }
   return n ? { kg: s / n, n } : null;
 }
-// The 7-day average now; after a week without weighing, the last one there is, so a week off does not reset the progress
-export function currentAvg(day = today()) {
-  const a = avg7(day);
-  if (a) return a;
-  const last = weightSeries().filter((d) => d.day <= day).pop();
-  return last ? avg7(last.day) : null;
-}
-
 // The latest recorded weigh-in on or before the day, shaped like an average of one
 export function latestWeight(day = today()) {
   const last = weightSeries().filter((d) => d.day <= day).pop();
@@ -363,6 +357,13 @@ export function reviewState(day) {
   const r = S.days[day] && S.days[day].review;
   if (!r) return 'none';
   return r.sig !== reviewSig(day) || (r.live && day !== today()) ? 'stale' : 'fresh';
+}
+
+// The quick note on the day so far goes stale when the day's meals change
+export function coachState(day) {
+  const c = S.days[day] && S.days[day].coach;
+  if (!c) return 'none';
+  return c.sig === reviewSig(day) && day === today() ? 'fresh' : 'stale';
 }
 
 // ——— Formatting ———

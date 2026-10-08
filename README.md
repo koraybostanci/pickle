@@ -63,7 +63,7 @@ water, coffee, beer and workout days. Typing `85.4`, `8200 steps`, `water 2 glas
 - Photos are never stored as taken. Logged photos are kept as a 768 px copy, plan pictures as a
   640 px framed and colour-corrected one. Both are re-encoded, so the stored file carries no
   location, capture time or camera details. The capture time is read once, to time the entry.
-- The day's review sends text only: that day's meals with their numbers, steps, water, weigh-in,
+- The day's review and the quick note on Today send text only: that day's meals with their numbers, steps, water, weigh-in,
   your goals, the weight schedule and where you stand against it. No photos.
 - Photos taken for a check are sent at up to 1536 px, so small print stays readable, together with
   where your day stands. They are not stored; the last 30 verdicts are, as text.
@@ -122,6 +122,10 @@ The last finished day (looked for up to three days back) is reviewed by itself w
 app or come back to it, if enough is logged: one short text request a day. Any other day, including
 today so far, is reviewed when you ask for it in the Log. The automatic review can be switched off
 in the same Settings section; the verdict from the numbers needs no model and is always shown.
+
+On Today, once a meal is logged, "How am I doing so far?" under the coach line asks for a quick,
+supportive note: how the day is going and what is left of the budget, protein and fibre. It is sent
+only when you ask, as one short text request (the same text as the day's review, plus what is left).
 
 Estimates from a photo are rough. Treat them as a starting point and correct the portion when
 it is off.
