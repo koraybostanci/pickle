@@ -1,8 +1,8 @@
 // Badges: what has been earned and on which day, worked out from the log. No DOM and no storage, and `today` is passed in.
 // Earned badges are never taken back: evaluate and merge only ever add, and the earliest day wins.
 import { T } from './i18n.js';
-import { withDayIndex, mealsOf, dayStatus, dayGoals, isPerfect, proteinLevel, weekStart, weekResult, WEEK_TIERS } from './core.js';
-import { addDays, diffDays } from './plan.js';
+import { S as CORE, withDayIndex, mealsOf, dayStatus, dayGoals, isPerfect, proteinLevel, weekStart, weekResult, WEEK_TIERS } from './core.js';
+import { addDays, diffDays, dayKey, parseDay } from './plan.js';
 
 // Avatar parts: slot, and the badge step that unlocks it (null = free). Stage 1, the plain face and no accessory are free.
 export const PARTS = {
@@ -57,6 +57,8 @@ export const kilosCap = (base) => Math.max(0, Math.floor(base.startKg - base.tar
 export const stepsOf = (id, base) => (id === 'kilos' && base ? BY_ID.kilos.steps.filter((x) => x <= kilosCap(base)) : BY_ID[id].steps);
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// A day that exists on the calendar (2026-02-31 and 2026-99-99 do not)
+export const isRealDay = (v) => typeof v === 'string' && DAY.test(v) && dayKey(parseDay(v)) === v;
 const MAX_DAYS = 3660; // a pass looks back ten years at most
 const hasData = (r) => !!r && !!(r.kg || r.steps || r.water || r.coffee || (r.taken && r.taken.length));
 
@@ -65,6 +67,7 @@ const hasData = (r) => !!r && !!(r.kg || r.steps || r.water || r.coffee || (r.ta
 // and weigh-ins and meals count the day they are logged. A week counts once its Sunday is before `today`.
 // base: {startKg, targetKg} for the progress badges (the settings when left out).
 export function tally(S, today, base) {
+  if (S !== CORE) throw new Error('badges read the state of core.js; pass its S'); // the day maths below reads that state, whatever is passed
   const s = S.settings;
   const b = base || { startKg: s.startKg, targetKg: s.targetKg };
   const cap = kilosCap(b);
@@ -163,7 +166,7 @@ export function merge(a, b) {
     for (const [id, steps] of Object.entries(src)) {
       if (!Object.hasOwn(BY_ID, id) || !steps || typeof steps !== 'object') continue;
       for (const [thr, day] of Object.entries(steps)) {
-        if (!BY_ID[id].steps.includes(Number(thr)) || typeof day !== 'string' || !DAY.test(day)) continue;
+        if (!BY_ID[id].steps.includes(Number(thr)) || !isRealDay(day)) continue;
         if (!out[id]) out[id] = {};
         if (!Object.hasOwn(out[id], thr) || day < out[id][thr]) out[id][thr] = day;
       }
@@ -195,4 +198,25 @@ export function unlocked(part, got) {
   if (!Object.hasOwn(PARTS, part)) return false;
   const req = PARTS[part].req;
   return !req || !!(got && Object.hasOwn(got, req[0]) && got[req[0]] && Object.hasOwn(got[req[0]], req[1]));
+}
+
+// ——— What is stored ———
+// kv `badges`: {v:1, got, seen:{id: highest step seen}, av:{stage,face,acc}, base:{startKg,targetKg}|null}
+export const DEFAULT_AV = { stage: 'stage1', face: 'face_plain', acc: 'acc_none' };
+export const freshBadges = () => ({ v: 1, got: {}, seen: {}, av: { ...DEFAULT_AV }, base: null });
+
+// One evaluation of the log against what is stored (`prev`, or null on the first run). Pure: the caller writes `next` when `changed`.
+// `base` (the weights the progress badges are measured from) is frozen at the first evaluation that has something logged and is never
+// replaced after that, so moving the goals later cannot earn halfway or goal. Nothing is stored while the log is empty.
+export function settle(prev, S, today) {
+  const cur = prev || freshBadges();
+  let base = cur.base;
+  if (!base && (S.entries.length || Object.keys(S.days).length)) {
+    const { startKg, targetKg } = S.settings;
+    if ([startKg, targetKg].every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 30 && x <= 300)) base = { startKg, targetKg };
+  }
+  const got = evaluate(S, today, { got: cur.got, base: base || undefined });
+  const news = added(cur.got, got);
+  const changed = news.length > 0 || (!cur.base && !!base);
+  return { next: changed ? { ...cur, got, base } : prev, added: news, changed };
 }

@@ -72,3 +72,16 @@ test('supplements: the list and what was taken each day are exported; unknown id
   assert.deepEqual(rows(db, 'SELECT name, dose FROM weightplan_supplements ORDER BY id').map((r) => [r.name, r.dose]), [['Vitamin D', '2000 IU'], [ 'B12', null]]);
   assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_supplement_log')[0].n, 3);
 });
+
+test('badges: one row per earned step, and none without any', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(buildSql({ settings, entries, days, badges: { days_on: { 7: '2026-10-12', 30: '2026-11-05' }, first_meal: { 1: '2026-10-06' } }, appVersion: 'test' }).sql);
+  assert.deepEqual(rows(db, 'SELECT id, threshold, day FROM weightplan_badges ORDER BY id, threshold').map((r) => ({ ...r })), [
+    { id: 'days_on', threshold: 7, day: '2026-10-12' }, { id: 'days_on', threshold: 30, day: '2026-11-05' }, { id: 'first_meal', threshold: 1, day: '2026-10-06' },
+  ]);
+  assert.equal(rows(db, "SELECT value FROM weightplan_settings WHERE key = 'export_schema'")[0].value, '4');
+  const none = new DatabaseSync(':memory:');
+  load(none);
+  load(none);
+  assert.equal(rows(none, 'SELECT COUNT(*) AS n FROM weightplan_badges')[0].n, 0);
+});

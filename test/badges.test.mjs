@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { S, today, dayStatus, history, dayGoals, dayTotals, weekResult, withDayIndex, weekStart } from '../js/core.js';
 import { addDays } from '../js/plan.js';
-import { CATALOG, BY_ID, PARTS, GROUPS, scan, tally, evaluate, merge, added, progress, unlocked, isLadder, stepsOf } from '../js/badges.js';
+import { CATALOG, BY_ID, PARTS, GROUPS, scan, tally, evaluate, merge, added, progress, unlocked, isLadder, stepsOf, settle, isRealDay } from '../js/badges.js';
 import tr from '../js/tr.js';
 
 const T = today();
@@ -348,4 +348,55 @@ test('performance: 1000 days of 5 entries scan in about a second at most', () =>
   const ms = performance.now() - t0;
   assert.ok(got.days_on[365], 'a long history earns the top steps');
   assert.ok(ms < 1000, `${Math.round(ms)} ms`);
+});
+
+test('merge drops days that are not on the calendar', () => {
+  const m = merge({ days_on: { 7: '2026-99-99', 30: '2026-02-31', 100: '2026-02-28' }, first_meal: { 1: '0000-01-01' } }, { days_on: { 7: '2026-03-01' } });
+  assert.deepEqual(m, { days_on: { 7: '2026-03-01', 100: '2026-02-28' } });
+  assert.ok(isRealDay('2028-02-29'));
+  for (const bad of ['2027-02-29', '2026-13-01', '2026-00-10', '26-01-01', null, 5, {}]) assert.equal(isRealDay(bad), false, String(bad));
+});
+
+test('scan refuses a state that is not the one core.js reads', () => {
+  reset();
+  assert.throws(() => scan({ settings: S.settings, entries: [], days: {} }, T), /core\.js/);
+  assert.doesNotThrow(() => scan(S, T));
+});
+
+test('settle: nothing is stored for an empty log, base is frozen once, a second run changes nothing', () => {
+  reset();
+  assert.deepEqual(settle(null, S, T), { next: null, added: [], changed: false });
+  on(-3, 3);
+  const a = settle(null, S, T);
+  assert.equal(a.changed, true);
+  assert.deepEqual(a.next.base, { startKg: 86.4, targetKg: 78 });
+  assert.deepEqual(a.next.got.first_meal, { 1: day(-3) });
+  assert.deepEqual(a.next.av, { stage: 'stage1', face: 'face_plain', acc: 'acc_none' });
+  // moving the goals later does not move base, and nothing new means no write
+  S.settings.startKg = 100; S.settings.targetKg = 99;
+  const b = settle(a.next, S, T);
+  assert.equal(b.changed, false);
+  assert.equal(b.next, a.next);
+  assert.deepEqual(b.next.base, { startKg: 86.4, targetKg: 78 });
+  // new qualifying data is added and base still holds
+  rec(day(-2), { kg: 86 });
+  const c = settle(a.next, S, T);
+  assert.equal(c.changed, true);
+  assert.deepEqual(c.added.map((x) => x[0]), ['first_weigh']);
+  assert.deepEqual(c.next.base, { startKg: 86.4, targetKg: 78 });
+  assert.equal(settle(c.next, S, T).changed, false);
+});
+
+test('clearing the log keeps what was earned; a factory reset starts again', () => {
+  reset();
+  on(-10, 10);
+  const had = settle(null, S, T).next;
+  assert.ok(had.got.days_on);
+  reset(); // the log is gone
+  const after = settle(had, S, T);
+  assert.equal(after.changed, false);
+  assert.deepEqual(after.next.got, had.got);
+  assert.equal(after.next.base, had.base);
+  // factory reset: kv is emptied (db.clear('kv') in js/app.js), so the next run has no stored copy and an empty log
+  assert.deepEqual(settle(null, S, T), { next: null, added: [], changed: false });
 });

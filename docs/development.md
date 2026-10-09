@@ -78,6 +78,7 @@ version is shown under Settings → "Version and updates".
 - `js/views.js`: the screens
 - `js/plan.js`: food table, meal templates, goals, rules
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
+- `js/badges.js`: the badge catalog and which badges the log has earned (no DOM, no storage); `app.js` stores the result in kv `badges`
 - `js/backup.js`: checks everything read from a backup file before it is stored
 - `js/exif.js`: reads capture time and location from a photo
 - `js/db.js`: IndexedDB

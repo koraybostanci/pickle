@@ -4,6 +4,7 @@
 import { T } from './i18n.js';
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict } from './ai.js';
+import { CATALOG, BY_ID, PARTS, DEFAULT_AV, merge, unlocked, freshBadges } from './badges.js';
 import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX, TK_KINDS, tkValid } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -147,4 +148,39 @@ export function cleanSettings(s) {
   }
   if (s.wins && typeof s.wins === 'object') out.wins = { kilos: Math.round(pos(s.wins.kilos, 1000)), perfect: isDay(s.wins.perfect) ? s.wins.perfect : '' };
   return out;
+}
+
+// Earned badges, from the stored copy or a backup: only catalog ids, steps on the ladder and real calendar days survive, and a worn
+// part the badges do not unlock falls back to the default. Never throws, whatever it is given.
+const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+export function cleanBadges(raw) {
+  const out = freshBadges();
+  if (!plain(raw)) return out;
+  if (plain(raw.got)) {
+    const got = {};
+    for (const id of Object.keys(BY_ID)) if (Object.hasOwn(raw.got, id) && plain(raw.got[id])) got[id] = Object.fromEntries(Object.entries(raw.got[id]).slice(0, 20));
+    out.got = merge(got, {}); // merge keeps the steps that are on the ladder and the days that exist
+  }
+  if (plain(raw.seen)) {
+    for (const b of CATALOG) if (Object.hasOwn(raw.seen, b.id) && b.steps.includes(raw.seen[b.id])) out.seen[b.id] = raw.seen[b.id];
+  }
+  if (plain(raw.av)) {
+    for (const slot of Object.keys(DEFAULT_AV)) {
+      const p = raw.av[slot];
+      if (typeof p === 'string' && Object.hasOwn(PARTS, p) && PARTS[p].slot === slot && unlocked(p, out.got)) out.av[slot] = p;
+    }
+  }
+  const b = plain(raw.base) ? raw.base : null;
+  if (b && [b.startKg, b.targetKg].every((x) => isNum(x) && x >= RANGES.startKg[0] && x <= RANGES.startKg[1])) out.base = { startKg: b.startKg, targetKg: b.targetKg };
+  return out;
+}
+
+// The stored badges (or null) together with those of a backup: union of what is earned (earliest day wins), the highest step seen,
+// the worn parts and the frozen weights of this device when it has them
+export function restoreBadges(current, incoming) {
+  const a = current ? cleanBadges(current) : null;
+  const b = cleanBadges(incoming);
+  const seen = { ...b.seen };
+  if (a) for (const [id, n] of Object.entries(a.seen)) seen[id] = Math.max(n, seen[id] || 0);
+  return cleanBadges({ got: merge(a && a.got, b.got), seen, av: a ? a.av : b.av, base: (a && a.base) || b.base });
 }

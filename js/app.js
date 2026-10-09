@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { settle } from './badges.js';
 import { setLang, getLang, storedLang, rememberLang, applyStatic, t, tn, td, foldKey } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
@@ -6,7 +7,7 @@ import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
 import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, AI_ERROR_LABEL, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import { reviewBrief, coachBrief, checkBrief } from './briefs.js';
-import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
+import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanBadges, restoreBadges, b64FromBuf } from './backup.js';
 import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, KCAL_FLOOR } from './plan.js';
 import {
   APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor, titleOf,
@@ -660,7 +661,7 @@ async function deliverFile(name, content, type) {
 
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
-  const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
+  const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks, badges: S.badges };
   // The plan's pictures always travel with the backup; photos of logged meals only when asked for.
   // They are read one at a time, so the photos that are left out are never loaded.
   const planIds = new Set(Object.values(S.settings.planPhotos || {}));
@@ -680,7 +681,7 @@ async function exportBackup(withPhotos) {
 
 // For analysis elsewhere: a .sql file that builds the tables in any SQLite database
 async function exportSql() {
-  const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), appVersion: APP_VERSION });
+  const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), badges: S.badges && S.badges.got, appVersion: APP_VERSION });
   const done = await deliverFile(exportName(), sql, 'text/plain');
   if (done) toast(t('Exported {days} and {meals}', { days: tn('{n} day|{n} days', counts.days), meals: tn('{n} meal|{n} meals', counts.meals) }));
 }
@@ -724,12 +725,15 @@ async function importBackup(file) {
       const added = data.checks.map(cleanCheck).filter((c) => c && !have.has(c.id));
       await db.kvSet('checks', S.checks.concat(added).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
     }
+    // Earned badges are added to, never replaced: the earliest day wins. An old backup has none; checkBadges then works them out from the restored log.
+    if (data.badges && typeof data.badges === 'object') await db.kvSet('badges', restoreBadges(S.badges, data.badges));
   } catch (err) {
     toast(t('The backup could not be restored completely'));
     await load();
     return render();
   }
   await load();
+  checkBadges(); // silently: the restored log may earn more than the backup recorded
   render();
   if (S.sheet && S.sheet.type === 'settings') await openSettings(); // the open sheet shows the restored language
   const back = tn('{n} entry restored|{n} entries restored', restored);
@@ -743,6 +747,8 @@ async function load() {
   if (stored) S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
   S.checks = await db.kvGet('checks', []);
+  const badges = await db.kvGet('badges', null);
+  S.badges = badges ? cleanBadges(badges) : null;
 }
 
 async function refreshStorage() {
@@ -778,6 +784,7 @@ function render() {
   hydratePhotos();
   if (S.tab === 'progress') attachChart(v);
   checkWins();
+  checkBadges();
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
   if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
@@ -830,6 +837,27 @@ async function checkWins() {
   S.settings.wins = next;
   try { await saveSettings(); } finally { winsBusy = false; }
   if (msg) { celebrate(); toast(msg); }
+}
+
+// Earned badges: worked out from the whole log and stored only when something is new. Silent for now (no toast, no screen).
+// Debounced, because every render asks; saves, edits, deletes, loading and restoring all end in a render.
+let badgesBusy = false;
+let badgesAgain = false;
+let badgesTimer;
+function checkBadges() {
+  clearTimeout(badgesTimer);
+  badgesTimer = setTimeout(runBadges, 300);
+}
+async function runBadges() {
+  if (badgesBusy) { badgesAgain = true; return; }
+  badgesBusy = true;
+  try {
+    const { next, changed } = settle(S.badges, S, today());
+    if (changed) { await db.kvSet('badges', next); S.badges = next; }
+  } catch { /* badges are a bonus: a failure here must not get in the way of logging */ } finally {
+    badgesBusy = false;
+    if (badgesAgain) { badgesAgain = false; checkBadges(); }
+  }
 }
 
 function renderFavorites() {
@@ -1248,7 +1276,7 @@ const ACT = {
   },
   'wipe': async () => {
     if (busyNow()) return toast(t('Something is still being analysed. Try again in a moment'));
-    if (!window.confirm(t('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?'))) return;
+    if (!window.confirm(t('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay, and so do the badges you have earned. It cannot be undone. Do you have a backup?'))) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {
@@ -1280,7 +1308,8 @@ const ACT = {
     S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
-    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
+    clearTimeout(badgesTimer);
+    S.entries = []; S.days = {}; S.checks = []; S.badges = null; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = ''; S.suppEdit = '';
     S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.coaching.clear(); S.coachErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;

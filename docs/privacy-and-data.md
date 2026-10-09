@@ -19,14 +19,14 @@
   saved; the model only receives a label such as "Home" or "out", never coordinates.
 - There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can
   restore on the same or another device. It holds your entries, goals, favourites, the plan's
-  pictures, the verdicts of your checks and your saved places with their coordinates. Photos of
+  pictures, the verdicts of your checks, the badges you have earned and your saved places with their coordinates. Photos of
   logged meals are included only when you choose "With photos". Restoring adds the backup's
-  entries, days, checks and plan pictures to what is on the device (an entry or day that is in
+  entries, days, checks, badges and plan pictures to what is on the device (an entry or day that is in
   both takes the backup's version); its goals, favourites and saved places replace yours. The
   provider, address, model and key stay as they are.
 - Settings → "Reset" has two levels. "Clear my log" deletes what you tracked (meals and their photos,
   weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews, checks) and keeps every setting, the plan's
-  pictures and your API key. "Factory reset" empties the app as it was on its first launch, including
+  pictures, your API key and the badges you have earned. "Factory reset" empties the app as it was on its first launch, including
   goals, favourites, saved places, the plan's pictures and the usage totals; the API key and provider
   stay unless you untick the box. It asks you to type DELETE. Both refuse while something is being
   analysed. Neither can be undone, so save a backup first.
@@ -46,6 +46,7 @@ leaves everything else in that database alone.
 
 | Table or view | One row per | Columns |
 |---|---|---|
+| `weightplan_badges` | earned badge step | `id`, `threshold`, `day` (the day it was earned) |
 | `weightplan_supplements` | id | `id`, `name`, `dose` |
 | `weightplan_supplement_log` | day, supplement_id | `day`, `supplement_id` (one row per supplement ticked that day) |
 | `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `coffee_cups`, `workout`, `target_kcal`, `target_weight_kg` |

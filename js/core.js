@@ -3,7 +3,7 @@ import { t, tn, T, td, foldKey, parseNum, inEnglish } from './i18n.js';
 import { PARSE_TR } from './parse-tr.js';
 import { MEALS, MEAL_BY_ID, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, KCAL_MIN_DAY } from './plan.js';
 
-export const APP_VERSION = '41'; // bump together with VERSION in sw.js
+export const APP_VERSION = '42'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -35,6 +35,7 @@ export const S = {
   reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
   check: freshCheck(), // the check being put together
   checks: [], // earlier verdicts, newest first, without photos
+  badges: null, // earned badges as stored (kv `badges`, see js/badges.js); null until something is logged
   urls: new Map(),
   persisted: null,
   storage: null,
