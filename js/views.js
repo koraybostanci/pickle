@@ -5,18 +5,21 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
+import { dateFmt } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = fmtInt;
 const n1 = fmtKg;
-const dLong = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long', weekday: 'long' });
-const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' });
-const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });
-const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
-const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
-const dMonthYear = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
-const dWd = new Intl.DateTimeFormat(LOCALE, { weekday: 'short', day: 'numeric' });
+// Formatters follow the interface language: each is built on first use and dropped when the language changes
+const lazyDate = (opts) => ({ format: (d) => dateFmt(opts).format(d) });
+const dLong = lazyDate({ day: 'numeric', month: 'long', weekday: 'long' });
+const dShort = lazyDate({ day: 'numeric', month: 'long' });
+const dTiny = lazyDate({ day: 'numeric', month: 'short' });
+const dWeekday = lazyDate({ weekday: 'long' });
+const dMonth = lazyDate({ month: 'short' });
+const dMonthYear = lazyDate({ month: 'long', year: 'numeric' });
+const dWd = lazyDate({ weekday: 'short', day: 'numeric' });
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const dayWord = (n) => (n === 1 ? 'day' : 'days');
 const days = (n) => `${n} ${dayWord(n)}`;

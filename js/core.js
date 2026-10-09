@@ -12,7 +12,7 @@ export const APP_ID = 'weightplan';
 export const freshSettings = () => ({
   ...DEFAULTS, schema: SCHEMA_VERSION,
   provider: 'openai', oaBase: 'https://generativelanguage.googleapis.com/v1beta/openai', oaModel: 'gemini-3.5-flash', oaKey: '', apiKey: '',
-  useLocation: false, places: [], favorites: [], supplements: [], hideStart: false, autoReview: true,
+  useLocation: false, places: [], favorites: [], supplements: [], hideStart: false, autoReview: true, lang: 'en',
   usage: { in: 0, out: 0, calls: 0, usd: 0 }, lastBackup: 0,
 });
 // What the Check screen is holding while a check is put together; its photos live in memory only

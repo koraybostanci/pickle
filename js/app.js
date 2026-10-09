@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { setLang, getLang, storedLang, rememberLang } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
@@ -15,7 +16,12 @@ const $ = (s, r = document) => r.querySelector(s);
 
 
 // ——— Storage ———
-async function saveSettings() { await db.kvSet('settings', S.settings); }
+async function saveSettings() { rememberLang(S.settings.lang); await db.kvSet('settings', S.settings); }
+// Switches the interface language and says whether it worked. When the text cannot be loaded (offline before it was cached)
+// the screen stays in the language it had; the saved preference is never touched here, so the next start tries again.
+async function applyLang(lang) {
+  try { await setLang(lang); return true; } catch { toast('Could not load that language. Try again when you are online.'); return false; }
+}
 async function saveDay(day, patch) {
   const d = { ...(S.days[day] || { day }), ...patch };
   S.days[day] = d;
@@ -307,6 +313,7 @@ function reviewBrief(day) {
   const t = dayTotals(day);
   const v = dayVerdict(day);
   const r = (x) => Math.round(x);
+  // The brief is read by the model and stays English whatever the interface language is
   const date = (d) => new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(parseDay(d));
   const meals = mealsOf(day).sort((a, b) => a.ts - b.ts);
   const lines = [
@@ -458,6 +465,7 @@ function checkBrief(note) {
   const target = dayTarget(t);
   const r = (x) => Math.round(x);
   const open = openSlots(t).map((x) => x.name.toLowerCase());
+  // Like the review brief, this one is read by the model and stays English (hence 'en-GB' below)
   const lines = [
     `Time ${hhmm(now)} on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(now)}, a ${S.days[t] && S.days[t].train ? 'workout' : 'rest'} day.`,
     tot.n
@@ -809,6 +817,7 @@ async function importBackup(file) {
       const incoming = cleanSettings(data.settings);
       if (incoming.planPhotos) incoming.planPhotos = { ...(S.settings.planPhotos || {}), ...incoming.planPhotos }; // pictures are added to, not replaced
       S.settings = { ...S.settings, ...incoming };
+      await applyLang(S.settings.lang);
       await saveSettings();
       // A plan picture that the backup replaces is no longer referred to by anything
       const now = new Set(Object.values(S.settings.planPhotos || {}));
@@ -1029,6 +1038,13 @@ const ACT = {
     closeSheet();
     render();
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
+  },
+  'lang': async (el) => { // no control in Settings yet
+    const prev = S.settings.lang;
+    S.settings.lang = el.dataset.lang === 'tr' ? 'tr' : 'en';
+    if (!(await applyLang(S.settings.lang))) { S.settings.lang = prev; return; } // only a choice made here is rolled back
+    await saveSettings();
+    render();
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
@@ -1360,7 +1376,7 @@ const ACT = {
     const keepKey = !!($('#keep-key') && $('#keep-key').checked);
     const typed = window.prompt('Factory reset: this deletes everything on this device: your log and photos, goals, favourites, saved places, the plan’s pictures and the usage totals. ' + (keepKey ? 'Your API key and provider stay.' : 'Your API key and provider are deleted too.') + ' It cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
     if (!typed || typed.trim().toLowerCase() !== 'delete') return;
-    const kept = {};
+    const kept = { lang: S.settings.lang }; // the language is not data: a reset keeps it, and so does its mirror
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
     for (const store of ['entries', 'days', 'photos', 'kv']) await db.clear(store);
     S.urls.forEach((u) => URL.revokeObjectURL(u));
@@ -1538,9 +1554,12 @@ window.addEventListener('online', () => { if (RUNS) resumePending(); });
 
 (async function start() {
   setupUpdates(); // first, so that a fixed version can still arrive when the database does not open
+  await applyLang(storedLang()); // the mirror in localStorage is read at once, so the first paint is already in the right language
   if (!RUNS) { $('.tabs').hidden = true; $('#view').innerHTML = installHtml(); return; } // a browser tab would get its own, separate database
   try {
     await load();
+    if (S.settings.lang !== getLang()) await applyLang(S.settings.lang); // the stored setting wins over the mirror
+    rememberLang(S.settings.lang);
   } catch (err) {
     $('#view').innerHTML = '<div class="empty"><h1>Could not open the database</h1><p>Local storage may be off in private browsing. Open the app in a normal window or add it to the Home Screen.</p></div>';
     return;

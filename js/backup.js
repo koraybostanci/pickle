@@ -112,6 +112,7 @@ export function cleanSettings(s) {
   for (const k of ['startDate', 'targetDate']) if (isDay(s[k])) out[k] = s[k];
   for (const [k, [lo, hi]] of Object.entries(RANGES)) if (isNum(s[k]) && s[k] >= lo && s[k] <= hi) out[k] = s[k];
   for (const k of ['useLocation', 'hideStart', 'autoReview']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (s.lang === 'en' || s.lang === 'tr') out.lang = s.lang;
   if (Array.isArray(s.places)) {
     out.places = s.places.filter((p) => p && typeof p.name === 'string' && isNum(p.lat) && isNum(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)
       .slice(0, 10).map((p) => ({ name: p.name.slice(0, 40), lat: p.lat, lon: p.lon }));

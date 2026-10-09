@@ -2,7 +2,8 @@
 // Meal values are never typed by hand; they are computed from the per-100 g table below.
 
 // Number and date formatting for the whole app
-export const LOCALE = 'en-GB';
+import { LOCALE } from './i18n.js';
+export { LOCALE }; // follows the interface language (a live binding)
 
 // Per 100 g: [kcal, protein, carbs, fat, fibre]
 export const FOODS = {
