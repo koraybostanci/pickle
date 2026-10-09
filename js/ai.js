@@ -289,7 +289,7 @@ const REVIEW_SYSTEM = `You review one day of a food log for one person on a weig
 The plan: the calorie budget and protein goal given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
-Use only the foods and numbers given; never invent an amount. Name the actual foods. Be supportive and encouraging, like a kind coach reading the numbers: name what went well first, stay concrete, never scold or moralise, and treat a bigger day as one day, not a failure. No medical advice.
+The calories against the budget are the main goal; protein, fibre and the rest are secondary, so never call a day a miss for those alone. Use only the foods and numbers given; never invent an amount. Name the actual foods. Be supportive and encouraging, like a kind coach reading the numbers: name what went well first, stay concrete, never scold or moralise, and treat a bigger day as one day, not a failure. No medical advice.
 head: one sentence. How did the day go against the plan, and what is the main reason? Follow the app's verdict, which is computed from the numbers. If the log is clearly incomplete, say that instead of judging.
 good: up to 2 things that helped, each naming the food or habit. Empty if there were none.
 cut: up to 2 things that cost the most and what would have reduced them, with the kcal that would save. Empty if nothing needed cutting.
@@ -334,7 +334,7 @@ The plan: the calorie budget and protein goal given with the day; meals are ${SL
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
 note: two or three short sentences, at most 45 words in all. Say how the day is going so far, then what is left of the budget and which macros (protein first, then fibre) are still worth adding, with a concrete food or meal from the plan for the rest of the day. Warm and encouraging, never scolding; if the day is already above budget, be kind and say what to do next without skipping meals.
-Use only the foods and numbers given; never invent an amount. No medical advice.`;
+The calories against the budget are the main goal; protein and fibre are secondary, so mention them as an easy extra, never as a failure. Use only the foods and numbers given; never invent an amount. No medical advice.`;
 const COACH_SHAPE = '\nReturn exactly one JSON object with this key: {"note":""}';
 const COACH_SCHEMA = { type: 'object', additionalProperties: false, required: ['note'], properties: { note: { type: 'string' } } };
 
