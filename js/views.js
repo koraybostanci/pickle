@@ -2,25 +2,26 @@ import {
   S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, dayNotes, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, weekResult, proteinLevel, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
-  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
+  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
+import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = fmtInt;
 const n1 = fmtKg;
-const dLong = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long', weekday: 'long' });
-const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' });
-const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });
-const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
-const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
-const dMonthYear = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
-const dWd = new Intl.DateTimeFormat(LOCALE, { weekday: 'short', day: 'numeric' });
-const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
-const dayWord = (n) => (n === 1 ? 'day' : 'days');
-const days = (n) => `${n} ${dayWord(n)}`;
-const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+// Formatters follow the interface language: each is built on first use and dropped when the language changes
+const lazyDate = (opts) => ({ format: (d) => dateFmt(opts).format(d) });
+const dLong = lazyDate({ day: 'numeric', month: 'long', weekday: 'long' });
+const dShort = lazyDate({ day: 'numeric', month: 'long' });
+const dTiny = lazyDate({ day: 'numeric', month: 'short' });
+const dWeekday = lazyDate({ weekday: 'long' });
+const dMonth = lazyDate({ month: 'short' });
+const dMonthYear = lazyDate({ month: 'long', year: 'numeric' });
+const dWd = lazyDate({ weekday: 'short', day: 'numeric' });
+const lower = (s) => lc(s.charAt(0)) + s.slice(1);
+const WEEKDAYS = [T('Mo'), T('Tu'), T('We'), T('Th'), T('Fr'), T('Sa'), T('Su')];
 
 const ICON = {
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/></svg>',
@@ -33,47 +34,47 @@ const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d=
 const ALERT = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v5.5M8 12v.5"/></svg>';
 const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l2.5 1.5"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
-const settingsButton = `<button type="button" class="icon-btn" data-act="settings" aria-label="Settings">${ICON.settings}</button>`;
+const settingsButton = () => `<button type="button" class="icon-btn" data-act="settings" aria-label="${t('Settings')}">${ICON.settings}</button>`;
 
 // Where the weight stands against the schedule, in plain words
 function progressSummary() {
   const s = S.settings;
-  const t = today();
-  const a = latestWeight(t);
-  const target = targetAt(t, s);
-  const left = diffDays(t, s.targetDate);
-  const toStart = diffDays(t, s.startDate);
+  const tod = today();
+  const a = latestWeight(tod);
+  const target = targetAt(tod, s);
+  const left = diffDays(tod, s.targetDate);
+  const toStart = diffDays(tod, s.startDate);
   const started = toStart <= 0;
   const pace = planRate().kg * 7;
   const endDate = dShort.format(parseDay(s.targetDate));
   const toLose = `${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))} kg`;
-  const plan = `${toLose} to lose by ${dTiny.format(parseDay(s.targetDate))}, about ${n1(pace)} kg a week.`;
+  const plan = t('{toLose} to lose by {date}, about {pace} kg a week.', { toLose, date: dTiny.format(parseDay(s.targetDate)), pace: n1(pace) });
   let head; // the status, a few words
   let line; // the numbers behind it, one sentence
   let tag; // the status in two or three words, for the weight tile
   if (!started) {
-    head = toStart === 1 ? 'Starts tomorrow' : toStart <= 7 ? `Starts ${dWeekday.format(parseDay(s.startDate))}` : `Starts ${dShort.format(parseDay(s.startDate))}`;
+    head = toStart === 1 ? t('Starts tomorrow') : toStart <= 7 ? t('Starts {day}', { day: dWeekday.format(parseDay(s.startDate)) }) : t('Starts {date}', { date: dShort.format(parseDay(s.startDate)) });
     line = plan;
     tag = head;
   } else if (!a) {
-    head = 'No weigh-in yet';
+    head = t('No weigh-in yet');
     line = plan;
-    tag = `${toLose} to lose`;
+    tag = t('{toLose} to lose', { toLose });
   } else {
     const diff = a.kg - target;
     const change = s.startKg - a.kg;
-    const moved = `${n1(Math.abs(change))} kg ${change < -0.05 ? 'up' : 'down'}`;
+    const moved = t('{kg} kg {dir}', { kg: n1(Math.abs(change)), dir: change < -0.05 ? t('up') : t('down') });
     if (a.kg <= s.targetKg) {
-      head = `You reached ${s.targetKg} kg`;
-      line = `${moved} since ${dShort.format(parseDay(s.startDate))}.`;
-      tag = 'Goal reached';
+      head = t('You reached {kg} kg', { kg: s.targetKg });
+      line = t('{moved} since {date}.', { moved, date: dShort.format(parseDay(s.startDate)) });
+      tag = t('Goal reached');
     } else {
-      if (left <= 0) head = `${n1(a.kg - s.targetKg)} kg from the goal`;
-      else if (Math.abs(diff) <= 0.2) head = 'On schedule';
-      else if (diff < 0) head = `${n1(-diff)} kg ahead of schedule`;
-      else head = `${n1(diff)} kg behind schedule`;
-      line = `${moved}, ${toLose} to go${left > 0 ? `, ${days(left)} left` : ''}.`;
-      tag = left <= 0 ? `${toLose} to go` : Math.abs(diff) <= 0.2 ? 'On schedule' : `${n1(Math.abs(diff))} kg ${diff < 0 ? 'ahead' : 'behind'}`;
+      if (left <= 0) head = t('{kg} kg from the goal', { kg: n1(a.kg - s.targetKg) });
+      else if (Math.abs(diff) <= 0.2) head = t('On schedule');
+      else if (diff < 0) head = t('{kg} kg ahead of schedule', { kg: n1(-diff) });
+      else head = t('{kg} kg behind schedule', { kg: n1(diff) });
+      line = left > 0 ? t('{moved}, {toLose} to go, {days} left.', { moved, toLose, days: tn('{n} day|{n} days', left) }) : t('{moved}, {toLose} to go.', { moved, toLose });
+      tag = left <= 0 ? t('{toLose} to go', { toLose }) : Math.abs(diff) <= 0.2 ? t('On schedule') : diff < 0 ? t('{kg} kg ahead', { kg: n1(Math.abs(diff)) }) : t('{kg} kg behind', { kg: n1(Math.abs(diff)) });
     }
   }
   return { head, line, tag, a, target, started };
@@ -132,33 +133,33 @@ function beam(a, target, started) {
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
-const STATUS_LABEL = { on: 'on plan', open: 'in progress', over: 'over the budget', far: 'well over the budget', under: 'under the minimum', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
+const STATUS_LABEL = { on: T('on plan'), open: T('in progress'), over: T('over the budget'), far: T('well over the budget'), under: T('under the minimum'), none: T('nothing logged'), future: T('still to come'), before: T('before the plan started') };
 
 // ——— Week strip: the seven days of the week as tokens. The colour is how the day went; tap one to open it. ———
 function weekStrip(day) {
-  const t = today();
+  const tod = today();
   const ws = weekStart(day);
   const tokens = WEEKDAYS.map((letter, i) => {
     const d = addDays(ws, i);
     // Days before the plan started only count if something was logged on them
-    const raw = d > t ? 'future' : dayStatus(d);
+    const raw = d > tod ? 'future' : dayStatus(d);
     const st = raw === 'none' && d < S.settings.startDate ? 'before' : raw;
-    const perfect = d <= t && isPerfect(d);
-    const cls = `day day-${st}${perfect ? ' is-perfect' : ''}${d === t ? ' is-today' : ''}${d === day ? ' is-selected' : ''}`;
-    const label = `${dLong.format(parseDay(d))}: ${perfect ? 'all goals done' : STATUS_LABEL[st]}`;
-    return `<li><button type="button" class="${cls}" data-act="goto-day" data-day="${d}" aria-label="${esc(label)}"${d === day ? ' aria-current="date"' : ''}${d > t ? ' disabled' : ''}><span>${letter}</span><b>${parseDay(d).getDate()}</b></button></li>`;
+    const perfect = d <= tod && isPerfect(d);
+    const cls = `day day-${st}${perfect ? ' is-perfect' : ''}${d === tod ? ' is-today' : ''}${d === day ? ' is-selected' : ''}`;
+    const label = perfect ? t('{date}: all goals done', { date: dLong.format(parseDay(d)) }) : t('{date}: {status}', { date: dLong.format(parseDay(d)), status: td(STATUS_LABEL[st]) });
+    return `<li><button type="button" class="${cls}" data-act="goto-day" data-day="${d}" aria-label="${esc(label)}"${d === day ? ' aria-current="date"' : ''}${d > tod ? ' disabled' : ''}><span>${td(letter)}</span><b>${parseDay(d).getDate()}</b></button></li>`;
   }).join('');
   const goals = dayGoals(day);
   const done = goals.filter((g) => g.done).length;
   const run = streak();
-  const left = run > 0 ? `<span><b>${days(run)}</b> on plan in a row</span>` : '<span>A day on plan starts a new run</span>';
-  const count = done === goals.length ? 'All five goals' : `${done} of ${goals.length} goals${day === t ? ' so far' : ''}`;
-  return `<nav class="week" aria-label="Days of the week">
-    <button type="button" class="week-nav" data-act="week-prev" aria-label="Previous week">${ICON.prev}</button>
+  const left = run > 0 ? `<span>${t('<b>{days}</b> on plan in a row', { days: tn('{n} day|{n} days', run) })}</span>` : `<span>${t('A day on plan starts a new run')}</span>`;
+  const count = done === goals.length ? t('All five goals') : day === tod ? t('{done} of {total} goals so far', { done, total: goals.length }) : t('{done} of {total} goals', { done, total: goals.length });
+  return `<nav class="week" aria-label="${t('Days of the week')}">
+    <button type="button" class="week-nav" data-act="week-prev" aria-label="${t('Previous week')}">${ICON.prev}</button>
     <ol>${tokens}</ol>
-    <button type="button" class="week-nav" data-act="week-next" aria-label="Next week"${addDays(ws, 7) > t ? ' disabled' : ''}>${ICON.next}</button>
+    <button type="button" class="week-nav" data-act="week-next" aria-label="${t('Next week')}"${addDays(ws, 7) > tod ? ' disabled' : ''}>${ICON.next}</button>
   </nav>
-  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => `${g.name}: ${g.done ? 'done' : 'open'}`).join(', '))}">${count}</span></p>`;
+  <p class="week-note">${left}<span class="goal-count${done === goals.length ? ' is-done' : ''}" title="${esc(goals.map((g) => t('{goal}: {state}', { goal: g.name, state: g.done ? t('done') : t('open') })).join(', '))}">${count}</span></p>`;
 }
 
 // ——— The day's calories as one budget: what is left, how far the day has got, and where the plan would have it by now ———
@@ -173,15 +174,17 @@ function budgetTile(day) {
   const m = budgetMeter({ target, eaten, planned });
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
   const due = planned != null && planned >= target - 1;
-  const ref = planned == null ? '' : due ? 'All planned meals are due' : planned > 0 ? `Plan by now <b>${n0(planned)}</b>` : planSteps(target)[0] ? `Plan starts at ${planSteps(target)[0].time}` : '';
-  const big = !isToday ? [n0(eaten), `kcal eaten of ${n0(target)}`] : rem >= 0 ? [n0(rem), `kcal left of ${n0(target)}`] : [n0(-rem), 'kcal above budget'];
-  const label = `Calorie budget: ${n0(eaten)} of ${n0(target)} kcal eaten${isToday ? `, ${rem >= 0 ? `${n0(rem)} left` : `${n0(-rem)} above`}` : ''}.${planned > 0 && !due ? ` The plan has ${n0(planned)} by now.` : ''}${planned === 0 && ref ? ` ${ref}.` : ''}${v.text ? ` ${v.text}.` : ''}`;
+  const ref = planned == null ? '' : due ? t('All planned meals are due') : planned > 0 ? t('Plan by now <b>{kcal}</b>', { kcal: n0(planned) }) : planSteps(target)[0] ? t('Plan starts at {time}', { time: planSteps(target)[0].time }) : '';
+  const big = !isToday ? [n0(eaten), t('kcal eaten of {target}', { target: n0(target) })] : rem >= 0 ? [n0(rem), t('kcal left of {target}', { target: n0(target) })] : [n0(-rem), t('kcal above budget')];
+  const sums = { eaten: n0(eaten), target: n0(target) };
+  const label = (!isToday ? t('Calorie budget: {eaten} of {target} kcal eaten.', sums) : rem >= 0 ? t('Calorie budget: {eaten} of {target} kcal eaten, {n} left.', { ...sums, n: n0(rem) }) : t('Calorie budget: {eaten} of {target} kcal eaten, {n} above.', { ...sums, n: n0(-rem) }))
+    + `${planned > 0 && !due ? ` ${t('The plan has {n} by now.', { n: n0(planned) })}` : ''}${planned === 0 && ref ? ` ${ref}.` : ''}${v.text ? ` ${v.text}.` : ''}`;
   const icon = v.tone === 'good' ? CHECK : v.tone === 'calm' ? '' : ALERT;
   return `<div class="tile tile-budget${v.level ? ` is-${v.level === 'back' ? 'way-over' : 'over'}` : ''}" role="group" aria-label="${esc(label)}">
-    <span class="tile-top"><span>Calorie budget</span>${v.text ? `<i class="pill${v.tone === 'calm' ? '' : ` pill-${v.tone}`}">${icon}${esc(v.text)}</i>` : ''}</span>
+    <span class="tile-top"><span>${t('Calorie budget')}</span>${v.text ? `<i class="pill${v.tone === 'calm' ? '' : ` pill-${v.tone}`}">${icon}${esc(v.text)}</i>` : ''}</span>
     <p class="budget-big"><b>${big[0]}</b><span>${big[1]}</span></p>
     <span class="meter" style="--eat:${pct(m.eat)};--cap:${pct(m.cap)}${m.plan == null ? '' : `;--plan:${pct(m.plan)}`}" aria-hidden="true"><i class="meter-fill"></i>${eaten > target ? '<i class="meter-spill"></i>' : ''}${m.plan == null ? '' : '<i class="meter-plan"></i>'}</span>
-    <p class="budget-key"><span><i class="key-eat"></i><b>${n0(eaten)}</b> eaten</span>${ref ? `<span>${m.plan == null ? '' : '<i class="key-plan"></i>'}${ref}</span>` : ''}</p>
+    <p class="budget-key"><span><i class="key-eat"></i>${t('<b>{kcal}</b> eaten', { kcal: n0(eaten) })}</span>${ref ? `<span>${m.plan == null ? '' : '<i class="key-plan"></i>'}${ref}</span>` : ''}</p>
   </div>`;
 }
 
@@ -201,15 +204,16 @@ function bento(day, part) {
     const value = dd.kg ? n1(dd.kg) : p.a ? n1(p.a.kg) : '–';
     // Today's weigh-in, then the 7-day average beside where you stand: "avg 85.2 · on schedule"
     const avg = avg7(day);
-    const status = dd.kg && avg && p.started ? `avg ${n1(avg.kg)} · ${lower(p.tag)}` : p.tag;
-    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(`Weight. ${p.head}. ${p.line} ${dd.kg ? `Today’s weigh-in ${n1(dd.kg)} kg. Change` : 'Enter today’s weigh-in'}`)}">
-      ${top('Weight', !!dd.kg, dd.kg ? '' : 'tap to weigh in')}
+    const status = dd.kg && avg && p.started ? t('avg {kg} · {status}', { kg: n1(avg.kg), status: lower(p.tag) }) : p.tag;
+    const action = dd.kg ? t('Today’s weigh-in {kg} kg. Change', { kg: n1(dd.kg) }) : t('Enter today’s weigh-in');
+    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${esc(t('Weight. {head}. {line} {action}', { head: p.head, line: p.line, action }))}">
+      ${top(t('Weight'), !!dd.kg, dd.kg ? '' : t('tap to weigh in'))}
       <span class="tile-val"><b>${value}</b>${value === '–' ? '' : ' kg'}</span>
       ${note(status)}
     </button>`;
   } else {
-    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="Weigh-in on this day: ${dd.kg ? n1(dd.kg) + ' kg. Change' : 'none. Add'}">
-      ${top('Weight', !!dd.kg, dd.kg ? '' : 'tap to add')}
+    weight = `<button type="button" class="tile${dd.kg ? ' is-done' : ''}" data-act="num" data-kind="kg" aria-label="${dd.kg ? t('Weigh-in on this day: {kg} kg. Change', { kg: n1(dd.kg) }) : t('Weigh-in on this day: none. Add')}">
+      ${top(t('Weight'), !!dd.kg, dd.kg ? '' : t('tap to add'))}
       <span class="tile-val"><b>${dd.kg ? n1(dd.kg) : '–'}</b>${dd.kg ? ' kg' : ''}</span>
     </button>`;
   }
@@ -228,50 +232,54 @@ function bento(day, part) {
   // Coffee: the day's count and the week's, never a goal, so never ticked
   const thisWeek = weekStart(day) === weekStart(today());
   const cups = drinkTally(day);
-  const cupUnit = cups.today === 1 ? 'cup' : 'cups';
-  if (part === 'top') return `<section class="bento" aria-label="The day at a glance">
+  const cupUnit = tn('cup|cups', cups.today);
+  const cupsToday = tn('{n} cup|{n} cups', cups.today);
+  const coffeeLabel = isToday ? t('Coffee: {cups} today, {n} this week. Add one', { cups: cupsToday, n: cups.week })
+    : thisWeek ? t('Coffee: {cups} on this day, {n} this week. Add one', { cups: cupsToday, n: cups.week })
+      : t('Coffee: {cups} on this day, {n} that week. Add one', { cups: cupsToday, n: cups.week });
+  if (part === 'top') return `<section class="bento" aria-label="${t('The day at a glance')}">
     ${budgetTile(day)}
     ${weight}
-    <div class="tile${pDone ? ' is-done' : ''}" role="group" aria-label="Protein: ${n0(tot.p)} of ${n0(s.protein)} g">
-      ${top('Protein', pDone)}
+    <div class="tile${pDone ? ' is-done' : ''}" role="group" aria-label="${t('Protein: {p} of {goal} g', { p: n0(tot.p), goal: n0(s.protein) })}">
+      ${top(t('Protein'), pDone)}
       <span class="tile-val"><b>${n0(tot.p)}</b> / ${n0(s.protein)} g</span>
       <span class="bar" style="--v:${pct(tot.p, s.protein)}%"><i></i></span>
-      ${note(pDone ? 'Enough for today' : `${n0(pLeft)} g to go`)}
+      ${note(pDone ? t('Enough for today') : t('{n} g to go', { n: n0(pLeft) }))}
     </div>
   </section>`;
-  return `<section class="bento bento-more" aria-label="Steps, water and coffee">
-    <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="Steps: ${steps ? n0(steps) : 'none'} of ${n0(s.steps)}. Enter">
-      ${top('Steps', stepsDone)}
+  return `<section class="bento bento-more" aria-label="${t('Steps, water and coffee')}">
+    <button type="button" class="tile${stepsDone ? ' is-done' : ''}" data-act="num" data-kind="steps" aria-label="${steps ? t('Steps: {n} of {goal}. Enter', { n: n0(steps), goal: n0(s.steps) }) : t('Steps: none of {goal}. Enter', { goal: n0(s.steps) })}">
+      ${top(t('Steps'), stepsDone)}
       <span class="tile-val"><b>${steps ? n0(steps) : '–'}</b> / ${n0(s.steps)}</span>
       <span class="bar" style="--v:${pct(steps, s.steps)}%"><i></i></span>
-      ${note(stepsDone ? 'Goal reached' : `${n0(s.steps - steps)} to go`)}
+      ${note(stepsDone ? t('Goal reached') : t('{n} to go', { n: n0(s.steps - steps) }))}
     </button>
     <div class="tile tile-water${waterDone ? ' is-done' : ''}">
-      <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="Water: ${litres(water)} of ${litres(s.water)} litres. Add a glass">
-        ${top('Water', waterDone)}
+      <button type="button" class="tile-main" data-act="water" data-v="250" aria-label="${t('Water: {n} of {goal} litres. Add a glass', { n: litres(water), goal: litres(s.water) })}">
+        ${top(t('Water'), waterDone)}
         <span class="tile-val"><b>${litres(water)}</b> / ${litres(s.water)} l</span>
         <span class="glasses" aria-hidden="true">${Array.from({ length: glasses }, (_, i) => `<i class="${i < full ? 'on' : ''}"></i>`).join('')}</span>
-        ${note(waterDone ? 'Goal reached' : `${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'} to go`)}
+        ${note(waterDone ? t('Goal reached') : tn('{n} glass to go|{n} glasses to go', glassesLeft))}
       </button>
-      <button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="Remove a glass of water"${water ? '' : ' disabled'}>−</button>
+      <button type="button" class="tile-minus" data-act="water" data-v="-250" aria-label="${t('Remove a glass of water')}"${water ? '' : ' disabled'}>−</button>
     </div>
     <div class="tile tile-count">
-      <button type="button" class="tile-main" data-act="coffee" data-v="1" aria-label="${esc(`Coffee: ${cups.today} ${cupUnit} ${isToday ? 'today' : 'on this day'}, ${cups.week} ${thisWeek ? 'this' : 'that'} week. Add one`)}">
-        ${top('Coffee', false)}
+      <button type="button" class="tile-main" data-act="coffee" data-v="1" aria-label="${esc(coffeeLabel)}">
+        ${top(t('Coffee'), false)}
         <span class="tile-val"><b>${cups.today}</b> ${cupUnit}</span>
-        ${note(thisWeek ? `${cups.week} this week${cups.prev ? `, ${cups.prev} last week` : ''}` : `${cups.week} that week`)}
+        ${note(thisWeek ? (cups.prev ? t('{n} this week, {prev} last week', { n: cups.week, prev: cups.prev }) : t('{n} this week', { n: cups.week })) : t('{n} that week', { n: cups.week }))}
       </button>
-      <button type="button" class="tile-minus" data-act="coffee" data-v="-1" aria-label="Remove one coffee"${cups.today ? '' : ' disabled'}>−</button>
+      <button type="button" class="tile-minus" data-act="coffee" data-v="-1" aria-label="${t('Remove one coffee')}"${cups.today ? '' : ' disabled'}>−</button>
     </div>
   </section>`;
 }
 
 function entryState(e) {
-  return S.busy.has(e.id) ? (S.retry.get(e.id) || 'Analysing') : e.status === 'error' ? 'Analysis failed' : 'Waiting for analysis';
+  return S.busy.has(e.id) ? (S.retry.get(e.id) || t('Analysing')) : e.status === 'error' ? t('Analysis failed') : t('Waiting for analysis');
 }
 const multLabel = (m) => ({ 0.5: '½', 1.5: '1½', 2: '2' }[m] || String(m));
 
-const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(m.name)} <span>${m.kcal}</span></button>`;
+const chip = (m, act = 'log-plan') => `<button type="button" class="chip" data-act="${act}" data-id="${m.id}">${esc(td(m.name))} <span>${m.kcal}</span></button>`;
 
 // Which slots a day shows, and what the plan offers in each
 function daySlots(day) {
@@ -280,15 +288,15 @@ function daySlots(day) {
   const has = (id) => all.some((e) => e.slot === id);
   const isToday = day === today();
   const list = [];
-  if (has('morning')) list.push({ id: 'morning', name: SLOT_NAME.morning, time: '' });
-  SLOTS.filter((x) => x.id !== 'late').forEach((x) => list.push({ id: x.id, name: x.name, time: x.time }));
-  if (dd.train || has('workout')) list.push({ id: 'workout', name: 'Workout extras', time: '', hint: 'Banana before, skyr after' });
+  if (has('morning')) list.push({ id: 'morning', name: td(SLOT_NAME.morning), time: '' });
+  SLOTS.filter((x) => x.id !== 'late').forEach((x) => list.push({ id: x.id, name: td(x.name), time: x.time }));
+  if (dd.train || has('workout')) list.push({ id: 'workout', name: t('Workout extras'), time: '', hint: t('Banana before, skyr after') });
   // The late slot only shows once it matters: in the evening, when something is in it, or when skyr would close a protein gap
   const sg = suggest(day);
-  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: lateName(), time: SLOTS.find((x) => x.id === 'late').time, hint: 'Herbal tea; skyr if very hungry' });
+  if (has('late') || (isToday && (new Date().getHours() >= 19 || sg.extra))) list.push({ id: 'late', name: lateName(), time: SLOTS.find((x) => x.id === 'late').time, hint: t('Herbal tea; skyr if very hungry') });
   return { list, all, sg, isToday };
 }
-const lateName = () => `After ${SLOTS.find((x) => x.id === 'late').time}`;
+const lateName = () => t('After {time}', { time: SLOTS.find((x) => x.id === 'late').time });
 const slotOptions = (id, entries) => {
   const logged = new Set(entries.map((e) => e.planId));
   return MEALS.filter((x) => x.slot === id && !(id === 'workout' && logged.has(x.id)));
@@ -314,7 +322,7 @@ function dayList(day) {
       const v = eff(e);
       rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${esc(e.id)}">
         <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
-        <span class="meal-text"><b><span class="sr-only">${ok ? 'Done: ' : 'Waiting: '}</span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
+        <span class="meal-text"><b><span class="sr-only">${ok ? t('Done:') : t('Waiting:')} </span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(titleOf(e))}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
         <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b><span class="sr-only"> kcal</span>` : esc(entryState(e))}</span>
       </button></li>`);
     }
@@ -323,12 +331,12 @@ function dayList(day) {
     if (isNext) {
       const [h, m] = (sl.time || '0:0').split(':').map(Number);
       const late = !sg.extra && sl.time && minutesNow > h * 60 + m + 120;
-      rows.push(`<li class="meal is-next"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: other options`)}">
+      rows.push(`<li class="meal is-next"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(t('{slot}: other options', { slot: sl.name }))}">
         <i class="meal-mark" aria-hidden="true">${CLOCK}</i>
-        <span class="meal-text"><b><span class="sr-only">Next: </span>${sl.name}<small>${late ? 'not logged yet' : sl.time}</small></b><span>${esc(sg.meal.name)}, ${sg.meal.kcal} kcal${!sg.extra && sg.tight ? ', the lightest option' : ''}</span></span>
-      </button><button type="button" class="btn btn-primary meal-log" data-act="log-plan" data-id="${sg.meal.id}" aria-label="${esc(`Log ${sg.meal.name}`)}">Log</button></li>`);
+        <span class="meal-text"><b><span class="sr-only">${t('Next:')} </span>${sl.name}<small>${late ? t('not logged yet') : sl.time}</small></b><span>${esc(!sg.extra && sg.tight ? t('{meal}, {kcal} kcal, the lightest option', { meal: td(sg.meal.name), kcal: sg.meal.kcal }) : t('{meal}, {kcal} kcal', { meal: td(sg.meal.name), kcal: sg.meal.kcal }))}</span></span>
+      </button><button type="button" class="btn btn-primary meal-log" data-act="log-plan" data-id="${sg.meal.id}" aria-label="${esc(t('Log {meal}', { meal: td(sg.meal.name) }))}">${t('Log', { $id: 'meal.log' })}</button></li>`);
     } else if ((!entries.length || sl.id === 'workout') && options.length) {
-      rows.push(`<li class="meal"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(`${sl.name}: choose a meal`)}">
+      rows.push(`<li class="meal"><button type="button" class="meal-main" data-act="slot" data-slot="${sl.id}" aria-label="${esc(t('{slot}: choose a meal', { slot: sl.name }))}">
         <i class="meal-mark" aria-hidden="true"></i>
         <span class="meal-text"><b>${sl.name}<small>${sl.time}</small></b>${sl.hint ? `<span>${sl.hint}</span>` : ''}</span>
         <span class="meal-add" aria-hidden="true">+</span>
@@ -336,8 +344,8 @@ function dayList(day) {
     }
   }
   return `<section class="meals">
-    <div class="meals-head"><h2>${isToday ? 'Today’s meals' : 'Meals'}<small>${done} of ${main}</small></h2>
-      <button type="button" class="toggle" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}" aria-label="Workout day: budget ${n0(S.settings.kcalTrain)} kcal, banana and skyr added"><i aria-hidden="true"></i>Workout day</button>
+    <div class="meals-head"><h2>${isToday ? t('Today’s meals') : t('Meals')}<small>${t('{n} of {total}', { n: done, total: main })}</small></h2>
+      <button type="button" class="toggle" role="switch" aria-checked="${dd.train ? 'true' : 'false'}" data-act="train" data-v="${dd.train ? 0 : 1}" aria-label="${t('Workout day: budget {kcal} kcal, banana and skyr added', { kcal: n0(S.settings.kcalTrain) })}"><i aria-hidden="true"></i>${t('Workout day')}</button>
     </div>
     <ul class="meal-list">${rows.join('')}</ul></section>`;
 }
@@ -345,7 +353,7 @@ function dayList(day) {
 // The options for one meal, in a bottom sheet
 export function renderSlotSheet(slotId, day) {
   const { list, all, sg, isToday } = daySlots(day);
-  const sl = list.find((x) => x.id === slotId) || { id: slotId, name: SLOT_NAME[slotId] || 'Meal', time: '' };
+  const sl = list.find((x) => x.id === slotId) || { id: slotId, name: SLOT_NAME[slotId] ? td(SLOT_NAME[slotId]) : t('Meal'), time: '' };
   const options = slotOptions(slotId, all.filter((e) => e.slot === slotId));
   const suggested = sg.meal && sg.slot && sg.slot.id === slotId ? sg.meal.id : '';
   const ordered = options.slice().sort((a, b) => (a.id === suggested ? -1 : b.id === suggested ? 1 : 0));
@@ -353,15 +361,15 @@ export function renderSlotSheet(slotId, day) {
   const anyPic = options.some((m) => pics[m.id]); // thumbnails only when there is at least one to show
   const thumb = (m) => (!anyPic ? '' : pics[m.id] ? `<span class="meal-thumb"><img data-photo="${esc(pics[m.id])}" alt=""></span>` : `<span class="meal-thumb is-empty">${PLATE}</span>`);
   return `
-  <header class="sheet-top"><h2 id="sheet-title">${sl.name}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
-  <p class="note">${sl.hint ? sl.hint + '. ' : ''}Tap what you ${isToday ? 'are having' : 'had'}.</p>
+  <header class="sheet-top"><h2 id="sheet-title">${sl.name}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <p class="note">${sl.hint ? sl.hint + '. ' : ''}${isToday ? t('Tap what you are having.') : t('Tap what you had.')}</p>
   <ul class="meal-list option-list">${ordered.map((m) => `<li class="meal"><button type="button" class="meal-main" data-act="log-plan" data-id="${m.id}">
       ${thumb(m)}
-      <span class="meal-text"><b>${esc(m.name)}${m.id === suggested ? '<small>suggested</small>' : ''}</b><span>${n0(m.p)} g protein</span></span>
+      <span class="meal-text"><b>${esc(td(m.name))}${m.id === suggested ? `<small>${t('suggested')}</small>` : ''}</b><span>${t('{n} g protein', { n: n0(m.p) })}</span></span>
       <span class="meal-kcal"><b>${m.kcal}</b> kcal</span>
     </button></li>`).join('')}</ul>
-  ${isToday ? `<p class="note">Something that is not on the plan:</p>
-  <div class="actions"><button type="button" class="btn" data-act="slot-camera">Take a photo</button><button type="button" class="btn" data-act="compose">Type it</button></div>` : ''}`;
+  ${isToday ? `<p class="note">${t('Something that is not on the plan:')}</p>
+  <div class="actions"><button type="button" class="btn" data-act="slot-camera">${t('Take a photo')}</button><button type="button" class="btn" data-act="compose">${t('Type it')}</button></div>` : ''}`;
 }
 
 // The daily supplements: one chip each, tap to tick; the ones not yet taken stay outlined
@@ -370,8 +378,8 @@ function suppCard(day) {
   if (!list.length) return '';
   const taken = new Set(suppTaken(day));
   const n = list.filter((x) => taken.has(x.id)).length;
-  return `<section class="supp" aria-label="Supplements">
-    <div class="supp-head"><h2>Supplements</h2><span class="${n === list.length ? 'is-done' : ''}">${n} of ${list.length}</span></div>
+  return `<section class="supp" aria-label="${t('Supplements')}">
+    <div class="supp-head"><h2>${t('Supplements')}</h2><span class="${n === list.length ? 'is-done' : ''}">${t('{n} of {total}', { n, total: list.length })}</span></div>
     <div class="chips">${list.map((x) => `<button type="button" class="chip${taken.has(x.id) ? ' is-on' : ''}" data-act="supp" data-id="${esc(x.id)}" aria-pressed="${taken.has(x.id)}">${taken.has(x.id) ? CHECK : ''}<b>${esc(x.name)}</b>${x.dose ? `<span>${esc(x.dose)}</span>` : ''}</button>`).join('')}</div>
   </section>`;
 }
@@ -381,15 +389,15 @@ function treats(day) {
   const f = weekFlex(day);
   const row = (name, used, max) => {
     const state = used > max ? 'is-over' : used >= max ? 'is-used' : '';
-    const text = used > max ? `${used - max} over` : used >= max ? 'Used' : `${max - used} left`;
+    const text = used > max ? t('{n} over', { n: used - max }) : used >= max ? t('Used') : t('{n} left', { n: max - used });
     return `<li class="${state}"><i class="coin" aria-hidden="true"></i><span>${name}</span><b>${text}</b></li>`;
   };
   return `<section class="treats">
-    <h2>This week’s extras</h2>
+    <h2>${t('This week’s extras')}</h2>
     <ul>
-      ${row('Beer or small dessert', f.small, 1)}
-      ${row('Flexible dinner', f.meal, 1)}
-      ${f.off ? `<li class="is-over"><i class="coin" aria-hidden="true"></i><span>Off-plan entries</span><b>${f.off}</b></li>` : ''}
+      ${row(t('Beer or small dessert'), f.small, 1)}
+      ${row(t('Flexible dinner'), f.meal, 1)}
+      ${f.off ? `<li class="is-over"><i class="coin" aria-hidden="true"></i><span>${t('Off-plan entries')}</span><b>${f.off}</b></li>` : ''}
     </ul>
     ${day === today() ? `<div class="chips">${FLEX.map((x) => chip(x, 'log-flex')).join('')}</div>` : ''}
   </section>`;
@@ -410,27 +418,30 @@ function coachLine(day) {
   let over = false;
   if (rem < -target * (BAND.near - 1)) {
     over = true;
-    head = 'A bigger day today.';
-    line = 'One day doesn’t change the trend; the weekly average is what counts. Tomorrow is a normal plan day, and there is no need to skip a meal to make up for it.';
+    head = t('A bigger day today.');
+    line = t('One day doesn’t change the trend; the weekly average is what counts. Tomorrow is a normal plan day, and there is no need to skip a meal to make up for it.');
   } else if (rem < 0) {
     over = true;
-    head = 'A little above today.';
-    line = 'That’s fine. Carry on with the plan as usual tomorrow.';
+    head = t('A little above today.');
+    line = t('That’s fine. Carry on with the plan as usual tomorrow.');
   } else if (!tot.n) {
-    head = 'A fresh day.';
-    if (sg.meal && sg.slot) line = `First up: ${sg.meal.name} at ${sg.slot.time}.`;
+    head = t('A fresh day.');
+    if (sg.meal && sg.slot) line = t('First up: {meal} at {time}.', { meal: td(sg.meal.name), time: sg.slot.time });
   } else if (sg.extra) {
-    head = 'Meals done.';
-    line = `Protein is ${n0(sg.remP)} g short; 150 g of plain skyr closes the gap and fits the budget.`;
+    head = t('Meals done.');
+    line = t('Protein is {n} g short; 150 g of plain skyr closes the gap and fits the budget.', { n: n0(sg.remP) });
   } else if (sg.meal && sg.slot) {
-    head = 'You’re on track.';
-    line = `Next: ${sg.meal.name}${sg.slot.time ? ` at ${sg.slot.time}` : ''}${sg.remP > 12 && sg.meal.p >= 15 ? ', which also helps with protein' : ''}.`;
+    head = t('You’re on track.');
+    const meal = td(sg.meal.name);
+    const helps = sg.remP > 12 && sg.meal.p >= 15;
+    line = sg.slot.time ? (helps ? t('Next: {meal} at {time}, which also helps with protein.', { meal, time: sg.slot.time }) : t('Next: {meal} at {time}.', { meal, time: sg.slot.time }))
+      : (helps ? t('Next: {meal}, which also helps with protein.', { meal }) : t('Next: {meal}.', { meal }));
   } else if (sg.remP > 12) {
-    head = 'Meals done.';
-    line = `Protein is ${n0(sg.remP)} g short.`;
+    head = t('Meals done.');
+    line = t('Protein is {n} g short.', { n: n0(sg.remP) });
   } else {
-    head = 'All meals in, on budget.';
-    line = 'Nicely done.';
+    head = t('All meals in, on budget.');
+    line = t('Nicely done.');
   }
   return `<section class="coach${over ? ' is-over' : ''}">${POISE}<div><p class="coach-line"><b>${esc(head)}</b> ${esc(line)}</p>${coachAi(day)}</div></section>`;
 }
@@ -446,9 +457,9 @@ function coachAi(day) {
   const fresh = coachState(day) === 'fresh';
   const open = busy || !!err || S.reviewOpen.get(`coach:${day}`) === true;
   return `<details class="coach-ai" data-day="${day}"${open ? ' open' : ''}>
-    <summary><span class="sr-only">AI note</span></summary>
-    ${busy ? '<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing a note…</p>' : `${c ? `<p>${esc(c.note)}</p>` : ''}
-    ${hasKey() ? `<p class="review-foot">${c && fresh ? `AI note, ${hhmm(c.ts)}.` : ''} ${ask(!c ? 'How am I doing so far?' : fresh ? 'Ask again' : 'Update the note')}</p>` : ''}
+    <summary><span class="sr-only">${t('AI note')}</span></summary>
+    ${busy ? `<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>${t('Writing a note…')}</p>` : `${c ? `<p>${esc(c.note)}</p>` : ''}
+    ${hasKey() ? `<p class="review-foot">${c && fresh ? t('AI note, {time}.', { time: hhmm(c.ts) }) : ''} ${ask(!c ? t('How am I doing so far?') : fresh ? t('Ask again') : t('Update the note'))}</p>` : ''}
     ${err ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}`}
   </details>`;
 }
@@ -466,14 +477,14 @@ function startCard() {
   const n = startStep();
   if (!n) return '';
   const step = {
-    1: ['Enter your first weigh-in', 'Tap the Weight tile below. Progress and forecasts are calculated from your weigh-ins.', ''],
-    2: ['Log your first meal', 'Tap “Log” next to the suggested meal under Today’s meals. No key needed.', ''],
-    3: ['Add a key for photo analysis', 'Gemini’s free tier is enough. Plan meals work without a key.', '<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">Add key</button>'],
-    4: ['Add to Home Screen', 'Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.', ''],
+    1: [t('Enter your first weigh-in'), t('Tap the Weight tile below. Progress and forecasts are calculated from your weigh-ins.'), ''],
+    2: [t('Log your first meal'), t('Tap “Log” next to the suggested meal under Today’s meals. No key needed.'), ''],
+    3: [t('Add a key for photo analysis'), t('Gemini’s free tier is enough. Plan meals work without a key.'), `<button type="button" class="btn btn-primary" data-act="settings" data-sec="analysis">${t('Add key')}</button>`],
+    4: [t('Add to Home Screen'), t('Use “Add to Home Screen” in the browser’s Share menu. Data is kept more reliably that way.'), ''],
   }[n];
   return `<section class="start" aria-labelledby="start-title">
-    <p class="start-brand"><b>Pickle</b> · Good things take time</p>
-    <div class="start-head"><p>Getting started, step ${n} of 4</p><button type="button" class="link" data-act="hide-start">${n === 4 ? 'Done' : 'Hide'}</button></div>
+    <p class="start-brand"><b>Pickle</b> · ${t('Good things take time')}</p>
+    <div class="start-head"><p>${t('Getting started, step {n} of 4', { n })}</p><button type="button" class="link" data-act="hide-start">${n === 4 ? t('Done') : t('Hide')}</button></div>
     <h2 id="start-title">${step[0]}</h2>
     <p class="start-note">${step[1]}</p>
     ${step[2]}
@@ -486,10 +497,10 @@ export function renderToday() {
   return `
   <header class="top">
     <div>
-      <h1>${isToday ? 'Today' : esc(dWeekday.format(parseDay(day)))}</h1>
-      <p class="sub">${isToday ? `${esc(dLong.format(parseDay(day)))}${day >= S.settings.startDate ? ` · day ${diffDays(S.settings.startDate, day) + 1}` : ''}` : `${esc(dShort.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">Back to today</button>`}</p>
+      <h1>${isToday ? t('Today') : esc(dWeekday.format(parseDay(day)))}</h1>
+      <p class="sub">${isToday ? (day >= S.settings.startDate ? t('{date} · day {n}', { date: esc(dLong.format(parseDay(day))), n: diffDays(S.settings.startDate, day) + 1 }) : esc(dLong.format(parseDay(day)))) : `${esc(dShort.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">${t('Back to today')}</button>`}</p>
     </div>
-    <div class="top-actions">${settingsButton}</div>
+    <div class="top-actions">${settingsButton()}</div>
   </header>
   ${isToday ? startCard() + coachLine(day) : ''}
   ${weekStrip(day)}
@@ -507,46 +518,46 @@ export function renderNumSheet(kind, day) {
   const cur = isKg ? dd.kg : dd.steps;
   const isToday = day === today();
   const title = isKg
-    ? (isToday ? 'Today’s weigh-in' : `Weigh-in for ${esc(dShort.format(parseDay(day)))}`)
-    : (isToday ? 'Today’s steps' : `Steps for ${esc(dShort.format(parseDay(day)))}`);
+    ? (isToday ? t('Today’s weigh-in') : t('Weigh-in for {date}', { date: esc(dShort.format(parseDay(day))) }))
+    : (isToday ? t('Today’s steps') : t('Steps for {date}', { date: esc(dShort.format(parseDay(day))) }));
   return `
-  <header class="sheet-top"><h2 id="sheet-title">${title}</h2><button type="button" class="btn" data-act="close-sheet">Cancel</button></header>
+  <header class="sheet-top"><h2 id="sheet-title">${title}</h2><button type="button" class="btn" data-act="close-sheet">${t('Cancel')}</button></header>
   <form id="num-form" class="num" data-kind="${kind}" data-day="${day}" autocomplete="off">
-    <label for="num-in" class="note">${isKg ? 'Weigh in the morning under the same conditions. A single day fluctuates; the maths uses the 7-day average.' : `Your daily step count from the phone’s Health app. Goal ${n0(S.settings.steps)}.`}</label>
-    <div class="num-row"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? esc(isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.settings.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : 'steps'}</span></div>
+    <label for="num-in" class="note">${isKg ? t('Weigh in the morning under the same conditions. A single day fluctuates; the maths uses the 7-day average.') : t('Your daily step count from the phone’s Health app. Goal {goal}.', { goal: n0(S.settings.steps) })}</label>
+    <div class="num-row"><input id="num-in" type="text" inputmode="${isKg ? 'decimal' : 'numeric'}" value="${cur ? esc(isKg ? n1(cur) : String(cur)) : ''}" placeholder="${isKg ? n1(S.settings.startKg) : '8000'}" enterkeyhint="done"><span>${isKg ? 'kg' : t('steps')}</span></div>
     <p class="note is-error" id="num-err" role="alert" hidden></p>
-    <button type="submit" class="btn btn-primary btn-wide">Save</button>
-    ${cur ? `<button type="button" class="link link-danger" data-act="num-clear" data-kind="${kind}" data-day="${day}">${isKg ? 'Remove weigh-in' : 'Remove steps'}</button>` : ''}
+    <button type="submit" class="btn btn-primary btn-wide">${t('Save')}</button>
+    ${cur ? `<button type="button" class="link link-danger" data-act="num-clear" data-kind="${kind}" data-day="${day}">${isKg ? t('Remove weigh-in') : t('Remove steps')}</button>` : ''}
   </form>`;
 }
 
-const TIME_SOURCE = { exif: ' (from photo)', file: ' (from file)', manual: ' (edited)', now: '' };
-const placeText = (place) => (place === 'out' ? 'out' : `at ${lower(String(place))}`);
+const TIME_SOURCE = { exif: T('from photo'), file: T('from file'), manual: T('edited') };
+const placeText = (place) => (place === 'out' ? t('out') : t('at {place}', { place: lower(String(place)) }));
 
 // Full entry, shown in the bottom sheet: photos, numbers, corrections
 function entryDetail(e) {
-  const when = `${hhmm(e.ts)}${TIME_SOURCE[e.timeSrc] || ''}`;
+  const when = `${hhmm(e.ts)}${TIME_SOURCE[e.timeSrc] ? ` (${td(TIME_SOURCE[e.timeSrc])})` : ''}`;
   if (e.kind === 'weight' || e.kind === 'steps') {
     return `<article class="entry">
       <div class="entry-body">
-        <h3>${esc(e.title)}</h3>
+        <h3>${esc(titleOf(e))}</h3>
         <p class="meta">${esc(dLong.format(parseDay(e.day)))}, ${when}</p>
-        <div class="actions"><button type="button" class="btn btn-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>
+        <div class="actions"><button type="button" class="btn btn-danger" data-act="delete" data-id="${esc(e.id)}">${t('Delete')}</button></div>
       </div>
     </article>`;
   }
   const v = eff(e);
-  const photos = (e.photoIds || []).map((p) => `<img data-photo="${esc(p)}" alt="Photo of the meal">`).join('');
-  const meta = [when, SLOT_NAME[e.slot] || '', e.place ? esc(placeText(e.place)) : ''].filter(Boolean).join(', ');
+  const photos = (e.photoIds || []).map((p) => `<img data-photo="${esc(p)}" alt="${t('Photo of the meal')}">`).join('');
+  const meta = [when, SLOT_NAME[e.slot] ? td(SLOT_NAME[e.slot]) : '', e.place ? esc(placeText(e.place)) : ''].filter(Boolean).join(', ');
   let body;
   if (S.busy.has(e.id)) {
     body = `<p class="status"><span class="spin" aria-hidden="true"></span>${esc(entryState(e))}</p>`;
   } else if (e.status === 'pending') {
-    body = `<p class="status">${esc(e.err || 'Waiting for analysis.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Analyse</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
+    body = `<p class="status">${esc(e.err || t('Waiting for analysis.'))}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">${t('Analyse')}</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">${t('Delete')}</button></div>`;
   } else if (e.status === 'error') {
-    body = `<p class="status is-error">${esc(e.err || 'Analysis failed.')}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">Try again</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>`;
+    body = `<p class="status is-error">${esc(e.err || t('Analysis failed.'))}</p><div class="actions"><button type="button" class="btn btn-primary" data-act="analyze" data-id="${esc(e.id)}">${t('Try again')}</button><button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">${t('Delete')}</button></div>`;
   } else {
-    const tier = e.tier === 'off' ? '<span class="tag tag-off">Off plan</span>' : e.tier === 'flex' ? '<span class="tag tag-flex">Weekly extra</span>' : e.planId ? '<span class="tag">Plan meal</span>' : '';
+    const tier = e.tier === 'off' ? `<span class="tag tag-off">${t('Off plan')}</span>` : e.tier === 'flex' ? `<span class="tag tag-flex">${t('Weekly extra')}</span>` : e.planId ? `<span class="tag">${t('Plan meal')}</span>` : '';
     const rough = e.conf > 0 && e.conf < 0.6 && !e.planId;
     const mult = e.mult || 1;
     const canReanalyse = e.src === 'photo' || e.src === 'text';
@@ -555,44 +566,44 @@ function entryDetail(e) {
     const itemSum = list.reduce((a, i) => a + (i.kcal || 0), 0) * mult;
     const rest = Math.round(v.kcal - itemSum);
     const restRow = list.length && itemSum > 0 && Math.abs(rest) >= 5
-      ? `<tr class="items-rest"><th scope="row">${e.edited || (e.conf === 1 && !e.planId) ? 'Your edit' : 'Not itemised'}</th><td></td><td>${rest > 0 ? '+' : '−'}${n0(Math.abs(rest))}</td></tr>` : '';
+      ? `<tr class="items-rest"><th scope="row">${e.edited || (e.conf === 1 && !e.planId) ? t('Your edit') : t('Not itemised')}</th><td></td><td>${rest > 0 ? '+' : '−'}${n0(Math.abs(rest))}</td></tr>` : '';
     const items = list.length ? `<table class="items-table">
-        <thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">kcal</th></tr></thead>
+        <thead><tr><th scope="col">${t('Item')}</th><th scope="col">${t('Amount')}</th><th scope="col">kcal</th></tr></thead>
         <tbody>${list.map((i) => `<tr><th scope="row">${esc(i.n)}</th><td>${i.g ? n0(i.g * mult) + ' g' : ''}</td><td>${i.kcal ? n0(i.kcal * mult) : '–'}</td></tr>`).join('')}${restRow}</tbody>
       </table>` : '';
     // The person can always tell the model what it could not see; if the model asked, its question is the prompt
-    const prompt = e.q || (e.src === 'photo' ? 'Something the photo does not show?' : 'Something to correct?');
-    const question = canReanalyse ? `<div class="question${e.q ? ' is-asked' : ''}"><p id="ask-${esc(e.id)}">${esc(prompt)}</p><div><input id="answer-${esc(e.id)}" type="text" aria-labelledby="ask-${esc(e.id)}" enterkeyhint="send" autocomplete="off" placeholder="${e.q ? 'Answer briefly' : 'e.g. 2 eggs, low-fat cheese, baked'}"><button type="button" class="btn" data-act="answer" data-id="${esc(e.id)}">Update</button></div><p class="note">The model revises the items with your note.</p></div>` : '';
+    const prompt = e.q || (e.src === 'photo' ? t('Something the photo does not show?') : t('Something to correct?'));
+    const question = canReanalyse ? `<div class="question${e.q ? ' is-asked' : ''}"><p id="ask-${esc(e.id)}">${esc(prompt)}</p><div><input id="answer-${esc(e.id)}" type="text" aria-labelledby="ask-${esc(e.id)}" enterkeyhint="send" autocomplete="off" placeholder="${e.q ? t('Answer briefly') : t('e.g. 2 eggs, low-fat cheese, baked')}"><button type="button" class="btn" data-act="answer" data-id="${esc(e.id)}">${t('Update')}</button></div><p class="note">${t('The model revises the items with your note.')}</p></div>` : '';
     const mults = [0.5, 1, 1.5, 2].map((m) => `<button type="button" data-act="mult" data-id="${esc(e.id)}" data-v="${m}" aria-pressed="${(e.mult || 1) === m}">${m === 1 ? '1' : multLabel(m)}</button>`).join('');
-    const slotOptions = Object.entries(SLOT_NAME).map(([k, name]) => `<option value="${k}"${e.slot === k ? ' selected' : ''}>${name}</option>`).join('');
+    const slotOptions = Object.entries(SLOT_NAME).map(([k, name]) => `<option value="${k}"${e.slot === k ? ' selected' : ''}>${td(name)}</option>`).join('');
     body = `
-      <p class="entry-value"><b>${n0(v.kcal)}</b> kcal<span>${n0(v.p)} g protein, ${n0(v.c)} g carbs, ${n0(v.f)} g fat</span></p>
-      ${rough ? '<p class="status">Rough estimate. A short note below tightens it.</p>' : ''}
+      <p class="entry-value"><b>${n0(v.kcal)}</b> kcal<span>${t('{p} g protein, {c} g carbs, {f} g fat', { p: n0(v.p), c: n0(v.c), f: n0(v.f) })}</span></p>
+      ${rough ? `<p class="status">${t('Rough estimate. A short note below tightens it.')}</p>` : ''}
       ${items}
       ${question}
       <div class="actions">
-        <div class="seg seg-small" role="group" aria-label="Portion">${mults}</div>
+        <div class="seg seg-small" role="group" aria-label="${t('Portion')}">${mults}</div>
         ${tier}
       </div>
       <div class="field-grid">
-        <label for="edit-kcal-${esc(e.id)}">Calories<input id="edit-kcal-${esc(e.id)}" type="text" inputmode="numeric" value="${Math.round(v.kcal)}"></label>
-        <label for="edit-protein-${esc(e.id)}">Protein (g)<input id="edit-protein-${esc(e.id)}" type="text" inputmode="decimal" value="${Math.round(v.p)}"></label>
-        <label for="edit-slot-${esc(e.id)}">Meal<select id="edit-slot-${esc(e.id)}">${slotOptions}</select></label>
-        <label for="edit-time-${esc(e.id)}">Time<input id="edit-time-${esc(e.id)}" type="time" value="${hhmm(e.ts)}"></label>
+        <label for="edit-kcal-${esc(e.id)}">${t('Calories')}<input id="edit-kcal-${esc(e.id)}" type="text" inputmode="numeric" value="${Math.round(v.kcal)}"></label>
+        <label for="edit-protein-${esc(e.id)}">${t('Protein (g)')}<input id="edit-protein-${esc(e.id)}" type="text" inputmode="decimal" value="${Math.round(v.p)}"></label>
+        <label for="edit-slot-${esc(e.id)}">${t('Meal')}<select id="edit-slot-${esc(e.id)}">${slotOptions}</select></label>
+        <label for="edit-time-${esc(e.id)}">${t('Time')}<input id="edit-time-${esc(e.id)}" type="time" value="${hhmm(e.ts)}"></label>
       </div>
       <div class="actions">
-        <button type="button" class="btn" data-act="save-edit" data-id="${esc(e.id)}">Save changes</button>
-        <button type="button" class="link" data-act="favorite" data-id="${esc(e.id)}">Add to favourites</button>
-        ${canReanalyse ? `<button type="button" class="link" data-act="reanalyze" data-id="${esc(e.id)}">${S.settings.provider === 'openai' ? 'Analyse again' : 'Analyse again with Sonnet'}</button>` : ''}
-        <button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button>
+        <button type="button" class="btn" data-act="save-edit" data-id="${esc(e.id)}">${t('Save changes')}</button>
+        <button type="button" class="link" data-act="favorite" data-id="${esc(e.id)}">${t('Add to favourites')}</button>
+        ${canReanalyse ? `<button type="button" class="link" data-act="reanalyze" data-id="${esc(e.id)}">${S.settings.provider === 'openai' ? t('Analyse again') : t('Analyse again with Sonnet')}</button>` : ''}
+        <button type="button" class="link link-danger" data-act="delete" data-id="${esc(e.id)}">${t('Delete')}</button>
       </div>`;
   }
   return `<article class="entry">
     ${photos ? `<div class="entry-photos${(e.photoIds || []).length > 1 ? ' is-multi' : ''}">${photos}</div>` : ''}
     <div class="entry-body">
-      <h3>${esc(e.title)}</h3>
+      <h3>${esc(titleOf(e))}</h3>
       <p class="meta">${meta}</p>
-      ${e.text && e.src === 'photo' ? `<p class="meta">Note: ${esc(e.text)}</p>` : ''}
+      ${e.text && e.src === 'photo' ? `<p class="meta">${t('Note: {text}', { text: esc(e.text) })}</p>` : ''}
       ${body}
     </div>
   </article>`;
@@ -602,7 +613,7 @@ export function renderEntrySheet(id) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return '';
   return `
-  <header class="sheet-top"><h2 id="sheet-title">Entry</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
+  <header class="sheet-top"><h2 id="sheet-title">${t('Entry')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
   ${entryDetail(e)}`;
 }
 
@@ -616,26 +627,26 @@ function logRow(e) {
   let meta;
   let value = '';
   if (e.kind !== 'meal') {
-    meta = e.kind === 'weight' ? 'Weigh-in' : 'Step count';
+    meta = e.kind === 'weight' ? t('Weigh-in') : t('Step count');
   } else if (!ok) {
     meta = esc(entryState(e)); // the full message is in the entry sheet
     value = S.busy.has(e.id) ? '<span class="spin" aria-hidden="true"></span>' : '';
   } else {
     const v = eff(e);
-    const notes = [`${n0(v.p)} g protein`];
-    if (e.mult && e.mult !== 1) notes.push(`${multLabel(e.mult)} portion`);
-    if (e.tier === 'off') notes.push('off plan');
-    else if (e.tier === 'flex') notes.push('weekly extra');
-    else if (e.planId) notes.push('plan meal');
-    if (e.q) notes.push('has a question');
-    else if (e.conf > 0 && e.conf < 0.6 && !e.planId) notes.push('rough estimate');
+    const notes = [t('{n} g protein', { n: n0(v.p) })];
+    if (e.mult && e.mult !== 1) notes.push(t('{mult} portion', { mult: multLabel(e.mult) }));
+    if (e.tier === 'off') notes.push(t('off plan'));
+    else if (e.tier === 'flex') notes.push(t('weekly extra'));
+    else if (e.planId) notes.push(t('plan meal'));
+    if (e.q) notes.push(t('has a question'));
+    else if (e.conf > 0 && e.conf < 0.6 && !e.planId) notes.push(t('rough estimate'));
     meta = notes.join(', ');
     value = `<b>${n0(v.kcal)}</b><small>kcal</small>`;
   }
   const state = e.kind === 'meal' && !ok ? (e.status === 'error' ? ' is-error' : ' is-pending') : '';
   return `<li><button type="button" class="log-row${state}${e.tier === 'off' && ok ? ' is-off' : ''}" data-act="open-entry" data-id="${esc(e.id)}">
     <span class="log-time">${hhmm(e.ts)}</span>
-    <span class="log-main"><span class="log-title">${esc(e.title)}</span><span class="log-meta">${meta}</span></span>
+    <span class="log-main"><span class="log-title">${esc(titleOf(e))}</span><span class="log-meta">${meta}</span></span>
     ${thumb}
     <span class="log-value">${value}</span>
   </button></li>`;
@@ -649,24 +660,24 @@ function reviewBlock(day) {
   const r = S.days[day] && S.days[day].review;
   const busy = S.reviewing.has(day);
   const err = S.reviewErr.get(day);
-  const wait = '<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>Writing the review…</p>';
+  const wait = `<p class="review-wait" role="status"><span class="spin" aria-hidden="true"></span>${t('Writing the review…')}</p>`;
   const ask = (label) => `<button type="button" class="link" data-act="review-day" data-day="${day}">${label}</button>`;
   let ai = '';
   if (r) {
     const open = S.reviewOpen.has(day) ? S.reviewOpen.get(day) : day >= addDays(today(), -1);
-    const rows = [['Helped', r.good || []], ['Cost most', r.cut || []], ['Next', r.next ? [r.next] : []]].filter(([, list]) => list.length);
+    const rows = [[t('Helped'), r.good || []], [t('Cost most'), r.cut || []], [t('Next'), r.next ? [r.next] : []]].filter(([, list]) => list.length);
     const made = new Date(r.ts);
     const when = dayKey(made) === today() ? hhmm(r.ts) : dTiny.format(made);
     const stale = reviewState(day) === 'stale';
     ai = `<details class="review-ai" data-day="${day}"${open ? ' open' : ''}>
       <summary>${esc(r.head)}</summary>
       ${rows.length ? `<dl>${rows.map(([k, list]) => `<div><dt>${k}</dt>${list.map((x) => `<dd>${esc(x)}</dd>`).join('')}</div>`).join('')}</dl>` : ''}
-      ${busy ? wait : `<p class="review-foot">${stale ? (r.live && !v.live ? 'Written before the day ended.' : 'The log changed after this review.') : `AI review, ${when}.`} ${hasKey() ? ask(stale ? 'Update the review' : 'Review again') : ''}</p>`}
+      ${busy ? wait : `<p class="review-foot">${stale ? (r.live && !v.live ? t('Written before the day ended.') : t('The log changed after this review.')) : t('AI review, {when}.', { when })} ${hasKey() ? ask(stale ? t('Update the review') : t('Review again')) : ''}</p>`}
     </details>`;
   } else if (busy) ai = wait;
-  else if (hasKey()) ai = `<p class="review-foot">${ask(v.live ? 'Review the day so far' : 'Review this day')}</p>`;
+  else if (hasKey()) ai = `<p class="review-foot">${ask(v.live ? t('Review the day so far') : t('Review this day'))}</p>`;
   return `<div class="review">
-    <p class="review-verdict"><i class="pill ${pill}">${VERDICT[v.level]}</i><span>${esc(verdictText(v).join(' '))}</span></p>
+    <p class="review-verdict"><i class="pill ${pill}">${td(VERDICT[v.level])}</i><span>${esc(verdictText(v).join(' '))}</span></p>
     ${ai}
     ${err && !busy ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}
   </div>`;
@@ -679,122 +690,121 @@ export function renderLog() {
     if (!byDay.has(e.day)) byDay.set(e.day, []);
     byDay.get(e.day).push(e);
   }
-  const t = today();
-  const dayName = (d) => (d === t ? 'Today' : d === addDays(t, -1) ? 'Yesterday' : dLong.format(parseDay(d)));
+  const tod = today();
+  const dayName = (d) => (d === tod ? t('Today') : d === addDays(tod, -1) ? t('Yesterday') : dLong.format(parseDay(d)));
   const groups = Array.from(byDay.entries()).slice(0, 60).map(([d, entries]) => {
     const tot = dayTotals(d);
     const target = dayTarget(d);
     const st = dayStatus(d);
     const fill = Math.min(100, (tot.kcal / target) * 100).toFixed(1);
     return `<section class="log-day">
-      <header><h2>${esc(dayName(d))}</h2><p>${tot.n ? `<b>${n0(tot.kcal)}</b> / ${n0(target)} kcal, ${n0(tot.p)} g protein` : ''}</p></header>
+      <header><h2>${esc(dayName(d))}</h2><p>${tot.n ? t('<b>{kcal}</b> / {target} kcal, {p} g protein', { kcal: n0(tot.kcal), target: n0(target), p: n0(tot.p) }) : ''}</p></header>
       ${tot.n ? `<div class="log-tape${st === 'on' ? ' is-on' : st === 'over' ? ' is-over' : ''}" style="--v:${fill}%" aria-hidden="true"><i></i></div>` : ''}
       ${reviewBlock(d)}
       <ul class="log-list">${entries.map(logRow).join('')}</ul>
     </section>`;
   }).join('');
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>Photo and free-text analysis needs an API key. Plan meals, weight and steps work without one.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
-  const pendingNotice = pending.length && hasKey() ? `<div class="notice"><p>${pending.length === 1 ? '1 entry is' : `${pending.length} entries are`} waiting for analysis.</p><button type="button" class="btn" data-act="analyze-all">Analyse all</button></div>` : '';
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>${t('Photo and free-text analysis needs an API key. Plan meals, weight and steps work without one.')}</p><button type="button" class="btn" data-act="settings" data-sec="analysis">${t('Add key')}</button></div>`;
+  const pendingNotice = pending.length && hasKey() ? `<div class="notice"><p>${tn('{n} entry is waiting for analysis.|{n} entries are waiting for analysis.', pending.length)}</p><button type="button" class="btn" data-act="analyze-all">${t('Analyse all')}</button></div>` : '';
   return `
   <header class="top">
-    <div><h1>Log</h1><p class="sub">Everything you sent, newest first, with a review of each day. Tap an entry to correct it.</p></div>
-    <div class="top-actions">${settingsButton}</div>
+    <div><h1>${t('Log')}</h1><p class="sub">${t('Everything you sent, newest first, with a review of each day. Tap an entry to correct it.')}</p></div>
+    <div class="top-actions">${settingsButton()}</div>
   </header>
   ${keyNotice}${pendingNotice}
-  ${groups || `<div class="empty"><p>Nothing logged yet.</p><p>Everything you send lands here: photos, meals you type, weigh-ins, steps.</p>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="camera">Take a photo</button><button type="button" class="btn" data-act="library">Choose from library</button></div>
-    <p>Typing works too. Tap the box below to see examples.</p></div>`}`;
+  ${groups || `<div class="empty"><p>${t('Nothing logged yet.')}</p><p>${t('Everything you send lands here: photos, meals you type, weigh-ins, steps.')}</p>
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="camera">${t('Take a photo')}</button><button type="button" class="btn" data-act="library">${t('Choose from library')}</button></div>
+    <p>${t('Typing works too. Tap the box below to see examples.')}</p></div>`}`;
 }
 
 // ——— Check: a verdict before ordering or buying ———
-const FIT = { good: ['Good choice', 'pill-good'], ok: ['With care', 'pill-warn'], avoid: ['Leave it', 'pill-bad'] };
-const CHECK_KIND = { menu: 'Menu', product: 'Product', dish: 'Dish' };
+const FIT = { good: [T('Good choice'), 'pill-good'], ok: [T('With care'), 'pill-warn'], avoid: [T('Leave it'), 'pill-bad'] };
+const CHECK_KIND = { menu: T('Menu'), product: T('Product'), dish: T('Dish') };
+const kindLabel = (k) => CHECK_KIND[k] && td(CHECK_KIND[k]);
 const checkWhen = (ts) => (dayKey(new Date(ts)) === today() ? hhmm(ts) : dTiny.format(new Date(ts)));
 
 function checkOption(rec, o, i, rem) {
   const [label, pill] = FIT[o.fit] || FIT.ok;
   const dots = [1, 2, 3, 4, 5].map((k) => `<i${k <= o.rating ? ' class="on"' : ''}></i>`).join('');
   const nums = o.kcal
-    ? `<b>${n0(o.kcal)}</b> kcal${o.p ? `, ${n0(o.p)} g protein` : ''}${o.portion ? `<small>${esc(o.portion)}</small>` : ''}`
+    ? `${o.p ? t('<b>{kcal}</b> kcal, {p} g protein', { kcal: n0(o.kcal), p: n0(o.p) }) : t('<b>{kcal}</b> kcal', { kcal: n0(o.kcal) })}${o.portion ? `<small>${esc(o.portion)}</small>` : ''}`
     : esc(o.portion);
   // What the portion does to today's budget: for food eaten now, not for shopping, and only on the day of the check
   let budget = '';
   if (rec.kind !== 'product' && o.kcal && rem != null) {
-    budget = o.kcal <= rem ? `Leaves ${n0(rem - o.kcal)} kcal of today’s budget.` : rem > 0 ? `${n0(o.kcal - rem)} kcal more than is left today.` : 'Today’s budget is already used up.';
+    budget = o.kcal <= rem ? t('Leaves {kcal} kcal of today’s budget.', { kcal: n0(rem - o.kcal) }) : rem > 0 ? t('{kcal} kcal more than is left today.', { kcal: n0(o.kcal - rem) }) : t('Today’s budget is already used up.');
   }
   return `<li class="option">
-    <div class="option-head"><h3>${esc(o.name)}</h3><i class="pill ${pill}">${label}</i></div>
-    <p class="option-nums"><span class="rating" role="img" aria-label="Quality ${esc(o.rating)} of 5"><em>Quality</em>${dots}</span><span class="option-kcal">${nums}</span></p>
+    <div class="option-head"><h3>${esc(o.name)}</h3><i class="pill ${pill}">${td(label)}</i></div>
+    <p class="option-nums"><span class="rating" role="img" aria-label="${t('Quality {n} of 5', { n: esc(o.rating) })}"><em>${t('Quality')}</em>${dots}</span><span class="option-kcal">${nums}</span></p>
     ${o.why ? `<p class="option-why">${esc(o.why)}</p>` : ''}
-    ${o.tip ? `<p class="option-tip"><b>${o.fit === 'avoid' ? 'Instead' : rec.kind === 'menu' ? 'Order it like this' : 'Make it fit'}:</b> ${esc(o.tip)}</p>` : ''}
+    ${o.tip ? `<p class="option-tip"><b>${o.fit === 'avoid' ? t('Instead') : rec.kind === 'menu' ? t('Order it like this') : t('Make it fit')}:</b> ${esc(o.tip)}</p>` : ''}
     ${o.facts ? `<p class="option-facts">${esc(o.facts)}</p>` : ''}
-    ${budget || o.kcal ? `<div class="option-foot"><span>${budget}</span>${o.kcal ? `<button type="button" class="btn btn-small" data-act="check-log" data-id="${esc(rec.id)}" data-i="${i}">Log this</button>` : ''}</div>` : ''}
+    ${budget || o.kcal ? `<div class="option-foot"><span>${budget}</span>${o.kcal ? `<button type="button" class="btn btn-small" data-act="check-log" data-id="${esc(rec.id)}" data-i="${i}">${t('Log this')}</button>` : ''}</div>` : ''}
   </li>`;
 }
 
 function checkResult(rec, rem) {
   const sameDay = dayKey(new Date(rec.ts)) === today();
-  return `<section class="verdict" id="check-result" aria-label="Verdict">
-    <header><h2>${esc(rec.title || CHECK_KIND[rec.kind] || 'Verdict')}</h2><p>${CHECK_KIND[rec.kind] || 'Check'}, ${checkWhen(rec.ts)}</p></header>
+  return `<section class="verdict" id="check-result" aria-label="${t('Verdict')}">
+    <header><h2>${esc(rec.title || kindLabel(rec.kind) || t('Verdict'))}</h2><p>${kindLabel(rec.kind) || t('Check')}, ${checkWhen(rec.ts)}</p></header>
     <p class="verdict-answer">${esc(rec.answer)}</p>
-    ${rec.note ? `<p class="note">Your note: ${esc(rec.note)}</p>` : ''}
+    ${rec.note ? `<p class="note">${t('Your note: {note}', { note: esc(rec.note) })}</p>` : ''}
     <ol class="options">${rec.options.map((o, i) => checkOption(rec, o, i, sameDay ? rem : null)).join('')}</ol>
-    <p class="review-foot">From ${rec.photos ? `${esc(rec.photos)} ${rec.photos === 1 ? 'photo' : 'photos'}` : 'your note'}; the photos were not kept. Numbers are estimates. <button type="button" class="link" data-act="check-remove" data-id="${esc(rec.id)}">Remove this check</button></p>
+    <p class="review-foot">${rec.photos ? tn('From {n} photo; the photos were not kept. Numbers are estimates.|From {n} photos; the photos were not kept. Numbers are estimates.', Number(rec.photos)) : t('From your note; the photos were not kept. Numbers are estimates.')} <button type="button" class="link" data-act="check-remove" data-id="${esc(rec.id)}">${t('Remove this check')}</button></p>
   </section>`;
 }
 
 export function renderCheck() {
   const c = S.check;
-  const t = today();
-  const tot = dayTotals(t);
-  const rem = Math.round(dayTarget(t) - tot.kcal);
+  const tod = today();
+  const tot = dayTotals(tod);
+  const rem = Math.round(dayTarget(tod) - tot.kcal);
   const remP = Math.max(0, Math.round(S.settings.protein - tot.p));
   const rec = S.checks.find((x) => x.id === c.openId) || null;
   const full = c.photos.length >= CHECK_MAX;
   const photos = c.photos.length
-    ? `<ul class="check-photos">${c.photos.map((p, i) => `<li><img src="${p.url}" alt="Photo ${i + 1} for this check"><button type="button" data-act="check-photo-remove" data-id="${p.id}" aria-label="Remove photo ${i + 1}">${ICON.close}</button></li>`).join('')}</ul>`
+    ? `<ul class="check-photos">${c.photos.map((p, i) => `<li><img src="${p.url}" alt="${t('Photo {n} for this check', { n: i + 1 })}"><button type="button" data-act="check-photo-remove" data-id="${p.id}" aria-label="${t('Remove photo {n}', { n: i + 1 })}">${ICON.close}</button></li>`).join('')}</ul>`
     : '';
-  const keyNotice = hasKey() ? '' : `<div class="notice"><p>A check is done by a model, so it needs an API key.</p><button type="button" class="btn" data-act="settings" data-sec="analysis">Add key</button></div>`;
+  const keyNotice = hasKey() ? '' : `<div class="notice"><p>${t('A check is done by a model, so it needs an API key.')}</p><button type="button" class="btn" data-act="settings" data-sec="analysis">${t('Add key')}</button></div>`;
   const earlier = S.checks.filter((x) => !rec || x.id !== rec.id);
   const history = earlier.length ? `<section class="check-history">
-    <h2>${rec ? 'Other checks' : 'Earlier checks'}</h2>
+    <h2>${rec ? t('Other checks') : t('Earlier checks')}</h2>
     <ul class="log-list">${earlier.map((x) => {
       const best = x.options.find((o) => o.fit === 'good') || x.options[0];
       return `<li><button type="button" class="log-row" data-act="check-open" data-id="${esc(x.id)}">
         <span class="log-time">${checkWhen(x.ts)}</span>
-        <span class="log-main"><span class="log-title">${esc(x.title || CHECK_KIND[x.kind])}</span><span class="log-meta">${CHECK_KIND[x.kind] || 'Check'}${best ? `, ${best.fit === 'avoid' ? 'leave' : best.fit === 'good' ? 'best' : 'with care'}: ${esc(best.name)}` : ''}</span></span>
+        <span class="log-main"><span class="log-title">${esc(x.title || kindLabel(x.kind))}</span><span class="log-meta">${best ? t('{kind}, {verdict}: {name}', { kind: kindLabel(x.kind) || t('Check'), verdict: best.fit === 'avoid' ? t('leave') : best.fit === 'good' ? t('best') : t('with care'), name: esc(best.name) }) : kindLabel(x.kind) || t('Check')}</span></span>
       </button></li>`;
     }).join('')}</ul>
   </section>` : '';
   return `
   <header class="top">
-    <div><h1>Check</h1><p class="sub">Before you order or buy: photograph the menu, the dish or the product and get a verdict against your plan.</p></div>
-    <div class="top-actions">${settingsButton}</div>
+    <div><h1>${t('Check')}</h1><p class="sub">${t('Before you order or buy: photograph the menu, the dish or the product and get a verdict against your plan.')}</p></div>
+    <div class="top-actions">${settingsButton()}</div>
   </header>
   ${keyNotice}
-  <section class="check-new" aria-label="New check">
-    <p class="check-budget">${rem > 0 ? `Left today: <b>${n0(rem)}</b> kcal${remP ? `, <b>${n0(remP)}</b> g protein to go` : ''}.` : `Today’s budget is used up${rem < -10 ? `, by <b>${n0(-rem)}</b> kcal` : ''}.`}</p>
+  <section class="check-new" aria-label="${t('New check')}">
+    <p class="check-budget">${rem > 0 ? (remP ? t('Left today: <b>{kcal}</b> kcal, <b>{p}</b> g protein to go.', { kcal: n0(rem), p: n0(remP) }) : t('Left today: <b>{kcal}</b> kcal.', { kcal: n0(rem) })) : rem < -10 ? t('Today’s budget is used up, by <b>{kcal}</b> kcal.', { kcal: n0(-rem) }) : t('Today’s budget is used up.')}</p>
     ${photos}
     <div class="actions">
-      <button type="button" class="btn" data-act="check-cam"${full || c.busy ? ' disabled' : ''}>${ICON.camera}Take a photo</button>
-      <button type="button" class="btn" data-act="check-lib"${full || c.busy ? ' disabled' : ''}>Choose photos</button>
+      <button type="button" class="btn" data-act="check-cam"${full || c.busy ? ' disabled' : ''}>${ICON.camera}${t('Take a photo')}</button>
+      <button type="button" class="btn" data-act="check-lib"${full || c.busy ? ' disabled' : ''}>${t('Choose photos')}</button>
     </div>
-    <p class="note">${c.photos.length ? `${c.photos.length} of ${CHECK_MAX} photos. ` : `Up to ${CHECK_MAX} photos: both pages of a menu, or the front and the nutrition table of a product. `}They are sent for this check and not kept.</p>
-    <label class="sr-only" for="check-note">A note for this check</label>
-    <input id="check-note" type="text" enterkeyhint="go" maxlength="300" placeholder="Add a note: “dinner, very hungry”" value="${esc(c.note)}"${c.busy ? ' disabled' : ''}>
-    <button type="button" class="btn btn-primary btn-wide" data-act="check-run"${checkReady() ? '' : ' disabled'}>${c.busy ? '<span class="spin" aria-hidden="true"></span>Checking…' : 'Check against my plan'}</button>
+    <p class="note">${c.photos.length ? t('{n} of {max} photos.', { n: c.photos.length, max: CHECK_MAX }) : t('Up to {max} photos: both pages of a menu, or the front and the nutrition table of a product.', { max: CHECK_MAX })} ${t('They are sent for this check and not kept.')}</p>
+    <label class="sr-only" for="check-note">${t('A note for this check')}</label>
+    <input id="check-note" type="text" enterkeyhint="go" maxlength="300" placeholder="${t('Add a note: “dinner, very hungry”')}" value="${esc(c.note)}"${c.busy ? ' disabled' : ''}>
+    <button type="button" class="btn btn-primary btn-wide" data-act="check-run"${checkReady() ? '' : ' disabled'}>${c.busy ? '<span class="spin" aria-hidden="true"></span>' + t('Checking…') : t('Check against my plan')}</button>
     ${c.busy && c.status ? `<p class="note" role="status">${esc(c.status)}</p>` : ''}
     ${c.err ? `<p class="note is-error" role="alert">${esc(c.err)}</p>` : ''}
   </section>
   ${rec ? checkResult(rec, rem) : ''}
   ${history}
-  ${!rec && !earlier.length ? `<div class="empty check-empty"><p>What a check tells you</p><p>How good the food is in general, whether it fits your plan and what is left of today, and how to order it so that it does.</p><p>It works for a restaurant menu, a dish in front of you, a product on the shelf, or two products side by side.</p></div>` : ''}`;
+  ${!rec && !earlier.length ? `<div class="empty check-empty"><p>${t('What a check tells you')}</p><p>${t('How good the food is in general, whether it fits your plan and what is left of today, and how to order it so that it does.')}</p><p>${t('It works for a restaurant menu, a dish in front of you, a product on the shelf, or two products side by side.')}</p></div>` : ''}`;
 }
 
 // ——— Progress ———
 let chartData = null;
-
-const RANGE_TEXT = { week: 'the last 7 days', weeks: 'the last two weeks', whole: 'the whole plan' };
 
 // The weight chart. Three ranges: the last 7 days or the last two weeks, where every weigh-in can be read, and the
 // whole plan, which shows where it is going and when you arrive at this pace. Brass is you (the 7-day average),
@@ -804,20 +814,19 @@ function weightChart() {
   const s = S.settings;
   const whole = S.chartRange === 'whole';
   const week = S.chartRange === 'week';
-  const rangeText = RANGE_TEXT[S.chartRange] || RANGE_TEXT.weeks;
   const series = weightSeries();
-  const t = today();
+  const tod = today();
   const pr = projection();
   const W = 340;
   const H = 214;
   const m = { l: 34, r: whole ? 42 : 64, t: 14, b: 26 };
-  const { x0, x1, ticks } = chartWindow(S.chartRange, t, s, series.length ? series[0].day : '');
+  const { x0, x1, ticks } = chartWindow(S.chartRange, tod, s, series.length ? series[0].day : '');
   const span = Math.max(1, diffDays(x0, x1));
   const lineAt = (d) => (d < s.startDate ? s.startKg : targetAt(d, s));
   const visible = series.filter((d) => d.day >= x0 && d.day <= x1);
   const avgPoints = [];
   const from = whole ? (visible[0] && visible[0].day) : x0;
-  if (from) for (let d = from; d <= (t < x1 ? t : x1); d = addDays(d, 1)) { const a = avg7(d); if (a) avgPoints.push({ day: d, kg: a.kg }); }
+  if (from) for (let d = from; d <= (tod < x1 ? tod : x1); d = addDays(d, 1)) { const a = avg7(d); if (a) avgPoints.push({ day: d, kg: a.kg }); }
   const end = avgPoints[avgPoints.length - 1];
 
   // The height: everything shown, plus a little room, and at least 2 kg
@@ -864,32 +873,35 @@ function weightChart() {
     labels += `<text x="${f(X(s.targetDate) + 6)}" y="${f(Y(s.targetKg) + 4)}" class="c-label">${esc(kgLabel(s.targetKg))} kg</text>`;
     // Near the plan's end the label goes left of the dot, so it stays on the chart and clear of the target's label
     const left = X(end ? end.day : x0) > W - m.r - 50;
-    if (end) labels += `<text x="${f(X(end.day) + (left ? -8 : 8))}" y="${f(Y(end.kg) - 9)}"${left ? ' text-anchor="end"' : ''} class="c-label-you">You ${esc(n1(end.kg))}</text>`;
+    if (end) labels += `<text x="${f(X(end.day) + (left ? -8 : 8))}" y="${f(Y(end.kg) - 9)}"${left ? ' text-anchor="end"' : ''} class="c-label-you">${t('You {kg}', { kg: esc(n1(end.kg)) })}</text>`;
     // Only while the plan runs: after its end date, today lies outside the chart
-    if (pr && pr.eta && end && t >= x0 && t < x1) {
+    if (pr && pr.eta && end && tod >= x0 && tod < x1) {
       const stop = pr.eta < x1 ? pr.eta : x1;
-      const at = pr.now + pr.slope * diffDays(t, stop);
-      proj = `<path d="M${f(X(t))} ${f(Y(pr.now))}L${f(X(stop))} ${f(Y(at))}" class="c-proj"/>`;
-      labels += `<text x="${f(Math.min(X(stop), W - m.r - 4))}" y="${f(Math.min(Y(at) + 16, H - m.b - 4))}" text-anchor="end" class="c-label-eta">${esc(dTiny.format(parseDay(pr.eta)))} at this pace</text>`;
+      const at = pr.now + pr.slope * diffDays(tod, stop);
+      proj = `<path d="M${f(X(tod))} ${f(Y(pr.now))}L${f(X(stop))} ${f(Y(at))}" class="c-proj"/>`;
+      labels += `<text x="${f(Math.min(X(stop), W - m.r - 4))}" y="${f(Math.min(Y(at) + 16, H - m.b - 4))}" text-anchor="end" class="c-label-eta">${t('{date} at this pace', { date: esc(dTiny.format(parseDay(pr.eta))) })}</text>`;
     }
   } else if (end) {
     let yy = Y(end.kg);
     let yl = Y(lineAt(x1));
     if (Math.abs(yy - yl) < 14) { const mid = (yy + yl) / 2; const up = end.kg >= lineAt(x1) ? -1 : 1; yy = mid + up * 7; yl = mid - up * 7; }
-    labels += `<text x="${f(X(x1) + 8)}" y="${f(yy + 4)}" class="c-label-you">You ${esc(n1(end.kg))}</text>`;
-    labels += `<text x="${f(X(x1) + 8)}" y="${f(yl + 4)}" class="c-label">Line ${esc(n1(lineAt(x1)))}</text>`;
+    labels += `<text x="${f(X(x1) + 8)}" y="${f(yy + 4)}" class="c-label-you">${t('You {kg}', { kg: esc(n1(end.kg)) })}</text>`;
+    labels += `<text x="${f(X(x1) + 8)}" y="${f(yl + 4)}" class="c-label">${t('Line {kg}', { kg: esc(n1(lineAt(x1))) })}</text>`;
   }
-  const todayLine = whole && t >= x0 && t <= x1 ? `<line x1="${f(X(t))}" x2="${f(X(t))}" y1="${m.t}" y2="${H - m.b}" class="c-today"/>` : '';
+  const todayLine = whole && tod >= x0 && tod <= x1 ? `<line x1="${f(X(tod))}" x2="${f(X(tod))}" y1="${m.t}" y2="${H - m.b}" class="c-today"/>` : '';
   chartData = { x0, span, m, W, H, avg: Object.fromEntries(avgPoints.map((p) => [p.day, p.kg])) };
+  const avgKg = end ? n1(end.kg) : '';
+  const lineKg = end ? n1(lineAt(tod < x1 ? tod : x1)) : '';
   const alt = end
-    ? `Weight over ${rangeText}: 7-day average ${n1(end.kg)} kg, your line ${n1(lineAt(t < x1 ? t : x1))} kg${whole && pr && pr.eta ? `, at this pace you arrive on ${dShort.format(parseDay(pr.eta))}` : ''}.`
-    : `Weight chart: no weigh-ins ${whole ? 'yet' : `in ${rangeText}`}.`;
+    ? (whole ? (pr && pr.eta ? t('Weight over the whole plan: 7-day average {avg} kg, your line {line} kg, at this pace you arrive on {date}.', { avg: avgKg, line: lineKg, date: dShort.format(parseDay(pr.eta)) }) : t('Weight over the whole plan: 7-day average {avg} kg, your line {line} kg.', { avg: avgKg, line: lineKg }))
+      : week ? t('Weight over the last 7 days: 7-day average {avg} kg, your line {line} kg.', { avg: avgKg, line: lineKg }) : t('Weight over the last two weeks: 7-day average {avg} kg, your line {line} kg.', { avg: avgKg, line: lineKg }))
+    : (whole ? t('Weight chart: no weigh-ins yet.') : week ? t('Weight chart: no weigh-ins in the last 7 days.') : t('Weight chart: no weigh-ins in the last two weeks.'));
   return `<div class="chart">
-    <div class="chart-head"><h2>Weight</h2>
-      <div class="seg" role="group" aria-label="Chart range">
-        <button type="button" data-act="chart-range" data-v="week" aria-pressed="${week}">Week</button>
-        <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!week && !whole}">2 weeks</button>
-        <button type="button" data-act="chart-range" data-v="whole" aria-pressed="${whole}">Overall</button>
+    <div class="chart-head"><h2>${t('Weight')}</h2>
+      <div class="seg" role="group" aria-label="${t('Chart range')}">
+        <button type="button" data-act="chart-range" data-v="week" aria-pressed="${week}">${t('Week')}</button>
+        <button type="button" data-act="chart-range" data-v="weeks" aria-pressed="${!week && !whole}">${t('2 weeks')}</button>
+        <button type="button" data-act="chart-range" data-v="whole" aria-pressed="${whole}">${t('Overall')}</button>
       </div>
     </div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(alt)}">
@@ -902,8 +914,8 @@ function weightChart() {
       <line id="c-cross" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" class="c-cross" visibility="hidden"/>
     </svg>
     <div class="tip" id="c-tip" hidden></div>
-    ${!end && !whole ? `<p class="note">No weigh-ins in ${rangeText}.</p>` : ''}
-    <p class="legend"><span><i class="key-avg"></i>You (7-day average)</span><span><i class="key-target"></i>Your line</span><span><i class="key-dot"></i>Daily weigh-in</span>${proj ? '<span><i class="key-proj"></i>At this pace</span>' : ''}</p>
+    ${!end && !whole ? `<p class="note">${week ? t('No weigh-ins in the last 7 days.') : t('No weigh-ins in the last two weeks.')}</p>` : ''}
+    <p class="legend"><span><i class="key-avg"></i>${t('You (7-day average)')}</span><span><i class="key-target"></i>${t('Your line')}</span><span><i class="key-dot"></i>${t('Daily weigh-in')}</span>${proj ? `<span><i class="key-proj"></i>${t('At this pace')}</span>` : ''}</p>
   </div>`;
 }
 
@@ -926,9 +938,9 @@ export function attachChart(root) {
     cross.setAttribute('visibility', 'visible');
     const d = S.days[day];
     const rows = [[dShort.format(parseDay(day)), '']];
-    if (d && d.kg) rows.push([n1(d.kg) + ' kg', 'weigh-in']);
-    if (chartData.avg[day]) rows.push([n1(chartData.avg[day]) + ' kg', 'average']);
-    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', 'line']);
+    if (d && d.kg) rows.push([n1(d.kg) + ' kg', t('weigh-in')]);
+    if (chartData.avg[day]) rows.push([n1(chartData.avg[day]) + ' kg', t('average')]);
+    if (day >= S.settings.startDate) rows.push([n1(targetAt(day, S.settings)) + ' kg', t('line')]);
     tip.innerHTML = '';
     rows.forEach(([value, label], k) => {
       const p = document.createElement('p');
@@ -965,13 +977,19 @@ const PIE = {
   short: '',
 };
 const pie = (lv) => `<svg viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.2"/>${PIE[lv] || ''}</svg>`;
-const PROTEIN_TEXT = { target: 'target reached', min: 'minimum reached', near: 'nearly at the minimum', short: 'short of the minimum' };
+const PROTEIN_TEXT = { target: T('target reached'), min: T('minimum reached'), near: T('nearly at the minimum'), short: T('short of the minimum') };
 const CAL_GLYPH = { on: '✓', over: '▲', far: '▲▲', under: '↓', open: '…', none: '' };
-const join = (list) => list.join(', ').replace(/, ([^,]*)$/, ' and $1');
+// English keeps the exact old rule (the last comma becomes " and", even inside one item: "…budget and within the 10% margin"); other languages use their list format
+const lists = new Map();
+const join = (list) => {
+  if (LOCALE === 'en-GB') return list.join(', ').replace(/, ([^,]*)$/, ' and $1'); // i18n-ok: English only
+  if (!lists.has(LOCALE)) lists.set(LOCALE, new Intl.ListFormat(LOCALE, { type: 'conjunction' }));
+  return lists.get(LOCALE).format(list);
+};
 
 function calendar() {
   const s = S.settings;
-  const t = today();
+  const tod = today();
   const first = weekStart(s.startDate);
   const weeks = Math.ceil((diffDays(first, s.targetDate) + 1) / 7);
   let rows = '';
@@ -984,23 +1002,23 @@ function calendar() {
       lastMonth = monthDay.slice(0, 7);
       rows += `<p class="cal-month">${esc(dMonthYear.format(parseDay(monthDay)))}</p>`;
     }
-    const ahead = ws > t;
+    const ahead = ws > tod;
     let cells = '';
     let marked = false;
     for (let i = 0; i < 7; i++) {
       const d = addDays(ws, i);
       const dn = parseDay(d).getDate();
       if (d < s.startDate || d > s.targetDate) { cells += '<span class="cal-d cal-out"></span>'; continue; }
-      if (d > t) { cells += `<span class="cal-d cal-fut" title="${esc(dShort.format(parseDay(d)))}"><span class="n">${dn}</span></span>`; continue; }
+      if (d > tod) { cells += `<span class="cal-d cal-fut" title="${esc(dShort.format(parseDay(d)))}"><span class="n">${dn}</span></span>`; continue; }
       const st = dayStatus(d);
       const tot = dayTotals(d);
       const target = dayTarget(d);
       const lv = proteinLevel(d);
       const plus = st === 'on' && tot.kcal > target + 0.5;
-      const label = !tot.n ? `${dShort.format(parseDay(d))}: nothing logged`
-        : `${dShort.format(parseDay(d))}: ${n0(tot.kcal)} of ${n0(target)} kcal, ${STATUS_LABEL[st]}; protein ${n0(tot.p)} g, ${PROTEIN_TEXT[lv]}`;
+      const label = !tot.n ? t('{date}: nothing logged', { date: dShort.format(parseDay(d)) })
+        : t('{date}: {kcal} of {target} kcal, {status}; protein {p} g, {level}', { date: dShort.format(parseDay(d)), kcal: n0(tot.kcal), target: n0(target), status: td(STATUS_LABEL[st]), p: n0(tot.p), level: td(PROTEIN_TEXT[lv]) });
       if (S.calPick === d) marked = true;
-      cells += `<button type="button" class="cal-d cal-${st}${d === t ? ' is-today' : ''}${S.calPick === d ? ' is-selected' : ''}" data-act="cal" data-day="${d}" title="${esc(label)}" aria-label="${esc(label)}">`
+      cells += `<button type="button" class="cal-d cal-${st}${d === tod ? ' is-today' : ''}${S.calPick === d ? ' is-selected' : ''}" data-act="cal" data-day="${d}" title="${esc(label)}" aria-label="${esc(label)}">`
         + `<span class="n">${dn}</span><span class="g" aria-hidden="true">${CAL_GLYPH[st]}</span>`
         + `<span class="k">${tot.n ? `${Math.round(tot.kcal)}${plus ? '<sup>+</sup>' : ''}` : '–'}</span>`
         + `<span class="p">${tot.n ? `${pie(lv)}${n0(tot.p)}` : ''}</span></button>`;
@@ -1009,9 +1027,9 @@ function calendar() {
     let wk = '<span class="cal-wk"></span>';
     if (!ahead) {
       const r = weekResult(ws);
-      const head = r.done ? r.tier.title : 'This week so far';
-      const body = r.done ? `${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${r.tier.text}`
-        : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far. Keep going, the week is still yours.`;
+      const head = r.done ? td(r.tier.title) : t('This week so far');
+      const body = r.done ? `${t('{n} of 7 days on plan, protein reached on {p}.', { n: r.onPlan, p: r.proteinDays })} ${td(r.tier.text)}`
+        : tn('{n} day on plan so far. Keep going, the week is still yours.|{n} days on plan so far. Keep going, the week is still yours.', r.onPlan);
       if (S.calPick === `week:${ws}`) marked = true;
       wk = `<button type="button" class="cal-wk is-${r.done ? r.tier.tone : 'going'}${S.calPick === `week:${ws}` ? ' is-selected' : ''}" data-act="cal" data-day="week:${ws}" title="${esc(`${head}. ${body}`)}" aria-label="${esc(`${head}. ${body}`)}">${wkIcon(r.done ? r.tier.icon : 'going')}<span>${r.onPlan}/7</span></button>`;
     }
@@ -1019,34 +1037,40 @@ function calendar() {
     if (marked) rows += calPick(ws);
   }
   return `<div class="calendar card">
-    <p class="cal-targets"><span>Budget <b>${n0(s.kcalRest)}</b> rest · <b>${n0(s.kcalTrain)}</b> workout</span><span>Min <b>${n0(KCAL_MIN_DAY)}</b> kcal</span><span class="is-prot">Protein <b>${n0(s.protein)} g</b> · min <b>${n0(proteinFloor())} g</b></span></p>
-    <div class="cal-row cal-head">${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}<span></span></div>
+    <p class="cal-targets"><span>${t('Budget <b>{rest}</b> rest · <b>{train}</b> workout', { rest: n0(s.kcalRest), train: n0(s.kcalTrain) })}</span><span>${t('Min <b>{kcal}</b> kcal', { kcal: n0(KCAL_MIN_DAY) })}</span><span class="is-prot">${t('Protein <b>{goal} g</b> · min <b>{min} g</b>', { goal: n0(s.protein), min: n0(proteinFloor()) })}</span></p>
+    <div class="cal-row cal-head">${WEEKDAYS.map((x) => `<span>${td(x)}</span>`).join('')}<span></span></div>
     ${rows}
-    <details class="cal-key"><summary>How to read a day</summary>
-      <p><span class="cal-sw cal-on"></span>✓ on plan <span class="cal-sw cal-over"></span>▲ over <span class="cal-sw cal-far"></span>▲▲ far over <span class="cal-sw cal-under"></span>↓ under ${n0(KCAL_MIN_DAY)} <span class="cal-sw cal-open"></span>today</p>
-      <p class="is-prot">${pie('target')} ${n0(s.protein)} g target ${pie('min')} ${n0(proteinFloor())} g minimum ${pie('near')} nearly ${pie('short')} short. Protein never breaks a streak. A "+" after the calories means a little over the budget, still within the ${Math.round((BAND.high - 1) * 100)}% margin.</p>
+    <details class="cal-key"><summary>${t('How to read a day')}</summary>
+      <p><span class="cal-sw cal-on"></span>✓ ${t('on plan')} <span class="cal-sw cal-over"></span>▲ ${t('over')} <span class="cal-sw cal-far"></span>▲▲ ${t('far over')} <span class="cal-sw cal-under"></span>↓ ${t('under {kcal}', { kcal: n0(KCAL_MIN_DAY) })} <span class="cal-sw cal-open"></span>${t('today')}</p>
+      <p class="is-prot">${pie('target')} ${t('{n} g target', { n: n0(s.protein) })} ${pie('min')} ${t('{n} g minimum', { n: n0(proteinFloor()) })} ${pie('near')} ${t('nearly')} ${pie('short')} ${t('short')}. ${t('Protein never breaks a streak. A "+" after the calories means a little over the budget, still within the {pct}% margin.', { pct: Math.round((BAND.high - 1) * 100) })}</p>
     </details>
   </div>`;
 }
 
 // The detail line under the week that holds the tapped day or week icon
 function calPick(ws) {
-  const t = today();
+  const tod = today();
   const pick = S.calPick;
   if (pick.startsWith('week:')) {
     const r = weekResult(ws);
     const range = `${dTiny.format(parseDay(ws))} – ${dTiny.format(parseDay(addDays(ws, 6)))}`;
-    return `<p class="cal-pick"><b>${esc(range)}</b>: ${r.done ? `${esc(r.tier.title)}. ${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${esc(r.tier.text)}`
-      : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far, ${diffDays(t, addDays(ws, 6))} to go. Keep going, the week is still yours.`}</p>`;
+    return `<p class="cal-pick"><b>${esc(range)}</b>: ${r.done ? `${esc(td(r.tier.title))}. ${t('{n} of 7 days on plan, protein reached on {p}.', { n: r.onPlan, p: r.proteinDays })} ${esc(td(r.tier.text))}`
+      : tn('{n} day on plan so far, {left} to go. Keep going, the week is still yours.|{n} days on plan so far, {left} to go. Keep going, the week is still yours.', r.onPlan, { left: diffDays(tod, addDays(ws, 6)) })}</p>`;
   }
   const d = pick;
   const tot = dayTotals(d);
   const dd = S.days[d] || {};
   const st = dayStatus(d);
-  const main = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
-    : `${{ over: 'Over the budget', far: 'Well over the budget', under: 'Under the minimum' }[st]}${dayReasons(d).length ? `: ${join(dayReasons(d))}` : ''}.`;
-  const notes = tot.n && st !== 'open' && dayNotes(d).length ? ` ${st === 'on' ? '' : 'Also: '}${join(dayNotes(d))}.` : '';
-  return `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein (${PROTEIN_TEXT[proteinLevel(d)]})` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. ${esc(main + notes)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
+  const reasons = dayReasons(d);
+  const verdict = { over: t('Over the budget'), far: t('Well over the budget'), under: t('Under the minimum') }[st];
+  const main = !tot.n ? '' : st === 'on' ? t('On plan.') : st === 'open' ? t('Still in progress.')
+    : reasons.length ? t('{verdict}: {reasons}.', { verdict, reasons: join(reasons) }) : t('{verdict}.', { verdict });
+  const noted = tot.n && st !== 'open' ? dayNotes(d) : [];
+  const notes = noted.length ? ` ${st === 'on' ? `${join(noted)}.` : t('Also: {notes}.', { notes: join(noted) })}` : '';
+  const sums = { kcal: n0(tot.kcal), target: n0(dayTarget(d)), p: n0(tot.p), level: tot.n ? td(PROTEIN_TEXT[proteinLevel(d)]) : '' };
+  const day = dd.kg ? (tot.n ? t('{kcal} / {target} kcal, {p} g protein ({level}), weigh-in {kg} kg.', { ...sums, kg: n1(dd.kg) }) : t('no meals logged, weigh-in {kg} kg.', { kg: n1(dd.kg) }))
+    : (tot.n ? t('{kcal} / {target} kcal, {p} g protein ({level}).', sums) : t('no meals logged.'));
+  return `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${day} ${esc(main + notes)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">${t('Open day')}</button></p>`;
 }
 
 function checkpoints() {
@@ -1055,21 +1079,21 @@ function checkpoints() {
   const points = [];
   for (let i = 28; i < total - 6; i += 28) points.push(addDays(s.startDate, i));
   points.push(s.targetDate);
-  const t = today();
-  return `<table class="table"><thead><tr><th scope="col">Date</th><th scope="col">Your line</th><th scope="col">Your average</th></tr></thead><tbody>
-    ${points.map((d) => { const a = d <= t ? avg7(d) : null; return `<tr><td>${esc(dShort.format(parseDay(d)))}</td><td>${n1(targetAt(d, s))} kg</td><td>${a ? n1(a.kg) + ' kg' : '–'}</td></tr>`; }).join('')}
+  const tod = today();
+  return `<table class="table"><thead><tr><th scope="col">${t('Date')}</th><th scope="col">${t('Your line')}</th><th scope="col">${t('Your average')}</th></tr></thead><tbody>
+    ${points.map((d) => { const a = d <= tod ? avg7(d) : null; return `<tr><td>${esc(dShort.format(parseDay(d)))}</td><td>${n1(targetAt(d, s))} kg</td><td>${a ? n1(a.kg) + ' kg' : '–'}</td></tr>`; }).join('')}
   </tbody></table>`;
 }
 
 function adjustNotice() {
   const s = S.settings;
-  const t = today();
-  if (diffDays(s.startDate, t) < 14) return '';
-  const a = avg7(t);
-  const b = avg7(addDays(t, -7));
+  const tod = today();
+  if (diffDays(s.startDate, tod) < 14) return '';
+  const a = avg7(tod);
+  const b = avg7(addDays(tod, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
-  if (a.kg - targetAt(t, s) > 0.7 && b.kg - targetAt(addDays(t, -7), s) > 0.7) {
-    return `<div class="notice"><p>Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below ${n0(Math.max(KCAL_FLOOR, s.kcalRest - 100))} kcal.</p><button type="button" class="btn" data-act="settings" data-sec="targets">Open goals</button></div>`;
+  if (a.kg - targetAt(tod, s) > 0.7 && b.kg - targetAt(addDays(tod, -7), s) > 0.7) {
+    return `<div class="notice"><p>${t('Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below {kcal} kcal.', { kcal: n0(Math.max(KCAL_FLOOR, s.kcalRest - 100)) })}</p><button type="button" class="btn" data-act="settings" data-sec="targets">${t('Open goals')}</button></div>`;
   }
   return '';
 }
@@ -1090,11 +1114,14 @@ export function renderProgress() {
   let hero;
   let note;
   if (started && a) {
-    hero = `<p class="glide-head">${esc(n1(Math.abs(lost)))} kg ${lost < -0.05 ? '<em class="is-up">up</em>' : '<em>down</em>'}</p>`;
+    hero = `<p class="glide-head">${t('{kg} kg {dir}', { kg: esc(n1(Math.abs(lost))), dir: lost < -0.05 ? `<em class="is-up">${t('up')}</em>` : `<em>${t('down')}</em>` })}</p>`;
     let arrive = '';
     if (pr && pr.eta && a.kg > s.targetKg) {
       const early = diffDays(pr.eta, s.targetDate);
-      arrive = ` At this pace you arrive on <b>${esc(dShort.format(parseDay(pr.eta)))}</b>${early > 0 ? `, ${days(early)} early` : early < 0 ? `, ${days(-early)} after the goal date` : ', right on the date'}.`;
+      const date = esc(dShort.format(parseDay(pr.eta)));
+      arrive = ` ${early > 0 ? t('At this pace you arrive on <b>{date}</b>, {days} early.', { date, days: tn('{n} day|{n} days', early) })
+        : early < 0 ? t('At this pace you arrive on <b>{date}</b>, {days} after the goal date.', { date, days: tn('{n} day|{n} days', -early) })
+          : t('At this pace you arrive on <b>{date}</b>, right on the date.', { date })}`;
     }
     note = `${esc(head)}.${arrive}`;
   } else {
@@ -1103,8 +1130,8 @@ export function renderProgress() {
   }
   return `
   <header class="top">
-    <div><h1>Progress</h1><p class="sub">${esc(dTiny.format(parseDay(s.startDate)))} → ${esc(dTiny.format(parseDay(s.targetDate)))} · ${esc(kgLabel(s.startKg))} kg → ${esc(kgLabel(s.targetKg))} kg</p></div>
-    <div class="top-actions">${settingsButton}</div>
+    <div><h1>${t('Progress')}</h1><p class="sub">${esc(dTiny.format(parseDay(s.startDate)))} → ${esc(dTiny.format(parseDay(s.targetDate)))} · ${esc(kgLabel(s.startKg))} kg → ${esc(kgLabel(s.targetKg))} kg</p></div>
+    <div class="top-actions">${settingsButton()}</div>
   </header>
   ${adjustNotice()}
   <section class="glide">
@@ -1116,26 +1143,26 @@ export function renderProgress() {
   <section>
     ${weightChart()}
     <dl class="stats stats-wide">
-      <div><dt>Lost</dt><dd>${a ? `${n1(Math.max(0, lost))}<small>kg</small>` : '–'}</dd></div>
-      <div><dt>To go</dt><dd>${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))}<small>kg</small></dd></div>
-      <div><dt>Per week</dt><dd>${pr ? `${n1(pr.perWeek).replace('-', '−')}<small>kg</small>` : '–'}</dd></div>
-      <div><dt>Arrival at this pace</dt><dd>${pr && pr.eta ? esc(dTiny.format(parseDay(pr.eta))) : '–'}</dd></div>
+      <div><dt>${t('Lost')}</dt><dd>${a ? `${n1(Math.max(0, lost))}<small>kg</small>` : '–'}</dd></div>
+      <div><dt>${t('To go')}</dt><dd>${n1(Math.max(0, (a ? a.kg : s.startKg) - s.targetKg))}<small>kg</small></dd></div>
+      <div><dt>${t('Per week')}</dt><dd>${pr ? `${n1(pr.perWeek).replace('-', '−')}<small>kg</small>` : '–'}</dd></div>
+      <div><dt>${t('Arrival at this pace')}</dt><dd>${pr && pr.eta ? esc(dTiny.format(parseDay(pr.eta))) : '–'}</dd></div>
     </dl>
-    ${pr ? '' : '<p class="note">The weekly rate and the arrival appear after 4 weigh-ins within the last 14 days, at least 6 days apart.</p>'}
+    ${pr ? '' : `<p class="note">${t('The weekly rate and the arrival appear after 4 weigh-ins within the last 14 days, at least 6 days apart.')}</p>`}
   </section>
   <section>
-    <h2>Consistency calendar</h2>
-    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on plan build a run.'}</p>
+    <h2>${t('Consistency calendar')}</h2>
+    <p class="note">${run > 0 ? t('{days} on plan in a row.', { days: tn('{n} day|{n} days', run) }) : t('Days on plan build a run.')}</p>
     ${calendar()}
   </section>
   <section>
-    <h2>Checkpoints</h2>
+    <h2>${t('Checkpoints')}</h2>
     ${checkpoints()}
   </section>
   <section>
     <details class="table-details">
-      <summary>Weigh-in table</summary>
-      ${rows ? `<table class="table"><thead><tr><th scope="col">Day</th><th scope="col">Weigh-in</th><th scope="col">Avg</th><th scope="col">Line</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No weigh-ins yet. Enter one on Today, or type a number into the log.</p>'}
+      <summary>${t('Weigh-in table')}</summary>
+      ${rows ? `<table class="table"><thead><tr><th scope="col">${t('Day')}</th><th scope="col">${t('Weigh-in')}</th><th scope="col">${t('Avg')}</th><th scope="col">${t('Line')}</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${t('No weigh-ins yet. Enter one on Today, or type a number into the log.')}</p>`}
     </details>
   </section>`;
 }
@@ -1148,11 +1175,11 @@ function beamCard(a, target, started) {
   if (!marks.length) return '';
   const got = marks.filter((kg) => s.startKg - kg <= lost + 1e-6).length;
   const next = marks.find((kg) => s.startKg - kg > lost + 1e-6);
-  const note = next == null ? 'Every kilo collected.'
-    : a && started ? `Next kilo at <b>${esc(kgLabel(next))}</b>, ${esc(n1(a.kg - next))} kg away.`
-      : 'A kilo is yours when a weigh-in reaches it.';
+  const note = next == null ? t('Every kilo collected.')
+    : a && started ? t('Next kilo at <b>{kg}</b>, {away} kg away.', { kg: esc(kgLabel(next)), away: esc(n1(a.kg - next)) })
+      : t('A kilo is yours when a weigh-in reaches it.');
   return `<section class="card beam-card" aria-labelledby="beam-title">
-    <div class="card-head"><h2 id="beam-title" class="label">The beam · latest weigh-in</h2><span class="label">${got} of ${marks.length} ${marks.length === 1 ? 'kilo' : 'kilos'}</span></div>
+    <div class="card-head"><h2 id="beam-title" class="label">${t('The beam · latest weigh-in')}</h2><span class="label">${tn('{got} of {n} kilo|{got} of {n} kilos', marks.length, { got })}</span></div>
     ${beam(a, target, started)}
     <p class="note">${note}</p>
   </section>`;
@@ -1162,12 +1189,12 @@ function beamCard(a, target, started) {
 function runs(run) {
   const h = history();
   const best = Math.max(h.best, run);
-  const d = (n) => `${n}<small>${dayWord(n)}</small>`;
-  return `<dl class="stats" aria-label="Days on plan">
-    <div><dt>In a row</dt><dd>${d(run)}</dd></div>
-    <div><dt>Longest run</dt><dd>${d(best)}</dd></div>
-    <div><dt>On plan</dt><dd>${h.onPlan}<small>/ ${h.days}</small></dd></div>
-    <div><dt>All 5 goals</dt><dd>${d(h.perfect)}</dd></div>
+  const d = (n) => `${n}<small>${tn('day|days', n)}</small>`;
+  return `<dl class="stats" aria-label="${t('Days on plan')}">
+    <div><dt>${t('In a row')}</dt><dd>${d(run)}</dd></div>
+    <div><dt>${t('Longest run')}</dt><dd>${d(best)}</dd></div>
+    <div><dt>${t('On plan')}</dt><dd>${h.onPlan}<small>/ ${h.days}</small></dd></div>
+    <div><dt>${t('All 5 goals')}</dt><dd>${d(h.perfect)}</dd></div>
   </dl>`;
 }
 
@@ -1185,10 +1212,10 @@ export function renderPlan() {
     const meals = MEALS.filter((m) => m.slot === id);
     return `<section class="plan-slot">
     <h2>${title}${time ? `<small>${time}</small>` : ''}</h2>${note ? `<p class="note">${note}</p>` : ''}
-    <div class="plan-row">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(`${m.name}, ${m.kcal} kcal, ${n0(m.p)} g protein. Details`)}">
-        ${planPic(m.id, 'Add photo')}
-        <span class="plan-name">${esc(m.name)}</span>
-        <span class="plan-meta"><span><b>${m.kcal}</b> kcal</span> · <span>${n0(m.p)} g protein</span></span>
+    <div class="plan-row">${meals.map((m) => `<button type="button" class="plan-card" data-act="plan-meal" data-id="${m.id}" aria-label="${esc(t('{meal}, {kcal} kcal, {p} g protein. Details', { meal: td(m.name), kcal: m.kcal, p: n0(m.p) }))}">
+        ${planPic(m.id, t('Add photo'))}
+        <span class="plan-name">${esc(td(m.name))}</span>
+        <span class="plan-meta"><span><b>${m.kcal}</b> kcal</span> · <span>${t('{n} g protein', { n: n0(m.p) })}</span></span>
       </button>`).join('')}</div>
   </section>`;
   };
@@ -1196,31 +1223,31 @@ export function renderPlan() {
   const group = (title, body) => `<details class="rule-group"><summary><span>${title}</span></summary><div class="rule-body">${body}</div></details>`;
   return `
   <header class="top">
-    <div><h1>Plan</h1><p class="sub">${pictured ? `${pictured} of ${MEALS.length} meals show your own photo.` : 'Tap a meal for its ingredients, and to add a photo of your own plate.'}</p></div>
-    <div class="top-actions">${settingsButton}</div>
+    <div><h1>${t('Plan')}</h1><p class="sub">${pictured ? t('{n} of {total} meals show your own photo.', { n: pictured, total: MEALS.length }) : t('Tap a meal for its ingredients, and to add a photo of your own plate.')}</p></div>
+    <div class="top-actions">${settingsButton()}</div>
   </header>
-  <ul class="plan-targets" aria-label="Daily goals">
-    <li>Rest day <b>${n0(s.kcalRest)}</b> kcal</li>
-    <li>Workout day <b>${n0(s.kcalTrain)}</b> kcal</li>
-    <li>Protein <b>${esc(s.protein)}</b> g</li>
-    <li>Fibre <b>${esc(s.fiber)}</b> g</li>
+  <ul class="plan-targets" aria-label="${t('Daily goals')}">
+    <li>${t('Rest day <b>{kcal}</b> kcal', { kcal: n0(s.kcalRest) })}</li>
+    <li>${t('Workout day <b>{kcal}</b> kcal', { kcal: n0(s.kcalTrain) })}</li>
+    <li>${t('Protein <b>{n}</b> g', { n: esc(s.protein) })}</li>
+    <li>${t('Fibre <b>{n}</b> g', { n: esc(s.fiber) })}</li>
   </ul>
   ${Object.entries({
-    lunch: 'The first meal of the day.',
-    snack1: 'A protein snack: 250 g of skyr.',
-    snack2: 'On meatball or salmon days, cottage cheese tops up the protein.',
-    dinner: 'Meat, chicken and fish by raw weight.',
-  }).map(([id, note]) => { const x = SLOTS.find((y) => y.id === id); return slot(id, x.name, x.time, note); }).join('')}
-  ${slot('workout', 'Workout-day extras', '', 'Only on workout days; together about 200 kcal.')}
-  ${slot('late', lateName(), '', 'Herbal tea by default.')}
+    lunch: t('The first meal of the day.'),
+    snack1: t('A protein snack: 250 g of skyr.'),
+    snack2: t('On meatball or salmon days, cottage cheese tops up the protein.'),
+    dinner: t('Meat, chicken and fish by raw weight.'),
+  }).map(([id, note]) => { const x = SLOTS.find((y) => y.id === id); return slot(id, td(x.name), x.time, note); }).join('')}
+  ${slot('workout', t('Workout-day extras'), '', t('Only on workout days; together about 200 kcal.'))}
+  ${slot('late', lateName(), '', t('Herbal tea by default.'))}
   <section class="plan-rules">
-    <h2>The rules</h2>
-    ${group('Dinner rotation', `<p class="note">Fish twice and legumes twice a week.</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}
-    ${group('Every day', list(RULES.daily))}
-    ${group('The week’s extras', list(RULES.weekly))}
-    ${group('Off for the whole period', list(RULES.off))}
-    ${group('Training and movement', list(RULES.training))}
-    ${group('Process', list(RULES.process))}
+    <h2>${t('The rules')}</h2>
+    ${group(t('Dinner rotation'), `<p class="note">${t('Fish twice and legumes twice a week.')}</p><table class="table"><tbody>${RULES.rotation.map(([day, meal]) => `<tr><th scope="row">${day}</th><td>${esc(meal)}</td></tr>`).join('')}</tbody></table>`)}
+    ${group(t('Every day'), list(RULES.daily))}
+    ${group(t('The week’s extras'), list(RULES.weekly))}
+    ${group(t('Off for the whole period'), list(RULES.off))}
+    ${group(t('Training and movement'), list(RULES.training))}
+    ${group(t('Process'), list(RULES.process))}
   </section>`;
 }
 
@@ -1228,12 +1255,12 @@ export function renderPlan() {
 export function renderFrameSheet(id) {
   const m = MEALS.find((x) => x.id === id);
   return `
-  <header class="sheet-top"><h2 id="sheet-title">Frame the picture</h2><button type="button" class="btn" data-act="frame-cancel">Cancel</button></header>
-  <p class="note">${esc(m ? m.name : '')}. Drag until the plate sits in the circle, zoom until it fills it.</p>
-  <div class="frame-stage"><canvas id="frame-canvas" width="640" height="640" aria-label="Preview of the picture. Drag to move."></canvas><span class="frame-ring" aria-hidden="true"></span></div>
-  <label class="frame-zoom" for="frame-zoom">Zoom<input id="frame-zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
-  <p class="note">Light and colour are evened out so all plan pictures match. Only this framed picture is stored, not the original photo.</p>
-  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="frame-save">Use this picture</button></div>`;
+  <header class="sheet-top"><h2 id="sheet-title">${t('Frame the picture')}</h2><button type="button" class="btn" data-act="frame-cancel">${t('Cancel')}</button></header>
+  <p class="note">${t('{meal}. Drag until the plate sits in the circle, zoom until it fills it.', { meal: esc(m ? td(m.name) : '') })}</p>
+  <div class="frame-stage"><canvas id="frame-canvas" width="640" height="640" aria-label="${t('Preview of the picture. Drag to move.')}"></canvas><span class="frame-ring" aria-hidden="true"></span></div>
+  <label class="frame-zoom" for="frame-zoom">${t('Zoom')}<input id="frame-zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
+  <p class="note">${t('Light and colour are evened out so all plan pictures match. Only this framed picture is stored, not the original photo.')}</p>
+  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="frame-save">${t('Use this picture')}</button></div>`;
 }
 
 // One plan meal: its picture, what goes into it, and a button to log it
@@ -1242,19 +1269,19 @@ export function renderPlanSheet(id) {
   if (!m) return '';
   const has = !!(S.settings.planPhotos || {})[id];
   return `
-  <header class="sheet-top"><h2 id="sheet-title">${esc(m.name)}</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
-  <div class="plan-photo">${planPic(id, 'No photo yet. Take one the next time you make this.')}</div>
+  <header class="sheet-top"><h2 id="sheet-title">${esc(td(m.name))}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <div class="plan-photo">${planPic(id, t('No photo yet. Take one the next time you make this.'))}</div>
   <div class="actions">
-    <button type="button" class="btn" data-act="plan-photo-cam" data-id="${id}">${has ? 'Retake' : 'Take a photo'}</button>
-    <button type="button" class="btn" data-act="plan-photo-lib" data-id="${id}">Choose a photo</button>
-    ${has ? `<button type="button" class="link link-danger" data-act="plan-photo-remove" data-id="${id}">Remove photo</button>` : ''}
+    <button type="button" class="btn" data-act="plan-photo-cam" data-id="${id}">${has ? t('Retake') : t('Take a photo')}</button>
+    <button type="button" class="btn" data-act="plan-photo-lib" data-id="${id}">${t('Choose a photo')}</button>
+    ${has ? `<button type="button" class="link link-danger" data-act="plan-photo-remove" data-id="${id}">${t('Remove photo')}</button>` : ''}
   </div>
-  <p class="entry-value"><b>${m.kcal}</b> kcal<span>${n0(m.p)} g protein, ${n0(m.c)} g carbs, ${n0(m.f)} g fat, ${n0(m.fib)} g fibre</span></p>
+  <p class="entry-value"><b>${m.kcal}</b> kcal<span>${t('{p} g protein, {c} g carbs, {f} g fat, {fib} g fibre', { p: n0(m.p), c: n0(m.c), f: n0(m.f), fib: n0(m.fib) })}</span></p>
   <table class="items-table">
-    <thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">kcal</th></tr></thead>
-    <tbody>${m.items.map((i) => `<tr><th scope="row">${esc(i.n)}${i.measure ? `<small>${esc(i.measure)}</small>` : ''}</th><td>${i.g} g</td><td>${n0(i.kcal)}</td></tr>`).join('')}</tbody>
+    <thead><tr><th scope="col">${t('Item')}</th><th scope="col">${t('Amount')}</th><th scope="col">kcal</th></tr></thead>
+    <tbody>${m.items.map((i) => `<tr><th scope="row">${esc(td(i.n))}${i.measure ? `<small>${esc(td(i.measure))}</small>` : ''}</th><td>${i.g} g</td><td>${n0(i.kcal)}</td></tr>`).join('')}</tbody>
   </table>
-  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="log-plan-today" data-id="${id}">Log for today</button></div>`;
+  <div class="actions"><button type="button" class="btn btn-primary btn-wide" data-act="log-plan-today" data-id="${id}">${t('Log for today')}</button></div>`;
 }
 
 // ——— Settings: every section starts collapsed and shows its current state in the heading ———
@@ -1267,136 +1294,146 @@ export function renderSettings() {
   const favorites = s.favorites || [];
   const openai = s.provider === 'openai';
   const backupAge = s.lastBackup ? diffDays(dayKey(new Date(s.lastBackup)), today()) : null;
-  const backupStatus = backupAge == null ? 'No backup yet' : backupAge === 0 ? 'Last backup today' : `Last backup ${backupAge} ${backupAge === 1 ? 'day' : 'days'} ago`;
+  const backupStatus = backupAge == null ? t('No backup yet') : backupAge === 0 ? t('Last backup today') : tn('Last backup {n} day ago|Last backup {n} days ago', backupAge);
   const preset = PRESETS.find((p) => p.base === s.oaBase);
   // Where the key is sent must be visible: a preset names its provider, any other address shows its host
   let host = s.oaBase;
   try { host = new URL(s.oaBase).host; } catch { /* not an address; show it as typed */ }
-  const analysisStatus = !hasKey() ? 'No key' : openai ? `${preset ? preset.name.split(' (')[0] : host}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { name: s.model }).name.split(' (')[0]}`;
+  const analysisStatus = !hasKey() ? t('No key') : openai ? `${preset ? preset.name.split(' (')[0] : host}, ${s.oaModel}` : `Claude, ${(MODELS[s.model] || { name: s.model }).name.split(' (')[0]}`;
   const section = (id, title, status, body) => `<details class="setting" data-sec="${id}"${S.openSetting === id ? ' open' : ''}>
     <summary><span>${title}</span><small>${esc(status)}</small></summary>
     <div class="setting-body">${body}</div>
   </details>`;
 
   const analysis = `
-    <p class="note">Analysis goes straight from this phone to the provider you choose. The key is stored only on this device and is never written to a backup.</p>
-    <label for="set-prov">Provider</label>
+    <p class="note">${t('Analysis goes straight from this phone to the provider you choose. The key is stored only on this device and is never written to a backup.')}</p>
+    <label for="set-prov">${t('Provider')}</label>
     <select id="set-prov" data-chg="provider">
-      <option value="openai"${openai ? ' selected' : ''}>Gemini, OpenCode, OpenRouter (OpenAI-compatible)</option>
-      <option value="anthropic"${openai ? '' : ' selected'}>Claude (needs prepaid credit)</option>
+      <option value="openai"${openai ? ' selected' : ''}>${t('Gemini, OpenCode, OpenRouter (OpenAI-compatible)')}</option>
+      <option value="anthropic"${openai ? '' : ' selected'}>${t('Claude (needs prepaid credit)')}</option>
     </select>
     ${openai ? `
-    <label for="set-preset">Preset</label>
-    <select id="set-preset" data-chg="preset"><option value="">Choose, or fill in the fields below</option>${PRESETS.map((p) => `<option value="${p.id}"${p.base === s.oaBase ? ' selected' : ''}>${p.name}</option>`).join('')}</select>
-    <label for="set-oakey">Key</label>
+    <label for="set-preset">${t('Preset')}</label>
+    <select id="set-preset" data-chg="preset"><option value="">${t('Choose, or fill in the fields below')}</option>${PRESETS.map((p) => `<option value="${p.id}"${p.base === s.oaBase ? ' selected' : ''}>${p.name}</option>`).join('')}</select>
+    <label for="set-oakey">${t('Key')}</label>
     <input id="set-oakey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaKey)}">
-    ${preset && preset.id === 'gemini' ? '<p class="note">Get a free key at aistudio.google.com with “Get API key”.</p>' : ''}
-    <label for="set-oamodel">Model</label>
-    <input id="set-oamodel" type="text" list="oa-models" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaModel)}" placeholder="model id">
+    ${preset && preset.id === 'gemini' ? `<p class="note">${t('Get a free key at aistudio.google.com with “Get API key”.')}</p>` : ''}
+    <label for="set-oamodel">${t('Model')}</label>
+    <input id="set-oamodel" type="text" list="oa-models" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaModel)}" placeholder="${t('model id')}">
     <datalist id="oa-models">${ZEN_FREE.map((m) => `<option value="${m}"></option>`).join('')}</datalist>
-    <label for="set-base">Address</label>
+    <label for="set-base">${t('Address')}</label>
     <input id="set-base" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.oaBase)}" placeholder="https://…/v1">
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="test-key">Save and test</button><button type="button" class="btn" data-act="save-key">Save only</button></div>
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="test-key">${t('Save and test')}</button><button type="button" class="btn" data-act="save-key">${t('Save only')}</button></div>
     <p class="note pre" id="key-test" role="status"></p>
-    <p class="note">If the model does not read photos: <button type="button" class="link link-inline" data-act="find-vision">find a model that reads photos</button>. It tries the provider’s models one by one with a small test image.</p>` : `
-    <label for="set-key">Key</label>
+    <p class="note">${t('If the model does not read photos: {find}. It tries the provider’s models one by one with a small test image.', { find: `<button type="button" class="link link-inline" data-act="find-vision">${t('find a model that reads photos')}</button>` })}</p>` : `
+    <label for="set-key">${t('Key')}</label>
     <input id="set-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(s.apiKey)}" placeholder="sk-ant-…">
-    <label for="set-model">Model</label>
+    <label for="set-model">${t('Model')}</label>
     <select id="set-model">${Object.entries(MODELS).map(([k, m]) => `<option value="${k}"${s.model === k ? ' selected' : ''}>${m.name}</option>`).join('')}</select>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="test-key">Save and test</button><button type="button" class="btn" data-act="save-key">Save only</button></div>
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="test-key">${t('Save and test')}</button><button type="button" class="btn" data-act="save-key">${t('Save only')}</button></div>
     <p class="note pre" id="key-test" role="status"></p>`}
-    <label class="check"><input type="checkbox" data-act="review-toggle"${s.autoReview === false ? '' : ' checked'}> Review each finished day by itself</label>
-    <p class="note">One short text request a day, sent when you open the app: the day’s meals and numbers, no photos. Switched off, a review is written only when you ask for it in the Log.</p>
-    <p class="note">So far ${n0(u.calls)} ${u.calls === 1 ? 'call' : 'calls'}, ${n0(u.in)} input and ${n0(u.out)} output tokens.${openai ? '' : ` Estimated cost $${u.usd.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}.`}</p>`;
+    <label class="check"><input type="checkbox" data-act="review-toggle"${s.autoReview === false ? '' : ' checked'}> ${t('Review each finished day by itself')}</label>
+    <p class="note">${t('One short text request a day, sent when you open the app: the day’s meals and numbers, no photos. Switched off, a review is written only when you ask for it in the Log.')}</p>
+    <p class="note">${tn('So far {calls} call, {input} input and {output} output tokens.|So far {calls} calls, {input} input and {output} output tokens.', u.calls, { calls: n0(u.calls), input: n0(u.in), output: n0(u.out) })}${openai ? '' : ` ${t('Estimated cost {cost}.', { cost: `$${u.usd.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}` })}`}</p>`;
 
   const targets = `
     <div class="field-grid">
-      <label for="set-start">Start<input id="set-start" type="date" value="${esc(s.startDate)}"></label>
-      <label for="set-end">End<input id="set-end" type="date" value="${esc(s.targetDate)}"></label>
-      <label for="set-startkg">Start weight<input id="set-startkg" type="text" inputmode="decimal" value="${n1(s.startKg)}"></label>
-      <label for="set-endkg">Goal weight<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
-      <label for="set-rest">Rest-day kcal<input id="set-rest" type="text" inputmode="numeric" value="${esc(s.kcalRest)}"></label>
-      <label for="set-train">Workout-day kcal<input id="set-train" type="text" inputmode="numeric" value="${esc(s.kcalTrain)}"></label>
-      <label for="set-prot">Protein (g)<input id="set-prot" type="text" inputmode="numeric" value="${esc(s.protein)}"></label>
+      <label for="set-start">${t('Start')}<input id="set-start" type="date" value="${esc(s.startDate)}"></label>
+      <label for="set-end">${t('End')}<input id="set-end" type="date" value="${esc(s.targetDate)}"></label>
+      <label for="set-startkg">${t('Start weight')}<input id="set-startkg" type="text" inputmode="decimal" value="${n1(s.startKg)}"></label>
+      <label for="set-endkg">${t('Goal weight')}<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
+      <label for="set-rest">${t('Rest-day kcal')}<input id="set-rest" type="text" inputmode="numeric" value="${esc(s.kcalRest)}"></label>
+      <label for="set-train">${t('Workout-day kcal')}<input id="set-train" type="text" inputmode="numeric" value="${esc(s.kcalTrain)}"></label>
+      <label for="set-prot">${t('Protein (g)')}<input id="set-prot" type="text" inputmode="numeric" value="${esc(s.protein)}"></label>
     </div>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">Save goals</button></div>`;
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">${t('Save goals')}</button></div>`;
 
   const location = `
-    <label class="check"><input type="checkbox" data-act="loc-toggle"${s.useLocation ? ' checked' : ''}> Use the photo’s location</label>
-    <p class="note">Location is read on the device and matched to your saved places here. The model only gets the word “Home”, “Office” or “out”; coordinates are never sent to the model (they are in your backup file). When you choose from the library, location only comes through if Location is switched on under Options in the picker.</p>
+    <label class="check"><input type="checkbox" data-act="loc-toggle"${s.useLocation ? ' checked' : ''}> ${t('Use the photo’s location')}</label>
+    <p class="note">${t('Location is read on the device and matched to your saved places here. The model only gets the word “Home”, “Office” or “out”; coordinates are never sent to the model (they are in your backup file). When you choose from the library, location only comes through if Location is switched on under Options in the picker.')}</p>
     <div class="actions">
-      <button type="button" class="btn" data-act="loc-save" data-name="Home">I am here: Home</button>
-      <button type="button" class="btn" data-act="loc-save" data-name="Office">I am here: Office</button>
+      <button type="button" class="btn" data-act="loc-save" data-name="Home">${t('I am here: Home')}</button>
+      <button type="button" class="btn" data-act="loc-save" data-name="Office">${t('I am here: Office')}</button>
     </div>
-    <p class="note" id="loc-out" role="status">${places.length ? 'Saved places: ' + places.map((p) => esc(p.name)).join(', ') + '.' : 'No saved places.'}</p>`;
+    <p class="note" id="loc-out" role="status">${places.length ? t('Saved places: {names}.', { names: places.map((p) => esc(p.name)).join(', ') }) : t('No saved places.')}</p>`;
 
   const backup = `
-    <p class="note">Data lives only on this device. iOS can delete web data when storage runs low; save a backup to Files once a week.</p>
+    <p class="note">${t('Data lives only on this device. iOS can delete web data when storage runs low; save a backup to Files once a week.')}</p>
     <div class="actions">
-      <button type="button" class="btn btn-primary" data-act="export">Save backup</button>
-      <button type="button" class="btn" data-act="export-photos">With photos</button>
-      <button type="button" class="btn" data-act="import">Restore from backup</button>
+      <button type="button" class="btn btn-primary" data-act="export">${t('Save backup')}</button>
+      <button type="button" class="btn" data-act="export-photos">${t('With photos')}</button>
+      <button type="button" class="btn" data-act="import">${t('Restore from backup')}</button>
     </div>
     <input id="set-import" type="file" accept="application/json,.json" hidden>
-    <p class="note">For analysis on a computer: one .sql file with your days, meals and goals that loads into any SQLite database. Photos, keys and saved places are left out.</p>
-    <div class="actions"><button type="button" class="btn" data-act="export-sql">Export for SQLite</button></div>
-    <p class="note">${S.persisted === true ? 'Persistent storage is on.' : S.persisted === false ? 'Persistent storage has not been granted yet. Adding the app to the Home Screen makes that more likely.' : ''} ${storage && storage.usage != null ? `Space used: ${mb(storage.usage)} MB.` : ''}</p>
-    ${S.persisted === false ? '<div class="actions"><button type="button" class="btn" data-act="persist">Request persistent storage</button></div>' : ''}`;
+    <p class="note">${t('For analysis on a computer: one .sql file with your days, meals and goals that loads into any SQLite database. Photos, keys and saved places are left out.')}</p>
+    <div class="actions"><button type="button" class="btn" data-act="export-sql">${t('Export for SQLite')}</button></div>
+    <p class="note">${S.persisted === true ? t('Persistent storage is on.') : S.persisted === false ? t('Persistent storage has not been granted yet. Adding the app to the Home Screen makes that more likely.') : ''} ${storage && storage.usage != null ? t('Space used: {mb} MB.', { mb: mb(storage.usage) }) : ''}</p>
+    ${S.persisted === false ? `<div class="actions"><button type="button" class="btn" data-act="persist">${t('Request persistent storage')}</button></div>` : ''}`;
 
   const favoritesBody = favorites.length
-    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">Remove</button></li>`).join('')}</ul>`
-    : '<p class="note">Open an entry and tap “Add to favourites”. It then logs with one tap from the Log tab.</p>';
+    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">${t('Remove')}</button></li>`).join('')}</ul>`
+    : `<p class="note">${t('Open an entry and tap “Add to favourites”. It then logs with one tap from the Log tab.')}</p>`;
 
   const supps = s.supplements || [];
   const suppEdit = supps.find((x) => x.id === S.suppEdit);
   const suppBody = `
-    <p class="note">The vitamins and minerals you take every day. They appear as chips on Today, and a tap ticks one for the day, so you can see at a glance what you forgot. They are not part of the daily goals.</p>
-    ${supps.length ? `<ul class="items">${supps.map((x) => `<li><span>${esc(x.name)}${x.dose ? `, ${esc(x.dose)}` : ''}</span><span><button type="button" class="link" data-act="supp-edit" data-id="${esc(x.id)}">Edit</button> <button type="button" class="link link-danger" data-act="supp-remove" data-id="${esc(x.id)}">Remove</button></span></li>`).join('')}</ul>` : '<p class="note">None yet.</p>'}
+    <p class="note">${t('The vitamins and minerals you take every day. They appear as chips on Today, and a tap ticks one for the day, so you can see at a glance what you forgot. They are not part of the daily goals.')}</p>
+    ${supps.length ? `<ul class="items">${supps.map((x) => `<li><span>${esc(x.name)}${x.dose ? `, ${esc(x.dose)}` : ''}</span><span><button type="button" class="link" data-act="supp-edit" data-id="${esc(x.id)}">${t('Edit')}</button> <button type="button" class="link link-danger" data-act="supp-remove" data-id="${esc(x.id)}">${t('Remove')}</button></span></li>`).join('')}</ul>` : `<p class="note">${t('None yet.')}</p>`}
     <div class="field-grid">
-      <label for="supp-name">Name<input id="supp-name" type="text" maxlength="40" enterkeyhint="done" autocomplete="off" placeholder="Magnesium" value="${esc(suppEdit ? suppEdit.name : '')}"></label>
-      <label for="supp-dose">Dose (optional)<input id="supp-dose" type="text" maxlength="30" enterkeyhint="done" autocomplete="off" placeholder="400 mg" value="${esc(suppEdit ? suppEdit.dose : '')}"></label>
+      <label for="supp-name">${t('Name')}<input id="supp-name" type="text" maxlength="40" enterkeyhint="done" autocomplete="off" placeholder="${t('Magnesium')}" value="${esc(suppEdit ? suppEdit.name : '')}"></label>
+      <label for="supp-dose">${t('Dose (optional)')}<input id="supp-dose" type="text" maxlength="30" enterkeyhint="done" autocomplete="off" placeholder="${t('400 mg')}" value="${esc(suppEdit ? suppEdit.dose : '')}"></label>
     </div>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="supp-save">${suppEdit ? 'Save changes' : 'Add supplement'}</button>${suppEdit ? '<button type="button" class="btn" data-act="supp-cancel">Cancel</button>' : ''}</div>`;
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="supp-save">${suppEdit ? t('Save changes') : t('Add supplement')}</button>${suppEdit ? `<button type="button" class="btn" data-act="supp-cancel">${t('Cancel')}</button>` : ''}</div>`;
 
   const version = `
-    <p class="note">The app looks for a new version when it opens and when it comes to the front; if it finds one it reloads. Your entries are not affected.</p>
-    <div class="actions"><button type="button" class="btn btn-primary" data-act="check-update">Check for updates</button><button type="button" class="btn" data-act="hard-reload">Clear cache and reload</button></div>
+    <p class="note">${t('The app looks for a new version when it opens and when it comes to the front; if it finds one it reloads. Your entries are not affected.')}</p>
+    <div class="actions"><button type="button" class="btn btn-primary" data-act="check-update">${t('Check for updates')}</button><button type="button" class="btn" data-act="hard-reload">${t('Clear cache and reload')}</button></div>
     <p class="note" id="update-out" role="status"></p>`;
 
   const reset = `
-    <p class="note">Neither can be undone. <button type="button" class="link link-inline" data-act="export">Save a backup first</button></p>
+    <p class="note">${t('Neither can be undone. {backup}', { backup: `<button type="button" class="link link-inline" data-act="export">${t('Save a backup first')}</button>` })}</p>
     <section class="reset-card">
-      <h3>Clear my log</h3>
-      <p class="note">Starts your tracking over; the app stays set up as it is.</p>
+      <h3>${t('Clear my log')}</h3>
+      <p class="note">${t('Starts your tracking over; the app stays set up as it is.')}</p>
       <dl class="reset-diff">
-        <div><dt class="is-gone">Deletes</dt><dd>Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.</dd></div>
-        <div><dt class="is-kept">Keeps</dt><dd>Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.</dd></div>
+        <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.')}</dd></div>
+        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.')}</dd></div>
       </dl>
-      <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">Clear my log</button></div>
+      <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">${t('Clear my log')}</button></div>
     </section>
     <section class="reset-card">
-      <h3>Factory reset</h3>
-      <p class="note">Back to how the app was on its first launch.</p>
+      <h3>${t('Factory reset')}</h3>
+      <p class="note">${t('Back to how the app was on its first launch.')}</p>
       <dl class="reset-diff">
-        <div><dt class="is-gone">Deletes</dt><dd>Everything above, plus your goals and dates, favourites, saved places, the plan’s pictures, the usage totals and your other settings. The getting-started steps come back.</dd></div>
-        <div><dt class="is-kept">Keeps</dt><dd>Nothing, except your API key and provider if the box is ticked.</dd></div>
+        <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Everything above, plus your goals and dates, favourites, saved places, the plan’s pictures, the usage totals and your other settings. The getting-started steps come back.')}</dd></div>
+        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Nothing, except your API key and provider if the box is ticked.')}</dd></div>
       </dl>
-      <label class="check"><input type="checkbox" id="keep-key" checked> Keep my API key and provider</label>
-      <div class="actions"><button type="button" class="btn btn-danger btn-danger-solid" data-act="wipe-all">Factory reset</button></div>
-      <p class="note">You will be asked to type DELETE.</p>
+      <label class="check"><input type="checkbox" id="keep-key" checked> ${t('Keep my API key and provider')}</label>
+      <div class="actions"><button type="button" class="btn btn-danger btn-danger-solid" data-act="wipe-all">${t('Factory reset')}</button></div>
+      <p class="note">${t('You will be asked to type {word}.', { word: t('DELETE', { $id: 'reset.word' }) })}</p>
     </section>`;
 
+  // The language control: the two names and the heading are written in both languages and never translated.
+  const lang = getLang() === 'tr' ? 'tr' : 'en'; // the language on the screen, which is English when the Turkish text could not be loaded
+  const langBody = `
+    <div class="seg" role="group" aria-label="${t('Language')}">
+      <button type="button" lang="en" data-act="lang" data-lang="en" aria-pressed="${lang === 'en'}">English</button>
+      <button type="button" lang="tr" data-act="lang" data-lang="tr" aria-pressed="${lang === 'tr'}">Türkçe</button>
+    </div>
+    <p class="note">${t('The change applies at once. Your entries are not changed.')}</p>`;
+  const langSection = section('language', 'Language / Dil', lang === 'tr' ? 'Türkçe' : 'English', langBody) + '\n    '; // i18n-ok: the heading names both languages
+
   return `
-  <header class="sheet-top"><h2 id="sheet-title">Settings</h2><button type="button" class="btn" data-act="close-sheet">Close</button></header>
+  <header class="sheet-top"><h2 id="sheet-title">${t('Settings')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
   <div class="settings">
-    ${section('analysis', 'Photo and text analysis', analysisStatus, analysis)}
-    ${section('targets', 'Goals', `${n1(s.startKg)} kg to ${n1(s.targetKg)} kg by ${dShort.format(parseDay(s.targetDate))}`, targets)}
-    ${section('backup', 'Backup and export', backupStatus, backup)}
-    ${section('location', 'Location', s.useLocation ? (places.length ? 'On: ' + places.map((p) => p.name).join(', ') : 'On, no saved places') : 'Off', location)}
-    ${section('favorites', 'Favourites', favorites.length ? `${favorites.length} ${favorites.length === 1 ? 'meal' : 'meals'}` : 'None yet', favoritesBody)}
-    ${section('supplements', 'Supplements', supps.length ? supps.map((x) => x.name).join(', ') : 'None yet', suppBody)}
-    ${section('version', 'Version and updates', `Version ${APP_VERSION}`, version)}
-    ${section('reset', 'Reset', 'Clear my log, or factory reset', reset)}
+    ${langSection}${section('analysis', t('Photo and text analysis'), analysisStatus, analysis)}
+    ${section('targets', t('Goals'), t('{start} kg to {end} kg by {date}', { start: n1(s.startKg), end: n1(s.targetKg), date: dShort.format(parseDay(s.targetDate)) }), targets)}
+    ${section('backup', t('Backup and export'), backupStatus, backup)}
+    ${section('location', t('Location'), s.useLocation ? (places.length ? t('On: {names}', { names: places.map((p) => p.name).join(', ') }) : t('On, no saved places')) : t('Off'), location)}
+    ${section('favorites', t('Favourites'), favorites.length ? tn('{n} meal|{n} meals', favorites.length) : t('None yet'), favoritesBody)}
+    ${section('supplements', t('Supplements'), supps.length ? supps.map((x) => x.name).join(', ') : t('None yet'), suppBody)}
+    ${section('version', t('Version and updates'), t('Version {v}', { v: APP_VERSION }), version)}
+    ${section('reset', t('Reset'), t('Clear my log, or factory reset'), reset)}
   </div>
-  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.</span><span>Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.</span></p></footer>`;
+  <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>${t('Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.')}</span><span>${t('Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.')}</span></p></footer>`;
 }

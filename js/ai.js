@@ -2,6 +2,7 @@
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
 import { planDigest, planFoods, RULES, SLOTS, hhmm } from './plan.js';
+import { T, inEnglish, getUiLang } from './i18n.js';
 import { decode } from './picture.js';
 
 export const MODELS = {
@@ -24,6 +25,15 @@ flags: add "alcohol" for any alcohol.
 conf: 0–1 confidence in the kcal total. q: if something you cannot see (cooking method, fat content, a count, hidden oil or sugar) could change kcal by more than 10%, ask about it in one short line, else "".
 Plan meals:
 ${planDigest()}`;
+
+// The prompts are English and built once, and what the model sends back is shown as it comes. For Turkish one line is added at request time,
+// from the language the person chose (getUiLang, not changed by inEnglish). English adds nothing, so its prompts are byte-identical.
+// Entries keep English food names and titles (the plan and the favourites match on them), so only the question is asked for in Turkish.
+const TURKISH = {
+  entry: '\nWrite q in Turkish; keep food names and title in English. Keep JSON keys and enum values exactly as specified.',
+  text: '\nWrite all user-facing text (titles, notes, questions, reviews, glosses) in Turkish; keep JSON keys and enum values exactly as specified.',
+};
+export const langLine = (kind = 'text') => (getUiLang() === 'tr' ? TURKISH[kind] : '');
 
 const SCHEMA = {
   type: 'object',
@@ -258,7 +268,7 @@ export async function analyze(o) {
   const lines = [`Time ${hhmm(o.when)}` + (o.place ? `, place: ${o.place}` : '')];
   if (o.text) lines.push(`Note: ${o.text}`);
   if (o.hint) lines.push(o.hint);
-  const req = { system: SYSTEM, shape: SHAPE, text: lines.join('\n'), blobs: o.blobs || [], schema: SCHEMA, json: true };
+  const req = { system: SYSTEM + langLine('entry'), shape: SHAPE, text: lines.join('\n'), blobs: o.blobs || [], schema: SCHEMA, json: true };
   return callWithFallback(o.cfg, req, o.onRetry);
 }
 
@@ -285,7 +295,8 @@ async function callWithFallback(cfg, req, onRetry) {
 const FALLBACK_ON = ['server', 'rate', 'no_quota'];
 
 // ——— The day's review: text only, a few hundred tokens ———
-const REVIEW_SYSTEM = `You review one day of a food log for one person on a weight-loss plan, against the plan and the goal. Reply with JSON only, in English.
+// The prompts are always English, whatever the interface language is
+const REVIEW_SYSTEM = inEnglish(() => `You review one day of a food log for one person on a weight-loss plan, against the plan and the goal. Reply with JSON only, in English.
 The plan: the calorie budget and protein goal given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
@@ -294,7 +305,7 @@ head: one sentence. How did the day go against the plan, and what is the main re
 good: up to 2 things that helped, each naming the food or habit. Empty if there were none.
 cut: up to 2 things that cost the most and what would have reduced them, with the kcal that would save. Empty if nothing needed cutting.
 next: one concrete thing to do tomorrow; for a day still in progress, for the rest of today.
-Every string at most 22 words.`;
+Every string at most 22 words.`);
 const REVIEW_SHAPE = '\nReturn exactly one JSON object with these keys: {"head":"","good":[""],"cut":[""],"next":""}';
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -313,7 +324,7 @@ const REVIEW_SCHEMA = {
  * @returns {Promise<{data:{head:string,good:string[],cut:string[],next:string}, usage:{in:number,out:number}, model:string}>}
  */
 export async function review(o) {
-  const req = { system: REVIEW_SYSTEM, shape: REVIEW_SHAPE, text: o.brief, schema: REVIEW_SCHEMA, json: true, maxTokens: 400 };
+  const req = { system: REVIEW_SYSTEM + langLine(), shape: REVIEW_SHAPE, text: o.brief, schema: REVIEW_SCHEMA, json: true, maxTokens: 400 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanReview(r.data);
   if (!data.head) throw new AiError('empty', 'The model returned no review');
@@ -329,12 +340,13 @@ export function cleanReview(d) {
 }
 
 // ——— The quick note on the day so far: text only, a few sentences ———
-const COACH_SYSTEM = `You give one person on a weight-loss plan a quick, supportive check-in on their day so far. Reply with JSON only, in English.
+// The prompts are always English, whatever the interface language is
+const COACH_SYSTEM = inEnglish(() => `You give one person on a weight-loss plan a quick, supportive check-in on their day so far. Reply with JSON only, in English.
 The plan: the calorie budget and protein goal given with the day; meals are ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
 note: two or three short sentences, at most 45 words in all. Say how the day is going so far, then what is left of the budget and which macros (protein first, then fibre) are still worth adding, with a concrete food or meal from the plan for the rest of the day. Warm and encouraging, never scolding; if the day is already above budget, be kind and say what to do next without skipping meals.
-The calories against the budget are the main goal; protein and fibre are secondary, so mention them as an easy extra, never as a failure. Use only the foods and numbers given; never invent an amount. No medical advice.`;
+The calories against the budget are the main goal; protein and fibre are secondary, so mention them as an easy extra, never as a failure. Use only the foods and numbers given; never invent an amount. No medical advice.`);
 const COACH_SHAPE = '\nReturn exactly one JSON object with this key: {"note":""}';
 const COACH_SCHEMA = { type: 'object', additionalProperties: false, required: ['note'], properties: { note: { type: 'string' } } };
 
@@ -343,7 +355,7 @@ const COACH_SCHEMA = { type: 'object', additionalProperties: false, required: ['
  * @returns {Promise<{data:{note:string}, usage:{in:number,out:number}, model:string}>}
  */
 export async function coach(o) {
-  const req = { system: COACH_SYSTEM, shape: COACH_SHAPE, text: o.brief, schema: COACH_SCHEMA, json: true, maxTokens: 250 };
+  const req = { system: COACH_SYSTEM + langLine(), shape: COACH_SHAPE, text: o.brief, schema: COACH_SCHEMA, json: true, maxTokens: 250 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanCoach(r.data);
   if (!data.note) throw new AiError('empty', 'The model returned no note');
@@ -352,7 +364,8 @@ export async function coach(o) {
 export const cleanCoach = (d) => ({ note: clean(d && typeof d === 'object' ? d.note : '', 400) });
 
 // ——— Check before ordering or buying: photos of a menu, a dish or a product, judged against the plan ———
-const CHECK_SYSTEM = `You help one person on a weight-loss plan decide what to order or what to buy. They send photos of a restaurant menu, a dish, a shop shelf or a packaged product (front, nutrition table, ingredients), sometimes with a note. Several photos can show one thing or several things to compare. Reply with JSON only, in English. Keep dish and product names as written; add a short English gloss in brackets when the name is in another language.
+// The prompts are always English, whatever the interface language is
+const CHECK_SYSTEM = inEnglish(() => `You help one person on a weight-loss plan decide what to order or what to buy. They send photos of a restaurant menu, a dish, a shop shelf or a packaged product (front, nutrition table, ingredients), sometimes with a note. Several photos can show one thing or several things to compare. Reply with JSON only, in English. Keep dish and product names as written; add a short English gloss in brackets when the name is in another language.
 The plan is built from: ${planFoods()}.
 Weekly allowance: ${RULES.weekly.join(' ')}
 Off plan: ${RULES.off.join(' ')}
@@ -369,7 +382,7 @@ For each option:
 - why: one sentence with the numbers or ingredients that decide it.
 - tip: how to make it fit: "grilled instead of fried, sauce on the side", "eat 30 g, not the bag". For an option to avoid, what to have instead. "" if nothing is needed.
 - tier: "plan" = fits the plan's foods; "flex" = weekly-allowance items; "off" = the off-plan list.
-Judge only what you can read or see; never invent a label value. answer at most 40 words, why at most 24, tip at most 16.`;
+Judge only what you can read or see; never invent a label value. answer at most 40 words, why at most 24, tip at most 16.`);
 const CHECK_SHAPE = '\nReturn exactly one JSON object with these keys: {"kind":"menu|product|dish|none","title":"","answer":"","options":[{"name":"","rating":0,"fit":"good|ok|avoid","portion":"","kcal":0,"p":0,"c":0,"f":0,"fib":0,"facts":"","why":"","tip":"","tier":"plan|flex|off"}]}';
 const CHECK_SCHEMA = {
   type: 'object',
@@ -400,7 +413,7 @@ const CHECK_SCHEMA = {
  * @returns {Promise<{data:{kind:string,title:string,answer:string,options:object[]}, usage:{in:number,out:number}, model:string}>}
  */
 export async function check(o) {
-  const req = { system: CHECK_SYSTEM, shape: CHECK_SHAPE, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: CHECK_SCHEMA, json: true, maxTokens: 1400, timeout: 90000 };
+  const req = { system: CHECK_SYSTEM + langLine(), shape: CHECK_SHAPE, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: CHECK_SCHEMA, json: true, maxTokens: 1400, timeout: 90000 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanVerdict(r.data);
   if (!data.answer && !data.options.length) throw new AiError('empty', 'The model returned no verdict');
@@ -479,21 +492,40 @@ export function costUSD(model, usage) {
 
 // What went wrong, in words that fit anywhere. Where an entry is parked because of it, the app adds WAITING.
 export const AI_ERRORS = {
-  no_key: 'No API key. Add one in Settings.',
-  bad_key: 'The API key was rejected. Check it in Settings.',
-  offline: 'No internet.',
-  net: 'Could not reach the server. If you are online, this provider may not allow calls from a browser.',
-  timeout: 'The provider took too long to answer.',
-  truncated: 'The answer was cut off before it was complete. Try again, or add a short note.',
-  rate: 'Too many requests or the quota is used up.',
-  no_quota: 'This model has no quota on your plan. Pick another model in Settings.',
-  no_credit: 'The provider says the account has no credit. Add credit or pick another provider in Settings.',
-  needs_billing: 'The provider wants billing enabled on this account before it answers. Enable it with the provider or pick another one in Settings.',
-  no_vision: 'This model does not accept photos. Pick a model with image support in Settings.',
-  bad_model: 'Model not found. Check the model name in Settings.',
-  server: 'The provider is busy right now.',
-  bad_request: 'The request was rejected.',
-  empty: 'The model could not interpret this input. Add a short note and try again.',
-  http: 'The request failed.',
+  no_key: T('No API key. Add one in Settings.'),
+  bad_key: T('The API key was rejected. Check it in Settings.'),
+  offline: T('No internet.'),
+  net: T('Could not reach the server. If you are online, this provider may not allow calls from a browser.'),
+  timeout: T('The provider took too long to answer.'),
+  truncated: T('The answer was cut off before it was complete. Try again, or add a short note.'),
+  rate: T('Too many requests or the quota is used up.'),
+  no_quota: T('This model has no quota on your plan. Pick another model in Settings.'),
+  no_credit: T('The provider says the account has no credit. Add credit or pick another provider in Settings.'),
+  needs_billing: T('The provider wants billing enabled on this account before it answers. Enable it with the provider or pick another one in Settings.'),
+  no_vision: T('This model does not accept photos. Pick a model with image support in Settings.'),
+  bad_model: T('Model not found. Check the model name in Settings.'),
+  server: T('The provider is busy right now.'),
+  bad_request: T('The request was rejected.'),
+  empty: T('The model could not interpret this input. Add a short note and try again.'),
+  http: T('The request failed.'),
 };
-export const WAITING = ' The entry is waiting; tap “Analyse” to try again.';
+// A few words for each, for a list of results (the first sentence of the message, in lower case)
+export const AI_ERROR_LABEL = {
+  no_key: T('no api key'),
+  bad_key: T('the api key was rejected'),
+  offline: T('no internet'),
+  net: T('could not reach the server'),
+  timeout: T('the provider took too long to answer'),
+  truncated: T('the answer was cut off before it was complete'),
+  rate: T('too many requests or the quota is used up'),
+  no_quota: T('this model has no quota on your plan'),
+  no_credit: T('the provider says the account has no credit'),
+  needs_billing: T('the provider wants billing enabled on this account before it answers'),
+  no_vision: T('this model does not accept photos'),
+  bad_model: T('model not found'),
+  server: T('the provider is busy right now'),
+  bad_request: T('the request was rejected'),
+  empty: T('the model could not interpret this input'),
+  http: T('the request failed'),
+};
+export const WAITING = T(' The entry is waiting; tap “Analyse” to try again.');
