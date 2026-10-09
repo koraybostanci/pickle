@@ -61,7 +61,17 @@ export const eff = (e) => {
   const m = e.mult || 1;
   return { kcal: (e.kcal || 0) * m, p: (e.p || 0) * m, c: (e.c || 0) * m, f: (e.f || 0) * m, fib: (e.fib || 0) * m };
 };
-export const mealsOf = (day) => S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status === 'ok');
+let dayIndex = null; // day → entries, set only while withDayIndex runs
+export const mealsOf = (day) => (dayIndex ? dayIndex.get(day) || [] : S.entries).filter((e) => e.day === day && e.kind === 'meal' && e.status === 'ok');
+// Runs fn with the entries bucketed by day, so a pass over many days does not filter the whole log for each one. fn must not be async.
+export function withDayIndex(fn) {
+  if (dayIndex) return fn();
+  dayIndex = new Map();
+  try {
+    for (const e of S.entries) { const b = dayIndex.get(e.day); if (b) b.push(e); else dayIndex.set(e.day, [e]); }
+    return fn();
+  } finally { dayIndex = null; }
+}
 export function dayTotals(day) {
   const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, n: 0 };
   for (const e of mealsOf(day)) {
