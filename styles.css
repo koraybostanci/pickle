@@ -485,6 +485,7 @@ input[type="text"], input[type="password"], input[type="time"], input[type="date
 .notice { display: grid; gap: 10px; justify-items: start; padding: 14px; border-radius: var(--r-card); background: var(--tape-track); color: var(--ink); font-size: 14.5px; }
 #view > .notice + .notice { margin-top: 12px; }
 .empty { margin-top: 48px; color: var(--ink2); display: grid; gap: 8px; max-width: 36ch; }
+.install ol { list-style: decimal; padding-left: 1.4em; display: grid; gap: 6px; }
 .empty p:first-child, .empty h1 { color: var(--ink); font: 600 21px var(--display); }
 
 /* Chart */
