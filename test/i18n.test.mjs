@@ -10,12 +10,15 @@ import { LOCALE as PLAN_LOCALE } from '../js/plan.js';
 import { scan, extract, literal } from './extract.mjs';
 
 // Release gate: when true, every string in the code needs a Turkish entry. Partial Turkish is allowed while it is being written.
-const REQUIRE_FULL_PARITY = false;
+const REQUIRE_FULL_PARITY = true;
 
+const ORIGINAL_TR = { ...tr };
 const added = [];
 const addTr = (k, v) => { tr[k] = v; added.push(k); };
 afterEach(async () => {
-  for (const k of added.splice(0)) delete tr[k];
+  added.length = 0;
+  for (const k of Object.keys(tr)) delete tr[k];
+  Object.assign(tr, ORIGINAL_TR); // the tests add and replace entries; the table goes back to what tr.js holds
   delete globalThis.document;
   delete globalThis.localStorage;
   await setLang('en');
@@ -212,6 +215,18 @@ test('tr.js: full parity (enforced only when REQUIRE_FULL_PARITY is true)', (ctx
   if (!REQUIRE_FULL_PARITY) return ctx.skip('partial Turkish is allowed during development');
   const missing = [...new Set(extract().found.map((f) => f.key))].filter((k) => !(k in tr));
   assert.deepEqual(missing, []);
+});
+
+test('tr.js: no value is a left-over copy of its English, and no stray characters', () => {
+  // A value may equal its key only when nothing but placeholders, tags, units, numbers and the words Turkish shares with English is left
+  const SHARED = /\b(?:protein|Protein|Plan|Model|kg|kcal|mg|ml|g|l|MB)\b/g;
+  const copies = Object.entries(tr).filter(([k, v]) => typeof v === 'string' && k === v && /\p{L}/u.test(v.replace(/\{\w+\}|<[^>]*>/g, '').replace(SHARED, '')));
+  assert.deepEqual(copies.map(([k]) => k), []);
+  // Latin letters only (with the Turkish ones), digits, spaces, punctuation and symbols: no other script, no control characters
+  const stray = new Set();
+  for (const v of Object.values(tr)) if (typeof v === 'string') for (const c of v) if (!/[\p{Script=Latin}\p{N}\s\p{P}\p{S}]/u.test(c) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(c)) stray.add(c);
+  assert.deepEqual([...stray], []);
+  for (const [k, v] of Object.entries(tr)) if (typeof v === 'string') assert.equal(v, v.normalize('NFC'), `${k} is not in composed form`);
 });
 
 test('scan: literals, ids after nested calls, tn with an id, multiline calls, and what it rejects', () => {

@@ -101,9 +101,12 @@ function pseudoTable() {
   return table;
 }
 
+const ORIGINAL_TR = { ...tr };
 const added = [];
 afterEach(async () => {
-  for (const k of added.splice(0)) delete tr[k];
+  added.length = 0;
+  for (const k of Object.keys(tr)) delete tr[k];
+  Object.assign(tr, ORIGINAL_TR); // the tests add and replace entries; the table goes back to what tr.js holds
   await setLang('en');
 });
 async function pseudoOn() {
@@ -116,7 +119,7 @@ async function pseudoOn() {
 // What is allowed to stay as it is in the pseudo-locale, and why:
 const EXCEPT = {
   // Text the person typed, or the model wrote, in the fixtures (shown as written; user data is never translated)
-  data: ['Oats with yoghurt', 'Chicken and rice', 'Pizza night', 'Salmon and salad', 'Weight', 'Is it fried?', 'Good day', 'Skyr was the best', 'Cut the sauce', 'Dinner out', 'Burger', 'Ordered a small one', 'Lunch menu', 'Fresh and light', 'Fish and salad', 'Almond milk', 'Magnesium', 'Vitamin D', 'Fits well', 'one plate', 'one', '8,200 steps', 'Home', 'home', PRESETS[0].model],
+  data: ['Oats with yoghurt', 'Chicken and rice', 'Pizza night', 'Salmon and salad', 'Weight', 'Is it fried?', 'Good day', 'Skyr was the best', 'Cut the sauce', 'Dinner out', 'Burger', 'Ordered a small one', 'Lunch menu', 'Fresh and light', 'Fish and salad', 'Almond milk', 'Magnesium', 'Vitamin D', 'Fits well', 'one plate', 'one', '8,200 steps', 'Home', 'home', 'Language / Dil', PRESETS[0].model],
   // Names from ai.js that are not marked with T() yet (the models and providers of the Settings sheet): brand names with a few English words
   models: [...Object.values(MODELS).map((m) => m.name), ...PRESETS.map((p) => p.name), ...Object.values(MODELS).map((m) => m.name.split(' (')[0]), ...PRESETS.map((p) => p.name.split(' (')[0])],
   // Words that are not English text: units, brand names, the two language names, and the host part of a placeholder
@@ -241,15 +244,18 @@ test('pseudo-locale: every screen shows only translated text in Turkish mode', a
 });
 
 // ——— The language control in Settings ———
-test('Settings: the language control is hidden by default and first when shown', async () => {
+test('Settings: the language control is shown by default, first, and can be left out', async () => {
   fixture();
   const i18n = await import('../js/i18n.js');
   const plain = views.renderSettings();
-  assert.equal(plain.includes('data-act="lang"'), i18n.LANG_SWITCH_VISIBLE);
-  assert.equal(i18n.LANG_SWITCH_VISIBLE, false, 'the switch stays hidden until the Turkish text is complete');
+  assert.equal(i18n.LANG_SWITCH_VISIBLE, true, 'the Turkish text is complete, so the switch is shown');
+  assert.equal(plain.includes('data-act="lang"'), true);
+  const hidden = views.renderSettings({ showLang: false });
+  assert.equal(hidden.includes('data-act="lang"'), false);
   const shown = views.renderSettings({ showLang: true });
+  assert.equal(shown, plain);
   assert.ok(shown.indexOf('data-sec="language"') > -1 && shown.indexOf('data-sec="language"') < shown.indexOf('data-sec="analysis"'));
-  assert.equal(shown.replace(/<details class="setting" data-sec="language"[\s\S]*?<\/details>\n {4}/, ''), plain, 'apart from the control the sheet is the same');
+  assert.equal(shown.replace(/<details class="setting" data-sec="language"[\s\S]*?<\/details>\n {4}/, ''), hidden, 'apart from the control the sheet is the same');
 });
 
 test('Settings: the control is a labelled group of two buttons with the language names, the chosen one pressed', async () => {
@@ -271,7 +277,7 @@ test('Settings: the control is a labelled group of two buttons with the language
   assert.match(html, />Türkçe<\/button>/);
   const m = seg(html);
   assert.equal(m[1], '⟦Language⟧');
-  assert.match(html, /<summary><span>⟦Language⟧<\/span>/);
+  assert.match(html, /<summary><span>Language \/ Dil<\/span>/);
   assert.deepEqual(untranslated(html), []);
 });
 

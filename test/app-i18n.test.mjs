@@ -10,9 +10,12 @@ import { extract, literals } from './extract.mjs';
 const APP = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const HTML = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
+const ORIGINAL_TR = { ...tr };
 const added = [];
 afterEach(async () => {
-  for (const k of added.splice(0)) delete tr[k];
+  added.length = 0;
+  for (const k of Object.keys(tr)) delete tr[k];
+  Object.assign(tr, ORIGINAL_TR); // the tests add and replace entries; the table goes back to what tr.js holds
   await setLang('en');
 });
 

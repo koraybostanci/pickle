@@ -1413,7 +1413,7 @@ export function renderSettings({ showLang = LANG_SWITCH_VISIBLE } = {}) {
       <p class="note">${t('You will be asked to type {word}.', { word: t('DELETE', { $id: 'reset.word' }) })}</p>
     </section>`;
 
-  // The language control: the two names are written in their own language and never translated. Hidden until LANG_SWITCH_VISIBLE.
+  // The language control: the two names and the heading are written in both languages and never translated. Hidden until LANG_SWITCH_VISIBLE.
   const lang = s.lang === 'tr' ? 'tr' : 'en';
   const langBody = `
     <div class="seg" role="group" aria-label="${t('Language')}">
@@ -1421,7 +1421,7 @@ export function renderSettings({ showLang = LANG_SWITCH_VISIBLE } = {}) {
       <button type="button" lang="tr" data-act="lang" data-lang="tr" aria-pressed="${lang === 'tr'}">Türkçe</button>
     </div>
     <p class="note">${t('The change applies at once. Your entries are not changed.')}</p>`;
-  const langSection = showLang ? section('language', t('Language'), lang === 'tr' ? 'Türkçe' : 'English', langBody) + '\n    ' : '';
+  const langSection = showLang ? section('language', 'Language / Dil', lang === 'tr' ? 'Türkçe' : 'English', langBody) + '\n    ' : ''; // i18n-ok: the heading names both languages
 
   return `
   <header class="sheet-top"><h2 id="sheet-title">${t('Settings')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>

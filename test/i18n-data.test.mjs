@@ -12,10 +12,13 @@ import { AI_ERRORS, AI_ERROR_LABEL } from '../js/ai.js';
 import { cleanEntry } from '../js/backup.js';
 import { buildSql } from '../js/export.js';
 
+const ORIGINAL_TR = { ...tr };
 const added = [];
 const addTr = (k, v) => { tr[k] = v; added.push(k); };
 afterEach(async () => {
-  for (const k of added.splice(0)) delete tr[k];
+  added.length = 0;
+  for (const k of Object.keys(tr)) delete tr[k];
+  Object.assign(tr, ORIGINAL_TR); // the tests add and replace entries; the table goes back to what tr.js holds
   await setLang('en');
 });
 
@@ -74,7 +77,7 @@ test('verdict and note text are whole sentences that a Turkish entry can replace
   addTr('Ended {n} above', '{n} üstünde bitti');
   assert.equal(verdictText(v).at(-1), '1 plan dışı kayıt.');
   assert.equal(dayGoals(day(-1))[0].name, 'Tartı');
-  assert.equal(budgetVerdict({ target: 1500, eaten: 1000, planned: null }).text, 'Ended 500 under');
+  assert.equal(budgetVerdict({ target: 1500, eaten: 1000, planned: null }).text, `Bütçenin ${fmtInt(500)} altında bitti`); // the entry that was not replaced is the one tr.js holds
   assert.equal(budgetVerdict({ target: 1500, eaten: 1800, planned: null }).text, `${fmtInt(300)} üstünde bitti`);
   assert.equal(VERDICT.on, 'In line'); // tables hold the English; the screen translates with td()
   assert.equal(WEEK_TIERS[0].title, 'Strong week');

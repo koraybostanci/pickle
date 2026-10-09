@@ -87,7 +87,7 @@ export function parseNum(s) {
 }
 
 // The language control in Settings stays hidden until the Turkish text is complete; flipping this on shows it
-export const LANG_SWITCH_VISIBLE = false;
+export const LANG_SWITCH_VISIBLE = true;
 
 // The text of index.html that no code renders: data-t is the element's text, and data-t-aria, -placeholder, -fill (what a chip types into
 // the composer) and -content (the meta description) are attributes. The English stays in the markup, so English needs none of this to be right;
