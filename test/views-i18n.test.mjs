@@ -21,7 +21,7 @@ const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'engl
 // words (` disabled`). Words that only appear in a comparison (`=== 'week'`) need no entry. Anything else, say `[x, 'weigh-in']` or `ok ? 'kg' : 'steps'`, is flagged.
 const CODE_WORDS = new Set(['numeric', 'long', 'short', 'future', 'before', 'over', 'top', 'more', 'morning', 'late', 'workout', 'true', 'false', 'decimal', 'start', 'middle',
   'hidden', 'visible', 'span', 'pointermove', 'pointerdown', 'pointerleave', 'conjunction', 'going', 'target', 'min', 'near', 'disabled', 'selected', 'checked', 'open',
-  'visibility', 'language', 'analysis', 'targets', 'backup', 'location', 'favorites', 'supplements', 'version', 'reset', 'day', 'week:']);
+  'visibility', 'language', 'analysis', 'targets', 'backup', 'location', 'favorites', 'supplements', 'version', 'reset', 'day', 'week:', 'earned']);
 // A class name or a piece of one: is-done, cal-d, day-${st}, pill-good, log-plan
 const CLASS_NAME = /^(?:is|pill|day|cal|log|way)-[a-z0-9\0-]*$/;
 // An attribute whose value a person reads

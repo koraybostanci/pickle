@@ -164,6 +164,7 @@ export function cleanBadges(raw) {
   if (plain(raw.seen)) {
     for (const b of CATALOG) if (Object.hasOwn(raw.seen, b.id) && b.steps.includes(raw.seen[b.id])) out.seen[b.id] = raw.seen[b.id];
   }
+  if (raw.told === true) out.told = true;
   if (plain(raw.av)) {
     for (const slot of Object.keys(DEFAULT_AV)) {
       const p = raw.av[slot];
@@ -182,5 +183,5 @@ export function restoreBadges(current, incoming) {
   const b = cleanBadges(incoming);
   const seen = { ...b.seen };
   if (a) for (const [id, n] of Object.entries(a.seen)) seen[id] = Math.max(n, seen[id] || 0);
-  return cleanBadges({ got: merge(a && a.got, b.got), seen, av: a ? a.av : b.av, base: (a && a.base) || b.base });
+  return cleanBadges({ got: merge(a && a.got, b.got), seen, told: !!(a && a.told) || b.told, av: a ? a.av : b.av, base: (a && a.base) || b.base });
 }

@@ -205,14 +205,60 @@ export function unlocked(part, got) {
 }
 
 // ——— What is stored ———
-// kv `badges`: {v:1, got, seen:{id: highest step seen}, av:{stage,face,acc}, base:{startKg,targetKg}|null}
+// kv `badges`: {v:1, got, seen:{id: highest step seen}, told?, av:{stage,face,acc}, base:{startKg,targetKg}|null}
+// `told` (true, or absent) is set once the history on this device has been taken in once (marked seen, with the one "from your history" line); an older record has none.
 export const DEFAULT_AV = { stage: 'stage1', face: 'face_plain', acc: 'acc_none' };
 export const freshBadges = () => ({ v: 1, got: {}, seen: {}, av: { ...DEFAULT_AV }, base: null });
+
+// ——— What is new ———
+// The highest step of a badge in `got`, or 0
+export const topOf = (got, id) => { const have = (got && Object.hasOwn(got, id) && got[id]) || {}; return Math.max(0, ...Object.keys(have).map(Number)); };
+// A badge is new while its highest earned step is above the one seen
+export const isNew = (id, got, seen) => topOf(got, id) > ((seen && Object.hasOwn(seen, id) && seen[id]) || 0);
+// `seen` with the given badges (all earned ones when ids is left out) raised to their highest earned step. The same object when nothing changes.
+export function seenUpTo(seen, got, ids) {
+  let out = seen || {};
+  for (const id of ids || Object.keys(got || {})) {
+    const top = topOf(got, id);
+    if (top > (out[id] || 0)) out = { ...out, [id]: top };
+  }
+  return out;
+}
+// After the badge sheet is viewed: the stored record with that badge marked seen (the same object when it was not new)
+export function viewed(stored, got, id) {
+  if (!stored || !Object.hasOwn(BY_ID, id)) return stored;
+  const seen = seenUpTo(stored.seen, got, [id]);
+  return seen === stored.seen ? stored : { ...stored, seen };
+}
+// The finish a step is drawn in (a one-shot is Gold)
+export const finishOf = (id, thr) => (isLadder(id) ? BY_ID[id].steps.indexOf(thr) : ONE_SHOT_FINISH);
+// What to tell about new steps ([[id, thr, day], ...]): the distinct badges in catalog order, and for a single badge the finish it reached
+export function unlockSummary(news) {
+  const top = {};
+  for (const [id, thr] of news || []) if (Object.hasOwn(BY_ID, id)) top[id] = Math.max(top[id] || 0, thr);
+  const ids = CATALOG.map((b) => b.id).filter((id) => Object.hasOwn(top, id));
+  return { ids, one: ids.length === 1 ? { id: ids[0], step: finishOf(ids[0], top[ids[0]]) } : null };
+}
+// The new steps the person has not seen already (the sheet may have been opened before the step was stored)
+export const unseenAdded = (news, seen) => (news || []).filter(([id, thr]) => thr > ((seen && Object.hasOwn(seen, id) && seen[id]) || 0));
+// A one-slot cache: compute(...args) again only when an element of `key` changed (compared with ===)
+export function keyedCache(compute) {
+  let last = null;
+  let value;
+  return (key, ...args) => {
+    if (last && last.length === key.length && key.every((x, i) => x === last[i])) return value;
+    value = compute(...args);
+    last = key;
+    return value;
+  };
+}
 
 // One evaluation of the log against what is stored (`prev`, or null on the first run). Pure: the caller writes `next` when `changed`.
 // `base` (the weights the progress badges are measured from) is frozen at the first evaluation that has something logged and is never
 // replaced after that, so moving the goals later cannot earn halfway or goal. Nothing is stored while the log is empty.
-export function settle(prev, S, today) {
+// backfill ({from: earned set before}, or null): taking in a history, not earning anything new. Everything earned is marked seen, `told` is set,
+// and `intro` counts the badges that were not in `from` (for the one "from your history" line).
+export function settle(prev, S, today, { backfill = null } = {}) {
   const cur = prev || freshBadges();
   let base = cur.base;
   if (!base && (S.entries.length || Object.keys(S.days).length)) {
@@ -221,8 +267,10 @@ export function settle(prev, S, today) {
   }
   const got = evaluate(S, today, { got: cur.got, base: base || undefined });
   const news = added(cur.got, got);
-  const changed = news.length > 0 || (!cur.base && !!base);
-  return { next: changed ? { ...cur, got, base } : prev, added: news, changed };
+  const seen = backfill ? seenUpTo(cur.seen, got) : cur.seen;
+  const changed = news.length > 0 || (!cur.base && !!base) || seen !== cur.seen || (!!backfill && !!prev && !prev.told);
+  const intro = backfill ? Object.keys(got).filter((id) => !(backfill.from && Object.hasOwn(backfill.from, id))).length : 0;
+  return { next: changed ? { ...cur, got, base, seen, told: true } : prev, added: news, changed, ...(backfill ? { intro } : {}) };
 }
 
 // ——— What the collection screen shows ———
@@ -233,6 +281,8 @@ export function context(S, today, stored) {
   const { got, cur } = tally(S, today, base);
   return { got: merge(stored && stored.got, got), cur, base };
 }
+// The same, measured once per state: `key` is what the result depends on (see views.js), compared with ===
+export const cachedContext = keyedCache(context);
 
 // The steps to list for a badge: those it can reach, and any already earned
 export function shownSteps(id, ctx = {}) {
@@ -257,6 +307,7 @@ export function cellOf(id, ctx = {}) {
     earned: reached.length,
     total: shownSteps(id, ctx).length,
     day: top === null ? '' : have[top],
+    isNew: top !== null && !!ctx.seen && isNew(id, ctx.got, ctx.seen),
     cur: Math.max((ctx.cur && ctx.cur[id]) || 0, top || 0),
     prog,
   };
@@ -280,4 +331,15 @@ export function stepRows(id, ctx = {}) {
     if (!day) next = false;
     return row;
   });
+}
+
+// Runs async functions one after another, each starting when the one before has settled (a failure does not stop the chain).
+// Every write to the stored badges goes through one, and works from the latest state inside its turn, so no write is based on an older copy.
+export function serial() {
+  let tail = Promise.resolve();
+  return (fn) => {
+    const run = tail.then(fn);
+    tail = run.catch(() => {});
+    return run;
+  };
 }

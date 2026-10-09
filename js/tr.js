@@ -947,4 +947,10 @@ export default {
   'Earned {date}': '{date} tarihinde kazanıldı',
   'Steps to earn': 'Kazanma adımları',
   'Next up': 'Sıradaki',
+  New: 'Yeni',
+  'New badge': 'Yeni rozet',
+  View: 'Göster',
+  '{n} new badge|{n} new badges': '{n} yeni rozet',
+  '{names} and more': '{names} ve daha fazlası',
+  '{n} badge from your history|{n} badges from your history': 'Geçmişinden {n} rozet',
 };

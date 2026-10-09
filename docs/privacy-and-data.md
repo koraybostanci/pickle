@@ -19,7 +19,7 @@
   saved; the model only receives a label such as "Home" or "out", never coordinates.
 - There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can
   restore on the same or another device. It holds your entries, goals, favourites, the plan's
-  pictures, the verdicts of your checks, the badges you have earned and your saved places with their coordinates. Photos of
+  pictures, the verdicts of your checks, the badges you have earned (and which of them you have already looked at) and your saved places with their coordinates. Photos of
   logged meals are included only when you choose "With photos". Restoring adds the backup's
   entries, days, checks, badges and plan pictures to what is on the device (an entry or day that is in
   both takes the backup's version); its goals, favourites and saved places replace yours. The

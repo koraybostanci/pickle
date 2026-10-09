@@ -726,7 +726,7 @@ body.kb-open .composer { bottom: var(--kb); }
 .badges { margin-top: 28px; }
 .bd-group { margin-top: 16px; font: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
 .bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.bd-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 10px 4px 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); text-align: center; color: var(--ink); cursor: pointer; }
+.bd-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 10px 4px 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); text-align: center; color: var(--ink); cursor: pointer; }
 .bd-cell:focus-visible { outline-offset: 2px; border-radius: var(--r-card); }
 .bd-cell svg { flex: none; }
 .bd-name { font: 500 12px/1.25 var(--txt); min-height: 2.5em; display: flex; align-items: center; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
@@ -735,6 +735,10 @@ body.kb-open .composer { bottom: var(--kb); }
 .bd-pips { display: flex; gap: 3px; height: 6px; }
 .bd-pips i { width: 6px; height: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--ink3); }
 .bd-pips i.on { background: var(--ink); box-shadow: none; }
+.bd-cell.is-new { padding-top: 18px; }
+.bd-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--tape); }
+.bd-new { position: absolute; top: 3px; left: 3px; padding: 0 4px; border-radius: 99px; background: var(--tape-track); box-shadow: inset 0 0 0 1px var(--tape); color: var(--tape-ink); font: 600 9px/1.4 var(--mono); }
+.bd-intro { margin-top: 8px; }
 .bd-hero { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
 .bd-hero svg { display: block; }
 .bd-status { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 15px; }
@@ -774,6 +778,12 @@ body.sheet-open { overflow: hidden; }
 body:not(.has-composer) .toast { bottom: calc(var(--tabs-h) + var(--sab) + 16px); }
 body.kb-open .toast { bottom: calc(var(--kb) + var(--composer-h) + 24px); }
 body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
+/* The unlock toast: the badge's mark on a light tile, then the name and the finish */
+.toast-mark { flex: none; display: block; line-height: 0; padding: 2px; border-radius: 10px; background: var(--bg); animation: bd-reveal .25s ease-out both; }
+.toast-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.toast-text b { font: 600 15px/1.25 var(--display); }
+.toast-text small { font-size: 12.5px; opacity: .8; overflow-wrap: anywhere; }
+@keyframes bd-reveal { from { transform: scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Number entry sheet */
 .num { display: grid; gap: 12px; margin-top: 4px; }
@@ -825,6 +835,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 
 @media (prefers-reduced-motion: reduce) {
   button.tile, .tile-main, .day b, .chip, .btn, .meal-main { transition: none; }
+  .toast-mark { animation: none; }
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }
   .toggle i, .toggle i::after, .setting summary::after, .rule-group summary::after, .review-ai summary::after, .coach-ai summary::after, .table-details summary::after, .plan-card { transition: none; }
 }

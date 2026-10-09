@@ -37,8 +37,8 @@ export function fixture() {
   }
   S.entries.push({ id: 'p1', day: T, ts: at(T, 15), createdAt: at(T, 15), kind: 'meal', status: 'pending', slot: 'snack', title: '', kcal: 0, p: 0, c: 0, f: 0, fib: 0, mult: 1, tier: 'plan', flags: [], items: [] });
   S.checks = [];
-  // Earned badges at different finishes (stored, so they show whatever the fixture log would earn by itself)
-  S.badges = { v: 1, seen: {}, av: { stage: 'stage1', face: 'face_plain', acc: 'acc_none' }, base: { startKg: 87, targetKg: 78 }, got: {
+  // Earned badges at different finishes; days_on (30) and best_run (7) are above what was seen, so they are new (stored, so they show whatever the fixture log would earn by itself)
+  S.badges = { v: 1, told: true, seen: { first_meal: 1, first_weigh: 1, first_on: 1, days_on: 7, best_run: 3, perfect_day: 1, kilos: 1, protein_days: 150 }, av: { stage: 'stage1', face: 'face_plain', acc: 'acc_none' }, base: { startKg: 87, targetKg: 78 }, got: {
     first_meal: { 1: day(-9) }, first_weigh: { 1: day(-9) }, first_on: { 1: day(-8) },
     days_on: { 7: day(-2), 30: day(-1) }, best_run: { 3: day(-6), 7: day(-2) }, perfect_day: { 1: day(-7) }, kilos: { 1: day(-3) },
     protein_days: { 10: day(-5), 50: day(-4), 100: day(-3), 150: day(-1) },

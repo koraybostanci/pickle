@@ -5,7 +5,7 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { BY_ID, GROUP_NAME, FINISH_NAME, context, cellOf, collection, stepRows } from './badges.js';
+import { BY_ID, GROUP_NAME, FINISH_NAME, cachedContext, cellOf, collection, stepRows, unlockSummary } from './badges.js';
 import { badgeSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
@@ -1173,6 +1173,13 @@ export function renderProgress() {
 
 // ——— Badges: the collection on the Progress tab and the sheet for one badge ———
 const badgeName = (id) => td(BY_ID[id].name);
+// What the screens measure badges by, worked out once per state. The key is everything it depends on: S.rev moves on every save, load, clear and
+// restore (see app.js), the others catch a whole replaced list, the settings, the stored record and the day. `seen` is added fresh: it changes without the log changing.
+export function badgeContext() {
+  const b = S.badges;
+  const ctx = cachedContext([S.rev, S.entries, S.days, S.settings, b && b.got, b && b.base, today()], S, today(), b);
+  return { ...ctx, seen: b ? b.seen : undefined };
+}
 const badgeFinish = (c) => td(FINISH_NAME[c.step]);
 // How far along: '18 / 30', or '2 of 3 kg' for the kilos (text only); nothing for a one-shot or a badge that has no steps left
 function badgeProgress(c) {
@@ -1188,17 +1195,19 @@ const badgeAria = (c) => [badgeName(c.id), c.state === 'earned' ? (c.ladder ? ba
 
 function badgeCell(c) {
   const pips = c.ladder ? `<span class="bd-pips" aria-hidden="true">${Array.from({ length: c.total }, (_, i) => `<i${i < c.earned ? ' class="on"' : ''}></i>`).join('')}</span>` : '';
-  return `<button type="button" class="bd-cell is-${c.state}" id="badge-${c.id}" data-act="badge" data-id="${c.id}" aria-label="${esc(badgeAria(c))}">
-      ${badgeSvg(c.id, { step: c.step, state: c.state, size: 50, label: badgeName(c.id) })}
+  const fresh = c.isNew ? `<i class="bd-dot" aria-hidden="true"></i><span class="bd-new">${t('New')}</span>` : '';
+  return `<button type="button" class="bd-cell is-${c.state}${c.isNew ? ' is-new' : ''}" id="badge-${c.id}" data-act="badge" data-id="${c.id}" aria-label="${esc(badgeAria(c) + (c.isNew ? ', ' + t('New') : ''))}">
+      ${fresh}${badgeSvg(c.id, { step: c.step, state: c.state, size: 50, label: badgeName(c.id) })}
       <span class="bd-name">${esc(badgeName(c.id))}</span>
       <span class="bd-line">${esc(badgeLine(c))}</span>${pips}
     </button>`;
 }
 
 function badgesSection() {
-  const col = collection(context(S, today(), S.badges));
+  const col = collection(badgeContext());
   return `<section class="badges" aria-labelledby="badges-title">
     <div class="card-head"><h2 id="badges-title">${t('Badges')}</h2><span class="label">${t('{n} of {total}', { n: col.earned, total: col.total })}</span></div>
+    ${S.badgeIntro ? `<p class="note bd-intro">${tn('{n} badge from your history|{n} badges from your history', S.badgeIntro)}</p>` : ''}
     ${col.groups.map((g) => `<h3 class="bd-group">${esc(td(GROUP_NAME[g.group]))}</h3>
     <div class="bd-grid">
     ${g.cells.map(badgeCell).join('\n    ')}
@@ -1209,7 +1218,7 @@ function badgesSection() {
 // One badge in the bottom sheet: the big badge, what it asks for with the count so far, and each step of the ladder
 export function renderBadgeSheet(id) {
   if (!Object.hasOwn(BY_ID, id)) return '';
-  const ctx = context(S, today(), S.badges);
+  const ctx = badgeContext();
   const c = cellOf(id, ctx);
   const name = badgeName(id);
   const earned = c.state === 'earned';
@@ -1494,4 +1503,17 @@ export function renderSettings() {
     ${section('reset', t('Reset'), t('Clear my log, or factory reset'), reset)}
   </div>
   <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>${t('Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.')}</span><span>${t('Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.')}</span></p></footer>`;
+}
+
+// The toast for new badge steps ([[id, threshold, day], ...]): one badge shows its mark, name and finish; several collapse into one line with their names.
+// null when there is nothing to tell. `id` is the badge to open for a single one; several open the collection.
+export function unlockToast(news) {
+  const { ids, one } = unlockSummary(news);
+  if (!ids.length) return null;
+  if (one) {
+    const b = BY_ID[one.id];
+    return { id: one.id, msg: badgeName(one.id), sub: b.steps.length > 1 ? td(FINISH_NAME[one.step]) : t('New badge'), mark: badgeSvg(one.id, { step: one.step, state: 'earned', size: 40, label: '' }) };
+  }
+  const shown = ids.slice(0, 3).map(badgeName).join(', ');
+  return { id: '', msg: tn('{n} new badge|{n} new badges', ids.length), sub: ids.length > 3 ? t('{names} and more', { names: shown }) : shown, mark: '' };
 }

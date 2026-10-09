@@ -78,7 +78,7 @@ version is shown under Settings → "Version and updates".
 - `js/views.js`: the screens
 - `js/plan.js`: food table, meal templates, goals, rules
 - `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
-- `js/badges.js`: the badge catalog and which badges the log has earned (no DOM, no storage); `app.js` stores the result in kv `badges`
+- `js/badges.js`: the badge catalog and which badges the log has earned (no DOM, no storage); `app.js` stores the result in kv `badges` (`{v:1, got, seen, told, av, base}`: `seen` is the highest step looked at per badge, which drives the New dot; `told` is set once the history on the device has been taken in, with its one "from your history" line; both are optional, so older records stay valid). The unlock toast comes after the first evaluation that follows a change (a save, or the clock or tab changing); the first evaluation after loading, a restore and the first run with a log are quiet. The "from your history" line is dropped if the person leaves Progress, or closes the app, without opening it (`told` is already set). Every write to the record goes through one queue (`serial()`), each from the latest `S.badges` The screens measure badges through `badgeContext()` in `views.js`, cached on `S.rev`, which every save path moves
 - `js/backup.js`: checks everything read from a backup file before it is stored
 - `js/exif.js`: reads capture time and location from a photo
 - `js/db.js`: IndexedDB
