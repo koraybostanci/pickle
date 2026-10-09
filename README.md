@@ -268,6 +268,9 @@ version is shown under Settings → "Version and updates".
 ## Limits
 
 - One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
+- The app only runs from the Home Screen. In a browser tab it shows an install screen and does not open
+  the database, because Safari and the Home Screen app keep separate data. `localhost` is exempt for
+  development.
 - Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
   less likely, and a regular backup covers the rest.
 - This is a tracking tool, not medical or dietary advice. The example plan was written for one

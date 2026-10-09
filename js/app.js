@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
@@ -854,7 +855,9 @@ export function go(tab) {
   window.scrollTo(0, 0);
 }
 
+const RUNS = canRun(window); // false in a browser tab: the install screen stays and nothing touches the database
 function render() {
+  if (!RUNS) return;
   const v = $('#view');
   const y = window.scrollY;
   const fn = { today: renderToday, log: renderLog, check: renderCheck, progress: renderProgress, plan: renderPlan }[S.tab];
@@ -1501,13 +1504,13 @@ function newDay() {
   return true;
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
+  if (!RUNS || document.visibilityState !== 'visible') return;
   newDay();
   render();
   autoReview();
 });
 // ...and when it stays open and in front through midnight
-setInterval(() => { if (document.visibilityState === 'visible' && newDay()) { render(); autoReview(); } }, 60000);
+setInterval(() => { if (RUNS && document.visibilityState === 'visible' && newDay()) { render(); autoReview(); } }, 60000);
 
 // ——— Updates ———
 // When a new service worker takes control the page is still running old files, so it reloads.
@@ -1531,10 +1534,11 @@ function setupUpdates() {
 }
 
 // Waiting entries go again as soon as the connection is back
-window.addEventListener('online', resumePending);
+window.addEventListener('online', () => { if (RUNS) resumePending(); });
 
 (async function start() {
   setupUpdates(); // first, so that a fixed version can still arrive when the database does not open
+  if (!RUNS) { $('.tabs').hidden = true; $('#view').innerHTML = installHtml(); return; } // a browser tab would get its own, separate database
   try {
     await load();
   } catch (err) {
