@@ -1,317 +1,56 @@
-<p align="center"><img src="icons/icon.svg" width="112" height="112" alt="Pickle icon: a pickle in a measuring jar with a brass lid"></p>
+<img src="icons/icon.svg" align="left" width="96" height="96" alt="Pickle icon: a pickle in a measuring jar with a brass lid">
 
 # Pickle
 
 *Good things take time.*
 
-Pickle is a personal weight-loss tracker that runs in the browser. You give it start and end dates
-and weights; it draws the schedule between them and helps you stick to a meal plan until you get
-there. You log food by photo, by typing, or with one tap on a planned meal.
+A weight-loss tracker that runs on your phone. Set a start and a goal, and Pickle draws the
+line between them. Log what you eat with a photo, a few typed words, or one tap on a planned meal,
+and see every day whether you are on that line.
 
-It is a single-user web app (PWA) with no backend and no account. You host the files yourself,
-add the page to your phone's Home Screen, and your entries are stored on that phone.
+No backend, no account. Your data stays on your device.
 
-A cucumber becomes a pickle through time and steady conditions, not one big effort. That is what
-the app asks of you: a steady average along your line, day after day. The icon shows the pickle in a
-measuring jar. Throughout the app brass is you and teal is your line; on Progress the beam runs from
-your start weight to your goal.
+<br clear="left">
 
-## What it does
+<p>
+  <img src="docs/today.png" width="240" alt="Today: the day's calorie budget, protein, and the week">
+  <img src="docs/log.png" width="240" alt="Log: meals with a review of each day">
+  <img src="docs/progress.png" width="240" alt="Progress: the beam, streaks and the weight chart">
+</p>
 
-- **Today:** one line on where the day stands and what comes next (calm when the day goes above budget);
-  the week as seven day tokens, each with a shape for how the day went, and your run of days on
-  plan; the day's calories as a budget meter: what is left, how far the day has got and where the
-  plan would have you by now; weight against your line, protein, the
-  meals of the day with a suggestion for the next one, steps, water and coffee in one row, and the
-  week's extras. Five daily goals (weigh-in, calories, protein, steps, water) make a day with all five goals.
-  Coffee is counted with no goal: its tile shows the day and the week.
-- **Supplements:** the vitamins and minerals you take every day (magnesium, B12, D …), set up under
-  Settings → Supplements with a name and an optional dose. On Today each is a chip: one tap ticks it
-  for the day, and the card says how many you have taken. They are tracked, not a daily goal.
-- **Log:** what you sent on your last 60 days with entries, one line per entry. Take a photo, choose photos from
-  the library, or type. A model estimates calories and macros and lists each item with its amount
-  and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
-  what the photo does not show and it revises the items; you can also correct the portion, the
-  numbers or the time. Every day with a logged meal carries a review. The verdict is worked out on
-  the device (in line, under budget, a little above, a bigger day) and, for a surplus,
-  what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal above budget: about 0.06 kg,
-  69% of what the day was meant to lose"). The model then writes a short note on what helped, what
-  cost the most and what would have reduced it, and one thing to do next.
-- **Check:** a verdict before you order or buy. Photograph a restaurant menu, a dish, or a product
-  and its nutrition table (up to four photos, or just a typed question). A model rates each option's
-  quality in general, says whether it fits your plan and what is left of today, estimates calories
-  and protein for a portion, and tells you how to order it so that it fits or what to have instead.
-  One tap logs the option you chose.
-- **Progress:** the beam with every kilo marked and the next one named, runs of days on plan, the
-  weight chart (the last 7 days, the last two weeks, or the whole plan with where this pace
-  arrives) with a 7-day average, projected arrival date, a consistency calendar and checkpoints.
-  The calendar shows each day's calories (from the 1,400 kcal minimum up to 110% of the day's
-  budget counts as on plan) with its protein as a small pie, and a result icon at the end of each
-  finished week.
-- **Plan:** every meal option as a compact card with a picture, two to a row, its ingredients and
-  amounts one tap away, and the rules of the plan. The pictures are your own photos: add one from
-  the meal's card, or let the first logged photo that matches a plan meal fill it in. Every picture
-  gets the same treatment, so the plan looks like one set: you frame the plate in a circle, and
-  light, colour and contrast are evened out.
+## What is in it
 
-Things that never need a model, and so cost nothing: planned meals, favourites, weight, steps,
-water, coffee, beer and workout days. Typing `85.4`, `8200 steps`, `water 2 glasses`, `coffee`,
-`2 beers` or `workout` is understood on the device; each typed beer is logged as the Beer 0.5 l extra.
+| Screen | What it does |
+|---|---|
+| **Today** | What is left of the day's calories, protein, weight, steps, water and the week at a glance |
+| **Log** | Every entry, newest first, with a short review of each day |
+| **Check** | Photograph a menu, a dish or a product before you order or buy, and get a verdict against your plan |
+| **Progress** | Weight against your line, projected arrival date, runs of days on plan, a consistency calendar |
+| **Plan** | Your meal options with ingredients, and the rules |
 
-## Privacy and data
+Weight, steps, water, coffee, workouts and planned meals need no model and no key. Type `85.4`,
+`8200 steps` or `2 beers`, or tap a planned meal.
 
-- Entries, photos and settings are stored in the browser's IndexedDB on your device. Nothing is
-  sent to a server of this project, because there is none.
-- Photo and free-text analysis goes straight from your phone to the model provider you choose,
-  with your own API key. That is the one place your data leaves the device: the photos and text you
-  send, with the time of the entry. The provider and your static host also see your IP address.
-  Logged photos are downscaled to 768 px before they are sent.
-- Photos are never stored as taken. Logged photos are kept as a 768 px copy, plan pictures as a
-  640 px framed and colour-corrected one. Both are re-encoded, so the stored file carries no
-  location, capture time or camera details. The capture time is read once, to time the entry.
-- The day's review and the quick note on Today send text only: that day's meals with their numbers, steps, water, weigh-in,
-  your goals, the weight schedule and where you stand against it. No photos.
-- Photos taken for a check are sent at up to 1536 px, so small print stays readable, together with
-  where your day stands. They are not stored; the last 30 verdicts are, as text.
-- The API key is stored on the device only, unencrypted like the rest of the app's data, and is
-  never written to a backup file.
-- Photo location is off by default. When on, it is read on the device and matched to places you
-  saved; the model only receives a label such as "Home" or "out", never coordinates.
-- There is no sync. Back up from Settings → "Backup and export"; the backup is a JSON file you can
-  restore on the same or another device. It holds your entries, goals, favourites, the plan's
-  pictures, the verdicts of your checks and your saved places with their coordinates. Photos of
-  logged meals are included only when you choose "With photos". Restoring adds the backup's
-  entries, days, checks and plan pictures to what is on the device (an entry or day that is in
-  both takes the backup's version); its goals, favourites and saved places replace yours. The
-  provider, address, model and key stay as they are.
-- Settings → "Reset" has two levels. "Clear my log" deletes what you tracked (meals and their photos,
-  weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews, checks) and keeps every setting, the plan's
-  pictures and your API key. "Factory reset" empties the app as it was on its first launch, including
-  goals, favourites, saved places, the plan's pictures and the usage totals; the API key and provider
-  stay unless you untick the box. It asks you to type DELETE. Both refuse while something is being
-  analysed. Neither can be undone, so save a backup first.
+## Set it up
 
-## Get your own copy
+1. Fork this repo and serve it over HTTPS from any static host (GitHub Pages: Settings → Pages →
+   `main` / `(root)`).
+2. Open the address on your phone and add it to the Home Screen. Pickle only runs as an installed app.
+3. Open Settings → Goals and enter your dates, weights and daily calories.
+4. Optional: add an API key under Settings → "Photo and text analysis" to log by photo.
 
-1. Fork this repository, or push the files to a repository of your own. There are no secrets in
-   the code, so it can be public.
-2. Serve it over HTTPS from any static host. With GitHub Pages: repository → Settings → Pages →
-   "Deploy from a branch", `main` / `(root)`. The app is then at `https://<user>.github.io/<repo>/`.
-   All pages under one `<user>.github.io` share the same browser storage, your API key included, so
-   host nothing else there, or use a custom domain for this app.
-3. Open that address on your phone and add it to the Home Screen (on iPhone: Share → Add to Home
-   Screen). The app then opens full screen and works offline.
-4. Open Settings (top right) → Goals and enter your own dates, weights and daily budget.
+Built for and used on an iPhone. Other modern mobile browsers should work.
 
-The app is built for and used on an iPhone. Other modern mobile browsers should work but have
-had less testing.
+## Read more
 
-## Photo and text analysis
-
-Optional. In Settings → "Photo and text analysis", choose a provider and enter your key:
-
-- **OpenAI-compatible endpoints:** presets for Google Gemini (has a free tier), OpenCode (Zen and
-  Go) and OpenRouter, or any `https://` base address and model you type in. "Save and test" checks
-  both text and photo input; "find a model that reads photos" tries the provider's models one by one.
-- **Claude:** an Anthropic API key from https://platform.claude.com, which needs prepaid credit.
-  Haiku 4.5 is the default; Sonnet 5.5 can be chosen in Settings and is used by "Analyse again with
-  Sonnet". Settings shows the calls made and, for Claude, their estimated cost.
-
-If the provider is busy, the app retries twice and, where a preset lists other models (only Gemini
-does), tries those. A request that takes longer than a minute is given up on. If it still fails,
-the entry waits and is analysed later: when you open the app, when the connection comes back, or
-when you tap Analyse. After a failure that every request would share (no quota, a wrong key, no
-connection) the waiting entries pause instead of each sending a request. Nothing you sent is lost.
-A failed new estimate never replaces an earlier one.
-
-The last finished day (looked for up to three days back) is reviewed by itself when you open the
-app or come back to it, if enough is logged: one short text request a day. Any other day, including
-today so far, is reviewed when you ask for it in the Log. The automatic review can be switched off
-in the same Settings section; the verdict from the numbers needs no model and is always shown.
-
-On Today, once a meal is logged, "How am I doing so far?" under the coach line asks for a quick,
-supportive note: how the day is going and what is left of the budget, protein and fibre. It is sent
-only when you ask, as one short text request (the same text as the day's review, plus what is left).
-
-Estimates from a photo are rough. Treat them as a starting point and correct the portion when
-it is off.
-
-## Make it your plan
-
-The repository ships with one example plan: about 1,550 kcal on rest days and 1,750 kcal on
-workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
-
-- **Goals** (dates, weights, calories, protein) are changed in the app under Settings → Goals.
-  Daily calories below `KCAL_FLOOR` (1,500) are refused, as the plan's rules say. The goals for
-  steps, water and fibre come from `DEFAULTS` in `js/plan.js` and apply only before the app is first
-  opened on a device.
-- **Meals and rules** live in `js/plan.js`:
-  - `FOODS`: nutrition per 100 g, as `[kcal, protein, carbs, fat, fibre]`.
-  - `TEMPLATES`: the meal options. Each has an id, a slot and a list of `[food, grams, measure]`.
-    Calories and macros are computed from the food table, never typed by hand.
-  - `SLOTS`: the meals of the day and their times.
-  - `FLEX`: one-tap weekly extras (a beer, a small dessert) that count against the weekly allowance.
-  - `RULES`: the text shown on the Plan tab.
-  - `DEFAULTS`: goals used before anything is saved in Settings.
-
-  The model receives a short digest of the plan with every request, so it follows your changes
-  to meals and foods without further setup. Two things are not generated from the file: the numbers
-  in `RULES` come from `DEFAULTS`, `KCAL_FLOOR` and `SMALL_TREAT_KCAL`, not from what you saved in
-  Settings → Goals, so keep them in step; and the meal slots are also named in `SLOT_NAME`,
-  `slotByTime`, the prompt in `js/ai.js` and the notes on the Plan tab in `js/views.js`, so
-  changing the slots means editing those too.
-
-The app uses kilograms, kilocalories and millilitres. Its language is English or Turkish, chosen in
-Settings → Language (first on the list); English is the default and nothing is guessed from the phone.
-Number and date formats follow the language (`en-GB` or `tr-TR`).
-
-## Export to SQLite
-
-Settings → "Backup and export" → "Export for SQLite" saves one `.sql` file. It is plain text that
-creates the tables and fills them, so any SQLite tool can load it:
-
-```sh
-sqlite3 -bail pickle.db < pickle-export-2026-10-12.sql
-```
-
-`-bail` stops at the first error, so a failed load is rolled back. Loading a newer export into the
-same database replaces the `weightplan_*` tables and the view, with anything you added to them, and
-leaves everything else in that database alone.
-
-| Table or view | One row per | Columns |
-|---|---|---|
-| `weightplan_supplements` | id | `id`, `name`, `dose` |
-| `weightplan_supplement_log` | day, supplement_id | `day`, `supplement_id` (one row per supplement ticked that day) |
-| `weightplan_days` | day | `day`, `weight_kg`, `steps`, `water_ml`, `coffee_cups`, `workout`, `target_kcal`, `target_weight_kg` |
-| `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `place`, `note`, `photos`, `flags` |
-| `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g` |
-| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily goals, and the export's own version and time) |
-| `weightplan_daily` (view) | day | the day's values, the 7-day weight average, and the meal totals with the day's `beers` |
-
-Calories, macros and grams are already multiplied by the portion. Only meals with `status = 'ok'`
-have numbers. `target_kcal` and `target_weight_kg` are worked out from your current Goals, so
-changing them changes past rows. Photos, API keys and the coordinates of saved places are not
-exported.
-
-```sql
--- weight against the schedule
-SELECT day, weight_kg, weight_avg7_kg, target_weight_kg FROM weightplan_daily ORDER BY day;
-
--- days over the calorie budget
-SELECT day, kcal, target_kcal FROM weightplan_daily WHERE kcal > target_kcal;
-
--- what was off plan, and how much it cost
-SELECT day, title, kcal FROM weightplan_meals WHERE tier = 'off' AND status = 'ok' ORDER BY kcal DESC;
-
--- beers and coffees per week
-SELECT date(day, 'weekday 0', '-6 days') AS week, SUM(beers) AS beers, SUM(COALESCE(coffee_cups, 0)) AS coffees FROM weightplan_daily GROUP BY week ORDER BY week;
-```
-
-The export is for analysis. To move or restore the app's data, use the JSON backup.
-
-## Development
-
-There is no build step and there are no dependencies: plain HTML, CSS and JavaScript modules.
-
-```sh
-python3 -m http.server 8770
-# then open http://localhost:8770/
-```
-
-The service worker serves the app from a versioned cache, so after the first load your edits do
-not show up until you either bump the version (see below), use Settings → "Version and updates" →
-"Clear cache and reload", or bypass the service worker in the browser's developer tools.
-
-Tests need Node 22 or later and no dependencies:
-
-```sh
-node --test
-```
-
-They cover the calculations (`js/core.js`), the checks on backup files (`js/backup.js`), the model
-layer against a mocked `fetch` (`js/ai.js`) and the SQL export, which is loaded into Node's built-in
-SQLite and queried as in the section above. The IndexedDB code is not covered. The screens are
-rendered in Node from a fixed state (`test/screens.mjs`) for the English snapshot
-(`test/fixtures/en-snapshot.json`, regenerate it with `UPDATE_SNAPSHOT=1 node --test` after an
-intended English change) and for the language checks.
-
-## Languages
-
-The interface is English or Turkish. The English text is written inline in the code and is its own
-key; `js/tr.js` maps it to the Turkish. English costs nothing at runtime: `js/tr.js` is loaded
-when Turkish is chosen, and cached by the service worker so the first switch works offline. A string
-without a Turkish entry shows in English.
-
-To add or change a string:
-
-1. Write it in English through `t('Saved {name}', { name })` (`js/i18n.js`). Plurals use
-   `tn('{n} day|{n} days', n)`, and text in a data table is marked with `T('Lunch')` and translated
-   where it is shown with `td()`. The first argument must be a plain string literal, never built from parts.
-2. Add the Turkish to `js/tr.js` under the same English text. Text in `index.html` uses the
-   `data-t` attributes. Where one English text means two things, or a long sentence changes
-   often, give it an id with `t('Open', { $id: 'menu.open' })` and key `tr.js` by that id.
-3. Run `node --test`. It finds every string in `js/*.js` and `index.html` and fails on a missing or
-   orphaned entry, on different `{placeholders}` or HTML tags, on an English text left as the Turkish, and on a screen
-   that still shows unmarked English when rendered in Turkish.
-
-Rules for the Turkish: write the whole sentence, never attach a suffix to a `{placeholder}` (write
-"Food: {food}", not "{food}'s"), and give `tn` one string, since Turkish has no plural form after a
-number. A function as a value is the last resort and needs a comment.
-
-What the language does not touch: the AI prompts and the briefs built for the model stay English
-(`js/briefs.js` builds them in English whatever the language is; Turkish only adds one line asking for
-Turkish replies), and so do the SQL export, the CSV headers and the backup file. Text the model wrote
-and what you typed are shown as written. The typed-entry parser understands the Turkish words
-(`js/parse-tr.js`: the Turkish words for steps, water and so on) in either language. New titles of generated entries keep the English
-`title` and add a `tk` that is shown in the chosen language. The language survives "Clear my log" and a factory reset.
-
-On `localhost` the app exposes `window.__app` for debugging.
-
-The app's internal id is `weightplan` (`APP_ID` in `js/core.js`). It names the IndexedDB database, the
-caches, the backup files' marker and the SQL tables, and stays the same when the app is renamed, so a
-new name never touches the data.
-
-## Releasing an update
-
-Bump `VERSION` in `sw.js` (for version 41, `'weightplan-v41'`) and `APP_VERSION` in `js/core.js` (`'41'`) together, then
-deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
-that does not exist makes the install fail. Installed
-copies find the new version when the app opens or comes to the front, and reload on their own, or,
-if something is half-typed or being analysed, show a Reload button. Stored data is kept. The running
-version is shown under Settings → "Version and updates".
-
-## Project layout
-
-- `index.html`, `styles.css`, `manifest.webmanifest`: shell, styles and web app manifest
-- `js/core.js`: state and the calculations on it (budget, verdicts, weight, streaks). It has no
-  DOM and no storage, so it loads in Node and can be tested there
-- `js/app.js`: storage, event handling, the analysis queue, backup and restore
-- `js/views.js`: the screens
-- `js/plan.js`: food table, meal templates, goals, rules
-- `js/ai.js`: model calls (Claude and OpenAI-compatible), prompt and output schema
-- `js/backup.js`: checks everything read from a backup file before it is stored
-- `js/exif.js`: reads capture time and location from a photo
-- `js/db.js`: IndexedDB
-- `js/picture.js`: the treatment every plan picture gets (framing, white balance, exposure)
-- `js/export.js`: the SQL export
-- `js/i18n.js`: the language: `t`, `tn`, `T`, number and date formats, the language switch
-- `js/tr.js`: the Turkish text, keyed by the English; `js/parse-tr.js`: the Turkish words the typed-entry parser accepts
-- `js/briefs.js`: what is sent to the model, always in English
-- `js/standalone.js`: the install screen shown in a browser tab (its two languages are inline)
-- `test/`: `node --test` tests; `extract.mjs` finds the strings, `screens.mjs` renders the screens
-- `sw.js`: offline cache and updates
-- `icons/`: `icon.svg` is the source; the PNG files are rendered from it for the Home Screen and
-  the web app manifest
-- `fonts/`: IBM Plex Sans, IBM Plex Mono and Space Grotesk, self-hosted so the app works offline
-  (latin and latin-ext, for Turkish letters), with their licences (SIL Open Font License)
+- [Photo and text analysis](docs/analysis.md): providers, keys, retries, daily reviews
+- [Make it your plan](docs/your-plan.md): meals, foods and rules in `js/plan.js`
+- [Privacy and data](docs/privacy-and-data.md): what stays on the device, backup, reset, SQLite export
+- [Development](docs/development.md): running, tests, languages, releasing, project layout
 
 ## Limits
 
-- One user, one device. No sync and no multi-device merge; moving devices means restoring a backup.
-- The app only runs from the Home Screen. In a browser tab it shows an install screen and does not open
-  the database, because Safari and the Home Screen app keep separate data. `localhost` is exempt for
-  development.
-- Browsers can evict web data when storage runs low. Adding the app to the Home Screen makes that
-  less likely, and a regular backup covers the rest.
-- This is a tracking tool, not medical or dietary advice. The example plan was written for one
-  person; check your own goals with a professional if you have a health condition.
+- One user, one device. No sync; to move devices, restore a backup.
+- Browsers can evict web data when storage runs low. Back up regularly.
+- Photo estimates are rough. Correct the portion when it is off.
+- A tracking tool, not medical or dietary advice. The example plan was written for one person.
