@@ -28,6 +28,16 @@
   --good-ink: #0B5D50; /* text on --good-soft, --warn-soft and --over-track: the kit's pills */
   --warn-ink: #8A4708;
   --over-ink: #9B1C32;
+  --t1: #BE8049; /* badge finishes: Bronze, Silver, Gold, Platinum */
+  --t2: #B4BAC2;
+  --t3: #DDAE2E;
+  --t4: #CFE4F2;
+  --on-t: #23241F; /* glyph on a finish */
+  --hi: #FFFFFF;
+  --ring-p: var(--hi); /* Platinum's inner ring */
+  --pickle: #8DBA4A; /* the avatar: the app icon's pickle, its highlight and its warts */
+  --pickle-hi: #B5D77A;
+  --pickle-d: #5F8A2C;
   --track: #EAEBE4; /* the empty part of a bar */
   --fill: #008A74; /* a bar still filling; a full one turns --good */
   --edge: #C9CBC1; /* outlines of quiet controls and days still to come */
@@ -78,6 +88,16 @@
     --good-ink: #9FE3D0;
     --warn-ink: #F3C08A;
     --over-ink: #F9B3BB;
+    --t1: #C98455;
+    --t2: #B9BFC8;
+    --t3: #E6B93E;
+    --t4: #DCEEFA;
+    --on-t: #14150F;
+    --hi: #FFFFFF;
+    --ring-p: rgba(20, 21, 15, .5); /* the white ring vanishes on the pale fill */
+    --pickle: #8DBA4A;
+    --pickle-hi: #B5D77A;
+    --pickle-d: #6C9A33; /* a little lighter, so the outline shows on the dark card */
     --track: #2C3630;
     --fill: #21937A;
     --edge: #3F4A43;
@@ -131,6 +151,13 @@ body.has-composer #view { padding-bottom: calc(var(--tabs-h) + var(--composer-h)
 .top h1 { font: 600 32px/1.05 var(--display); letter-spacing: -.02em; }
 .top .sub { color: var(--ink2); font-size: 14px; margin-top: 4px; max-width: 34ch; }
 .top-actions { display: flex; gap: 2px; flex: none; }
+/* Narrow phones: the two 44px buttons would squeeze the subtitle into a column of 4 or 5 lines. They are taken out of the row and a float
+   of their size keeps the title and the first line clear of them, so the rest of the subtitle runs the full width below */
+@media (max-width: 400px) {
+  .top { display: block; position: relative; min-height: 44px; }
+  .top > div:first-child::before { content: ''; float: right; width: 102px; height: 44px; }
+  .top > .top-actions { position: absolute; top: 0; right: 0; }
+}
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--ink2); }
 .icon-btn svg, .tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: square; stroke-linejoin: miter; }
 .top .icon-btn { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); }
@@ -708,6 +735,48 @@ body.kb-open .composer { bottom: var(--kb); }
 .check-history .log-time { width: 44px; }
 .check-empty { margin-top: 28px; }
 
+/* Badges: the collection on Progress and the sheet for one badge */
+.badges { margin-top: 28px; }
+.bd-group { margin-top: 16px; font: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.bd-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 10px 4px 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); text-align: center; color: var(--ink); cursor: pointer; }
+.bd-cell:focus-visible { outline-offset: 2px; border-radius: var(--r-card); }
+.bd-cell svg { flex: none; }
+.bd-name { font: 500 12px/1.25 var(--txt); min-height: 2.5em; display: flex; align-items: center; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
+.bd-line { font: 400 11px/1.2 var(--mono); color: var(--ink2); min-height: 1.2em; }
+.bd-cell.is-locked .bd-name { color: var(--ink2); }
+.bd-pips { display: flex; gap: 3px; height: 6px; }
+.bd-pips i { width: 6px; height: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--ink3); }
+.bd-pips i.on { background: var(--ink); box-shadow: none; }
+.bd-cell.is-new { padding-top: 18px; }
+.bd-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--tape); }
+.bd-new { position: absolute; top: 3px; left: 3px; padding: 0 4px; border-radius: 99px; background: var(--tape-track); box-shadow: inset 0 0 0 1px var(--tape); color: var(--tape-ink); font: 600 9px/1.4 var(--mono); }
+.bd-intro { margin-top: 8px; }
+.bd-hero { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+.bd-hero svg { display: block; }
+/* The avatar: the header button (the pickle itself, no stroke from .icon-btn) and the picker */
+.icon-btn.av-btn svg { width: 34px; height: 34px; fill: none; stroke: none; }
+.av-hero { display: grid; place-items: center; margin: 12px 0 4px; }
+.av-hero span { display: block; line-height: 0; padding: 8px; background: var(--track); border: 1px solid var(--edge); border-radius: 20px; }
+.av-hero svg { display: block; }
+.av-slot { margin-top: 16px; font: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.av-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.av-chip[aria-pressed="true"] { border-color: var(--tape); box-shadow: inset 0 0 0 1px var(--tape); }
+.av-chip.is-locked { color: var(--ink3); border-style: dashed; }
+.av-chip svg { width: 11px; height: 11px; flex: none; stroke: none; }
+.av-hint { margin-top: 16px; min-height: 22px; }
+.bd-status { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 15px; }
+.bd-status span { font: 400 13px var(--mono); color: var(--ink2); }
+.bd-desc { margin-top: 14px; font-size: 15px; }
+.bd-steps { list-style: none; margin: 16px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.bd-steps li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.bd-steps svg { display: block; }
+.bd-step-n { flex: 1; min-width: 0; font: 600 16px var(--display); }
+.bd-step-n small { margin-left: 8px; font: 400 13px var(--txt); color: var(--ink2); }
+.bd-step-d { flex: none; font: 400 13px var(--mono); color: var(--ink2); text-align: right; }
+.bd-steps .is-next .bd-step-d { color: var(--ink); font-weight: 600; }
+@media (min-width: 481px) { .bd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
 /* Bottom sheet */
 .sheet { position: fixed; inset: 0; z-index: 20; }
 .sheet-bg { position: absolute; inset: 0; background: rgb(0 0 0 / .45); }
@@ -733,6 +802,12 @@ body.sheet-open { overflow: hidden; }
 body:not(.has-composer) .toast { bottom: calc(var(--tabs-h) + var(--sab) + 16px); }
 body.kb-open .toast { bottom: calc(var(--kb) + var(--composer-h) + 24px); }
 body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
+/* The unlock toast: the badge's mark on a light tile, then the name and the finish */
+.toast-mark { flex: none; display: block; line-height: 0; padding: 2px; border-radius: 10px; background: var(--bg); animation: bd-reveal .25s ease-out both; }
+.toast-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.toast-text b { font: 600 15px/1.25 var(--display); }
+.toast-text small { font-size: 12.5px; opacity: .8; overflow-wrap: anywhere; }
+@keyframes bd-reveal { from { transform: scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Number entry sheet */
 .num { display: grid; gap: 12px; margin-top: 4px; }
@@ -784,6 +859,7 @@ body.sheet-open .toast { bottom: auto; top: calc(var(--sat) + 12px); }
 
 @media (prefers-reduced-motion: reduce) {
   button.tile, .tile-main, .day b, .chip, .btn, .meal-main { transition: none; }
+  .toast-mark { animation: none; }
   .spin { animation: none; border-top-color: var(--line); border-right-color: var(--ink); }
   .toggle i, .toggle i::after, .setting summary::after, .rule-group summary::after, .review-ai summary::after, .coach-ai summary::after, .table-details summary::after, .plan-card { transition: none; }
 }

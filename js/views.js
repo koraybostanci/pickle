@@ -5,6 +5,8 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
+import { BY_ID, GROUP_NAME, FINISH_NAME, PART_NAME, SLOT_TITLE, cachedContext, cellOf, collection, stepRows, unlockSummary, wornAv, avatarChoices } from './badges.js';
+import { badgeSvg, avatarSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
@@ -16,6 +18,7 @@ const lazyDate = (opts) => ({ format: (d) => dateFmt(opts).format(d) });
 const dLong = lazyDate({ day: 'numeric', month: 'long', weekday: 'long' });
 const dShort = lazyDate({ day: 'numeric', month: 'long' });
 const dTiny = lazyDate({ day: 'numeric', month: 'short' });
+const dFull = lazyDate({ day: 'numeric', month: 'short', year: 'numeric' });
 const dWeekday = lazyDate({ weekday: 'long' });
 const dMonth = lazyDate({ month: 'short' });
 const dMonthYear = lazyDate({ month: 'long', year: 'numeric' });
@@ -34,6 +37,9 @@ const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d=
 const ALERT = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v5.5M8 12v.5"/></svg>';
 const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l2.5 1.5"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
+const partName = (p) => td(PART_NAME[p]);
+const avatarLabel = (av) => [t('Your pickle'), partName(av.stage), partName(av.face), partName(av.acc)].join(', ');
+const avatarButton = () => { const av = wornAv(S.badges); return `<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="${avatarLabel(av)}"><span aria-hidden="true">${avatarSvg(av, { size: 34, label: avatarLabel(av) })}</span></button>`; };
 const settingsButton = () => `<button type="button" class="icon-btn" data-act="settings" aria-label="${t('Settings')}">${ICON.settings}</button>`;
 
 // Where the weight stands against the schedule, in plain words
@@ -500,7 +506,7 @@ export function renderToday() {
       <h1>${isToday ? t('Today') : esc(dWeekday.format(parseDay(day)))}</h1>
       <p class="sub">${isToday ? (day >= S.settings.startDate ? t('{date} · day {n}', { date: esc(dLong.format(parseDay(day))), n: diffDays(S.settings.startDate, day) + 1 }) : esc(dLong.format(parseDay(day)))) : `${esc(dShort.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">${t('Back to today')}</button>`}</p>
     </div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${isToday ? startCard() + coachLine(day) : ''}
   ${weekStrip(day)}
@@ -709,7 +715,7 @@ export function renderLog() {
   return `
   <header class="top">
     <div><h1>${t('Log')}</h1><p class="sub">${t('Everything you sent, newest first, with a review of each day. Tap an entry to correct it.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${keyNotice}${pendingNotice}
   ${groups || `<div class="empty"><p>${t('Nothing logged yet.')}</p><p>${t('Everything you send lands here: photos, meals you type, weigh-ins, steps.')}</p>
@@ -781,7 +787,7 @@ export function renderCheck() {
   return `
   <header class="top">
     <div><h1>${t('Check')}</h1><p class="sub">${t('Before you order or buy: photograph the menu, the dish or the product and get a verdict against your plan.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${keyNotice}
   <section class="check-new" aria-label="${t('New check')}">
@@ -1131,7 +1137,7 @@ export function renderProgress() {
   return `
   <header class="top">
     <div><h1>${t('Progress')}</h1><p class="sub">${esc(dTiny.format(parseDay(s.startDate)))} → ${esc(dTiny.format(parseDay(s.targetDate)))} · ${esc(kgLabel(s.startKg))} kg → ${esc(kgLabel(s.targetKg))} kg</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${adjustNotice()}
   <section class="glide">
@@ -1159,12 +1165,95 @@ export function renderProgress() {
     <h2>${t('Checkpoints')}</h2>
     ${checkpoints()}
   </section>
+  ${badgesSection()}
   <section>
     <details class="table-details">
       <summary>${t('Weigh-in table')}</summary>
       ${rows ? `<table class="table"><thead><tr><th scope="col">${t('Day')}</th><th scope="col">${t('Weigh-in')}</th><th scope="col">${t('Avg')}</th><th scope="col">${t('Line')}</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${t('No weigh-ins yet. Enter one on Today, or type a number into the log.')}</p>`}
     </details>
   </section>`;
+}
+
+// ——— Badges: the collection on the Progress tab and the sheet for one badge ———
+const badgeName = (id) => td(BY_ID[id].name);
+// What the screens measure badges by, worked out once per state. The key is everything it depends on: S.rev moves on every save, load, clear and
+// restore (see app.js), the others catch a whole replaced list, the settings, the stored record and the day. `seen` is added fresh: it changes without the log changing.
+export function badgeContext() {
+  const b = S.badges;
+  const ctx = cachedContext([S.rev, S.entries, S.days, S.settings, b && b.got, b && b.base, today()], S, today(), b);
+  return { ...ctx, seen: b ? b.seen : undefined };
+}
+const badgeFinish = (c) => td(FINISH_NAME[c.step]);
+// How far along: '18 / 30', or '2 of 3 kg' for the kilos (text only); nothing for a one-shot or a badge that has no steps left
+function badgeProgress(c) {
+  const { cur, target } = c.prog || { cur: 0, target: 0 };
+  if (!c.ladder || !target) return '';
+  const p = { cur: n0(cur), target: n0(target) };
+  return c.id === 'kilos' ? t('{cur} of {target} kg', p) : t('{cur} / {target}', p);
+}
+const badgeDay = (d) => esc(dFull.format(parseDay(d)));
+// The line under the name in the grid
+const badgeLine = (c) => (c.ladder ? badgeProgress(c) : c.state === 'earned' ? dTiny.format(parseDay(c.day)) : '');
+const badgeAria = (c) => [badgeName(c.id), c.state === 'earned' ? (c.ladder ? badgeFinish(c) : '') : t('Locked'), c.state === 'earned' && !c.ladder ? dFull.format(parseDay(c.day)) : badgeProgress(c)].filter(Boolean).join(', ');
+
+function badgeCell(c) {
+  const pips = c.ladder ? `<span class="bd-pips" aria-hidden="true">${Array.from({ length: c.total }, (_, i) => `<i${i < c.earned ? ' class="on"' : ''}></i>`).join('')}</span>` : '';
+  const fresh = c.isNew ? `<i class="bd-dot" aria-hidden="true"></i><span class="bd-new">${t('New')}</span>` : '';
+  return `<button type="button" class="bd-cell is-${c.state}${c.isNew ? ' is-new' : ''}" id="badge-${c.id}" data-act="badge" data-id="${c.id}" aria-label="${esc(badgeAria(c) + (c.isNew ? ', ' + t('New') : ''))}">
+      ${fresh}${badgeSvg(c.id, { step: c.step, state: c.state, size: 50, label: badgeName(c.id) })}
+      <span class="bd-name">${esc(badgeName(c.id))}</span>
+      <span class="bd-line">${esc(badgeLine(c))}</span>${pips}
+    </button>`;
+}
+
+function badgesSection() {
+  const col = collection(badgeContext());
+  return `<section class="badges" aria-labelledby="badges-title">
+    <div class="card-head"><h2 id="badges-title">${t('Badges')}</h2><span class="label">${t('{n} of {total}', { n: col.earned, total: col.total })}</span></div>
+    ${S.badgeIntro ? `<p class="note bd-intro">${tn('{n} badge from your history|{n} badges from your history', S.badgeIntro)}</p>` : ''}
+    ${col.earned || S.badgeIntro ? '' : `<p class="note bd-intro">${t('Log a meal and your first badge is on its way.')}</p>`}
+    ${col.groups.map((g) => `<h3 class="bd-group">${esc(td(GROUP_NAME[g.group]))}</h3>
+    <div class="bd-grid">
+    ${g.cells.map(badgeCell).join('\n    ')}
+    </div>`).join('\n    ')}
+  </section>`;
+}
+
+// One badge in the bottom sheet: the big badge, what it asks for with the count so far, and each step of the ladder
+export function renderBadgeSheet(id) {
+  if (!Object.hasOwn(BY_ID, id)) return '';
+  const ctx = badgeContext();
+  const c = cellOf(id, ctx);
+  const name = badgeName(id);
+  const earned = c.state === 'earned';
+  const status = earned ? (c.ladder ? t('{finish}, earned {date}', { finish: esc(badgeFinish(c)), date: badgeDay(c.day) }) : t('Earned {date}', { date: badgeDay(c.day) })) : t('Not earned yet');
+  const more = badgeProgress(c);
+  const rows = stepRows(id, ctx);
+  const kg = id === 'kilos' ? ' kg' : '';
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${esc(name)}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <div class="bd-hero"><span aria-hidden="true">${badgeSvg(id, { step: c.step, state: c.state, size: 88, label: name })}</span>
+    <p class="bd-status"><b>${status}</b>${more && !(earned && c.earned === c.total) ? `<span>${esc(more)}</span>` : ''}</p></div>
+  <p class="note bd-desc">${esc(td(BY_ID[id].desc, { n: n0(c.cur) }))}</p>
+  ${rows.length ? `<ol class="bd-steps" aria-label="${t('Steps to earn')}">${rows.map((r) => `<li class="${r.day ? 'is-earned' : r.next ? 'is-next' : ''}"><span aria-hidden="true">${badgeSvg(id, { step: r.step, state: r.state, size: 32, label: '' })}</span><span class="bd-step-n">${n0(r.n)}${kg}<small>${esc(td(FINISH_NAME[r.step]))}</small></span><span class="bd-step-d">${r.day ? badgeDay(r.day) : r.next ? t('Next up') : ''}</span></li>`).join('')}</ol>` : ''}`;
+}
+
+// What a locked part asks for: the badge's name and, for a ladder, the step ('Earn Days on plan: 30'; the kilos in kg)
+const partHint = ([id, thr]) => (BY_ID[id].steps.length > 1 ? t('Earn {name}: {n}', { name: badgeName(id), n: id === 'kilos' ? `${n0(thr)} kg` : n0(thr) }) : t('Earn {name}', { name: badgeName(id) }));
+// The avatar picker: a live preview and the three slots as chips. A locked chip shows its hint when tapped (data-hint), it never changes anything.
+export function renderAvatarSheet() {
+  const av = wornAv(S.badges);
+  const chip = (c) => {
+    const name = esc(partName(c.part));
+    const lock = c.locked ? '<svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>' : '';
+    return `<button type="button" class="chip av-chip${c.locked ? ' is-locked' : ''}" data-act="avatar-pick" data-part="${c.part}"${c.locked ? ` data-hint="${esc(partHint(c.req))}"` : ''} aria-pressed="${c.selected}">${lock}${name}${c.locked ? `<span class="sr-only">, ${t('Locked')}</span>` : ''}</button>`;
+  };
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${t('Your pickle')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <div class="av-hero"><span id="av-preview" aria-hidden="true">${avatarSvg(av, { size: 168, label: avatarLabel(av) })}</span></div>
+  ${avatarChoices(S.badges).map((g) => `<h3 class="av-slot" id="av-${g.slot}">${esc(td(SLOT_TITLE[g.slot]))}</h3>
+  <div class="av-chips" role="group" aria-labelledby="av-${g.slot}">${g.parts.map(chip).join('')}</div>`).join('\n  ')}
+  <p class="note av-hint" id="av-hint" role="status">${t('Locked parts show what to earn. Nothing changes by itself.')}</p>`;
 }
 
 // The beam in its card: every kilo between the start and the target, the ones collected, and the next one by name
@@ -1224,7 +1313,7 @@ export function renderPlan() {
   return `
   <header class="top">
     <div><h1>${t('Plan')}</h1><p class="sub">${pictured ? t('{n} of {total} meals show your own photo.', { n: pictured, total: MEALS.length }) : t('Tap a meal for its ingredients, and to add a photo of your own plate.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   <ul class="plan-targets" aria-label="${t('Daily goals')}">
     <li>${t('Rest day <b>{kcal}</b> kcal', { kcal: n0(s.kcalRest) })}</li>
@@ -1397,7 +1486,7 @@ export function renderSettings() {
       <p class="note">${t('Starts your tracking over; the app stays set up as it is.')}</p>
       <dl class="reset-diff">
         <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.')}</dd></div>
-        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.')}</dd></div>
+        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider, and the badges you have earned.')}</dd></div>
       </dl>
       <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">${t('Clear my log')}</button></div>
     </section>
@@ -1436,4 +1525,17 @@ export function renderSettings() {
     ${section('reset', t('Reset'), t('Clear my log, or factory reset'), reset)}
   </div>
   <footer class="brand"><img src="icons/icon.svg" width="44" height="44" alt=""><p><b>Pickle <small>v${APP_VERSION}</small></b><span>${t('Good things take time. A cucumber becomes a pickle through time and steady conditions, not one big effort, and that is what the app asks of you: a steady average along your line, day after day.')}</span><span>${t('Entries, photos and settings are stored on this device. Photos and text you send for analysis go to the provider you chose.')}</span></p></footer>`;
+}
+
+// The toast for new badge steps ([[id, threshold, day], ...]): one badge shows its mark, name and finish; several collapse into one line with their names.
+// null when there is nothing to tell. `id` is the badge to open for a single one; several open the collection.
+export function unlockToast(news) {
+  const { ids, one } = unlockSummary(news);
+  if (!ids.length) return null;
+  if (one) {
+    const b = BY_ID[one.id];
+    return { id: one.id, msg: badgeName(one.id), sub: b.steps.length > 1 ? td(FINISH_NAME[one.step]) : t('New badge'), mark: badgeSvg(one.id, { step: one.step, state: 'earned', size: 40, label: '' }) };
+  }
+  const shown = ids.slice(0, 3).map(badgeName).join(', ');
+  return { id: '', msg: tn('{n} new badge|{n} new badges', ids.length), sub: ids.length > 3 ? t('{names} and more', { names: shown }) : shown, mark: '' };
 }

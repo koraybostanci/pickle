@@ -1,7 +1,7 @@
 // Everything read from a backup file is checked before it is stored or shown (js/backup.js). `node --test`
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from '../js/backup.js';
+import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanBadges, restoreBadges, b64FromBuf } from '../js/backup.js';
 import { SCHEMA_VERSION } from '../js/core.js';
 
 const good = {
@@ -106,4 +106,58 @@ test('supplements: the list and the days taken are cleaned, deduplicated and cap
   assert.deepEqual(s.supplements, [{ id: 'a1', name: 'Magnesium', dose: '400 mg' }, { id: 'c3', name: 'B12', dose: '' }]);
   assert.deepEqual(cleanDay({ day: '2026-10-01', taken: ['a1', 'a1', '"><x', 7, 'c3'] }).taken, ['a1', 'c3']);
   assert.equal(cleanDay({ day: '2026-10-01' }).taken, undefined);
+});
+
+const BADGES = { v: 1, got: { first_meal: { 1: '2026-10-01' }, days_on: { 7: '2026-10-07', 30: '2026-11-01' } }, seen: { days_on: 7 }, av: { stage: 'stage2', face: 'face_plain', acc: 'acc_leaf' }, base: { startKg: 86, targetKg: 78 } };
+
+test('cleanBadges: a good copy is kept, except a worn part that is not unlocked', () => {
+  const c = cleanBadges(BADGES);
+  assert.deepEqual(c.got, BADGES.got);
+  assert.deepEqual(c.seen, { days_on: 7 });
+  assert.deepEqual(c.base, BADGES.base);
+  assert.deepEqual(c.av, { stage: 'stage2', face: 'face_plain', acc: 'acc_none' }); // first_on is not earned, days_on 30 is
+  assert.deepEqual(cleanBadges(JSON.parse(JSON.stringify(c))), c);
+});
+
+test('cleanBadges: hostile input never throws and gives the empty shape', () => {
+  const empty = { v: 1, got: {}, seen: {}, av: { stage: 'stage1', face: 'face_plain', acc: 'acc_none' }, base: null };
+  for (const x of [null, undefined, 5, 'x', [], [1], true, () => 1, { got: [] }, { got: null, seen: 'a', av: 7, base: [] }, JSON.parse('{"__proto__":{"got":{"days_on":{"7":"2026-01-01"}}}}')]) assert.deepEqual(cleanBadges(x), empty, String(x));
+  const c = cleanBadges(JSON.parse('{"got":{"__proto__":{"1":"2026-01-01"},"constructor":{"1":"2026-01-01"},"first_meal":["x","2026-01-01"],"days_on":{"__proto__":"2026-01-01","7":"x","8":"2026-01-01"}},"seen":{"__proto__":1,"days_on":999}}'));
+  assert.deepEqual(c.got, {});
+  assert.deepEqual(c.seen, {});
+  assert.equal(({}).polluted, undefined);
+  assert.equal(cleanBadges({ got: { first_meal: { 1: 'x'.repeat(1e6) } } }).got.first_meal, undefined);
+});
+
+test('cleanBadges: unknown ids, steps off the ladder and impossible days are dropped', () => {
+  const c = cleanBadges({ got: { nope: { 1: '2026-01-01' }, days_on: { 7: '2026-99-99', 30: '2026-02-31', 31: '2026-03-01', 100: '2026-03-01' }, first_meal: { 1: '2026-03-01', 2: '2026-03-01' } } });
+  assert.deepEqual(c.got, { days_on: { 100: '2026-03-01' }, first_meal: { 1: '2026-03-01' } });
+});
+
+test('cleanBadges: av parts must exist, fit the slot and be earned; base must be sane', () => {
+  const got = { days_on: { 30: '2026-03-01', 100: '2026-04-01' }, first_weigh: { 1: '2026-03-01' } };
+  assert.deepEqual(cleanBadges({ got, av: { stage: 'stage3', face: 'face_smile', acc: 'acc_none' } }).av, { stage: 'stage3', face: 'face_smile', acc: 'acc_none' });
+  assert.deepEqual(cleanBadges({ got, av: { stage: 'face_smile', face: 'acc_crown', acc: 'toString' } }).av, { stage: 'stage1', face: 'face_plain', acc: 'acc_none' });
+  assert.equal(cleanBadges({ av: { acc: 'acc_crown' } }).av.acc, 'acc_none');
+  for (const base of [{ startKg: 'a', targetKg: 78 }, { startKg: NaN, targetKg: 78 }, { startKg: Infinity, targetKg: 78 }, { startKg: 86, targetKg: -1 }, { startKg: 86 }, { startKg: 9999, targetKg: 78 }, [86, 78]]) assert.equal(cleanBadges({ base }).base, null, JSON.stringify(base));
+});
+
+test('restoreBadges: union, earliest day wins, this device keeps its base and worn parts', () => {
+  const cur = { got: { days_on: { 7: '2026-10-09' }, first_on: { 1: '2026-10-01' } }, seen: { days_on: 7 }, av: { stage: 'stage1', face: 'face_plain', acc: 'acc_leaf' }, base: { startKg: 90, targetKg: 80 } };
+  const r = restoreBadges(cur, BADGES);
+  assert.deepEqual(r.got, { first_meal: { 1: '2026-10-01' }, days_on: { 7: '2026-10-07', 30: '2026-11-01' }, first_on: { 1: '2026-10-01' } });
+  assert.deepEqual(r.base, { startKg: 90, targetKg: 80 });
+  assert.equal(r.av.acc, 'acc_leaf');
+  assert.deepEqual(restoreBadges(null, BADGES).base, BADGES.base);
+  assert.deepEqual(restoreBadges(null, BADGES).got, BADGES.got);
+  assert.deepEqual(restoreBadges(null, 'junk'), cleanBadges(null));
+});
+
+test('a backup with or without badges can be restored (old backups have none)', () => {
+  const ok = { app: 'weightplan', v: SCHEMA_VERSION, entries: [] };
+  assert.equal(backupProblem(ok), '');
+  assert.equal(backupProblem({ ...ok, badges: BADGES }), '');
+  assert.equal(backupProblem({ ...ok, badges: 'junk' }), '');
+  // round trip through JSON, as a backup file does
+  assert.deepEqual(cleanBadges(JSON.parse(JSON.stringify({ ...ok, badges: cleanBadges(BADGES) })).badges), cleanBadges(BADGES));
 });

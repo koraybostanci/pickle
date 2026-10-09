@@ -16,6 +16,7 @@ No backend, no account. Your data stays on your device.
   <img src="docs/today.png" width="240" alt="Today: the day's calorie budget, protein, and the week">
   <img src="docs/log.png" width="240" alt="Log: meals with a review of each day">
   <img src="docs/progress.png" width="240" alt="Progress: the beam, streaks and the weight chart">
+  <img src="docs/badges.png" width="240" alt="Badges: earned badges in bronze, silver and gold, and the ones still locked">
 </p>
 
 ## What is in it
@@ -25,8 +26,9 @@ No backend, no account. Your data stays on your device.
 | **Today** | What is left of the day's calories, protein, weight, steps, water and the week at a glance |
 | **Log** | Every entry, newest first, with a short review of each day |
 | **Check** | Photograph a menu, a dish or a product before you order or buy, and get a verdict against your plan |
-| **Progress** | Weight against your line, projected arrival date, runs of days on plan, a consistency calendar |
+| **Progress** | Weight against your line, projected arrival date, runs of days on plan, a consistency calendar, and the badges you have earned |
 | **Plan** | Your meal options with ingredients, and the rules |
+| **Your pickle** | The avatar in the header: its growth, face and accessory are unlocked by badges |
 
 Weight, steps, water, coffee, workouts and planned meals need no model and no key. Type `85.4`,
 `8200 steps` or `2 beers`, or tap a planned meal.

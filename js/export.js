@@ -5,7 +5,7 @@
 // internal id, APP_ID in core.js, which stays when the app is renamed, so queries keep working).
 import { targetAt, dayKey } from './plan.js';
 
-export const EXPORT_SCHEMA = 3;
+export const EXPORT_SCHEMA = 4;
 export const exportName = (now = new Date()) => `pickle-export-${dayKey(now)}.sql`;
 
 const text = (v) => (v == null || v === '' ? 'NULL' : `'${String(v).replace(/\u0000/g, '').replace(/'/g, "''")}'`);
@@ -32,6 +32,13 @@ CREATE TABLE weightplan_days (
   workout          INTEGER NOT NULL DEFAULT 0,  -- 1 on workout days
   target_kcal      INTEGER NOT NULL,            -- the day's calorie budget under the current Goals, so changing them changes past rows
   target_weight_kg REAL                         -- where the schedule stood on the day; NULL before the start date
+);
+
+CREATE TABLE weightplan_badges (
+  id        TEXT NOT NULL,                      -- the badge: first_meal, days_on, best_run, ...
+  threshold INTEGER NOT NULL,                   -- the step earned: 1 for a one-off badge, otherwise the count (7, 30, 100, ...)
+  day       TEXT NOT NULL,                      -- YYYY-MM-DD, the day it was earned
+  PRIMARY KEY (id, threshold)
 );
 
 CREATE TABLE weightplan_supplements (
@@ -111,10 +118,10 @@ LEFT JOIN (
 `;
 
 /**
- * @param {{settings: object, entries: object[], days: object[], appVersion: string, now?: Date}} data
+ * @param {{settings: object, entries: object[], days: object[], badges?: object, appVersion: string, now?: Date}} data
  * @returns {{sql: string, counts: {days: number, meals: number, items: number}}}
  */
-export function buildSql({ settings: s, entries, days, appVersion, now = new Date() }) {
+export function buildSql({ settings: s, entries, days, badges = {}, appVersion, now = new Date() }) {
   const out = [];
   out.push(
     `-- Pickle export, ${localTime(now.getTime())} (app version ${appVersion}, export schema ${EXPORT_SCHEMA})`,
@@ -125,6 +132,7 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
     '',
     'BEGIN TRANSACTION;',
     'DROP VIEW IF EXISTS weightplan_daily;',
+    'DROP TABLE IF EXISTS weightplan_badges;',
     'DROP TABLE IF EXISTS weightplan_supplement_log;',
     'DROP TABLE IF EXISTS weightplan_supplements;',
     'DROP TABLE IF EXISTS weightplan_meal_items;',
@@ -158,6 +166,9 @@ export function buildSql({ settings: s, entries, days, appVersion, now = new Dat
   const known = new Set(supps.map((x) => x.id));
   for (const x of supps) out.push(`INSERT INTO weightplan_supplements (id, name, dose) VALUES (${text(x.id)}, ${text(x.name)}, ${text(x.dose)});`);
   for (const d of dayRows) for (const id of (d.taken || [])) if (known.has(id)) out.push(`INSERT INTO weightplan_supplement_log (day, supplement_id) VALUES (${text(d.day)}, ${text(id)});`);
+  out.push('');
+
+  for (const [id, steps] of Object.entries(badges || {})) for (const [thr, d] of Object.entries(steps || {})) out.push(`INSERT INTO weightplan_badges (id, threshold, day) VALUES (${text(id)}, ${int(thr)}, ${text(d)});`);
   out.push('');
 
   let items = 0;

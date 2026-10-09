@@ -21,7 +21,7 @@ const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'engl
 // words (` disabled`). Words that only appear in a comparison (`=== 'week'`) need no entry. Anything else, say `[x, 'weigh-in']` or `ok ? 'kg' : 'steps'`, is flagged.
 const CODE_WORDS = new Set(['numeric', 'long', 'short', 'future', 'before', 'over', 'top', 'more', 'morning', 'late', 'workout', 'true', 'false', 'decimal', 'start', 'middle',
   'hidden', 'visible', 'span', 'pointermove', 'pointerdown', 'pointerleave', 'conjunction', 'going', 'target', 'min', 'near', 'disabled', 'selected', 'checked', 'open',
-  'visibility', 'language', 'analysis', 'targets', 'backup', 'location', 'favorites', 'supplements', 'version', 'reset', 'day', 'week:']);
+  'visibility', 'language', 'analysis', 'targets', 'backup', 'location', 'favorites', 'supplements', 'version', 'reset', 'day', 'week:', 'earned']);
 // A class name or a piece of one: is-done, cal-d, day-${st}, pill-good, log-plan
 const CLASS_NAME = /^(?:is|pill|day|cal|log|way)-[a-z0-9\0-]*$/;
 // An attribute whose value a person reads
@@ -60,6 +60,7 @@ export function lint(src) {
     if (/(?<![\w$.])(?:tn|t|T)\(\s*$/.test(before) || /\$id:\s*$/.test(before)) continue; // wrapped, or an id override
     if (/^[a-z]+$/.test(lit.text) && /(?:===|!==|==|!=)\s*$/.test(before)) continue; // compared with: a state name
     if (lit.quote !== '`' && /^[.#][\w-]|^\(display-mode:/.test(lit.text)) continue; // a selector or a media query
+    if (/(?:^|\n)import [^\n]*$/.test(before)) continue; // an import path
     if (/\/\/ i18n-ok\b/.test(src.slice(lit.start, src.indexOf('\n', lit.start)))) continue; // a line marked as English on purpose
     const html = lit.text.includes('<');
     // Without tags the text may be a piece of an attribute (` aria-current="date"`): only the attributes a person reads count, by their value
@@ -279,4 +280,25 @@ test('Settings: the control is a labelled group of two buttons with the language
 test('Settings: the buttons use what the lang action in app.js reads', () => {
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   assert.match(app, /'lang': async \(el\) => \{[^]*?el\.dataset\.lang === 'tr' \? 'tr' : 'en'/);
+});
+
+// ——— The badge sheet: every badge, in both languages, with its {n} filled ———
+test('badge sheet: no placeholder is left on screen for any badge, in English or Turkish', async () => {
+  const { BY_ID, CATALOG } = await import('../js/badges.js');
+  for (const lang of ['en', 'tr']) {
+    await setLang(lang);
+    fixture();
+    for (const b of CATALOG) {
+      const html = views.renderBadgeSheet(b.id);
+      assert.ok(html.includes('id="sheet-title"'), b.id);
+      assert.doesNotMatch(html, /[{}]/, `${lang} ${b.id}`);
+    }
+    S.tab = 'progress';
+    assert.doesNotMatch(views.renderProgress(), /\{\w+\}/, `${lang} progress`);
+    if (lang === 'tr') assert.match(views.renderBadgeSheet('days_on'), /Toplam planda geçen gün: \d+/);
+    else assert.match(views.renderBadgeSheet('days_on'), /Days on plan in total: \d+/);
+  }
+  assert.equal(views.renderBadgeSheet('nope'), '');
+  assert.equal(views.renderBadgeSheet('constructor'), '');
+  assert.ok(BY_ID.days_on);
 });

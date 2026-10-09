@@ -3,7 +3,7 @@ import { t, tn, T, td, foldKey, parseNum, inEnglish } from './i18n.js';
 import { PARSE_TR } from './parse-tr.js';
 import { MEALS, MEAL_BY_ID, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, KCAL_MIN_DAY } from './plan.js';
 
-export const APP_VERSION = '41'; // bump together with VERSION in sw.js
+export const APP_VERSION = '43'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -25,6 +25,8 @@ export const S = {
   settings: freshSettings(),
   entries: [],
   days: {},
+  rev: 0, // moves on every save, load, clear and restore: what a cached result of the log is keyed on
+  badgeIntro: 0, // badges taken in from the history, told once on the Progress tab
   viewDay: dayKey(new Date()),
   busy: new Set(),
   retry: new Map(), // status note shown while an analysis is retrying
@@ -35,6 +37,7 @@ export const S = {
   reviewOpen: new Map(), // day → whether its review is expanded, once the person has toggled it
   check: freshCheck(), // the check being put together
   checks: [], // earlier verdicts, newest first, without photos
+  badges: null, // earned badges as stored (kv `badges`, see js/badges.js); null until something is logged
   urls: new Map(),
   persisted: null,
   storage: null,
@@ -61,7 +64,17 @@ export const eff = (e) => {
   const m = e.mult || 1;
   return { kcal: (e.kcal || 0) * m, p: (e.p || 0) * m, c: (e.c || 0) * m, f: (e.f || 0) * m, fib: (e.fib || 0) * m };
 };
-export const mealsOf = (day) => S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status === 'ok');
+let dayIndex = null; // day → entries, set only while withDayIndex runs
+export const mealsOf = (day) => (dayIndex ? dayIndex.get(day) || [] : S.entries).filter((e) => e.day === day && e.kind === 'meal' && e.status === 'ok');
+// Runs fn with the entries bucketed by day, so a pass over many days does not filter the whole log for each one. fn must not be async.
+export function withDayIndex(fn) {
+  if (dayIndex) return fn();
+  dayIndex = new Map();
+  try {
+    for (const e of S.entries) { const b = dayIndex.get(e.day); if (b) b.push(e); else dayIndex.set(e.day, [e]); }
+    return fn();
+  } finally { dayIndex = null; }
+}
 export function dayTotals(day) {
   const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, n: 0 };
   for (const e of mealsOf(day)) {

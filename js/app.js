@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { settle, viewed, unseenAdded, serial, wear } from './badges.js';
 import { setLang, getLang, storedLang, rememberLang, applyStatic, t, tn, td, foldKey } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
@@ -6,18 +7,18 @@ import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
 import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, AI_ERROR_LABEL, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import { reviewBrief, coachBrief, checkBrief } from './briefs.js';
-import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
+import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanBadges, restoreBadges, b64FromBuf } from './backup.js';
 import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, KCAL_FLOOR } from './plan.js';
 import {
   APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor, titleOf,
 } from './core.js';
-import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderBadgeSheet, renderAvatarSheet, badgeContext, unlockToast, renderFrameSheet, attachChart } from './views.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
 
 // ——— Storage ———
-async function saveSettings() { rememberLang(S.settings.lang); await db.kvSet('settings', S.settings); }
+async function saveSettings() { S.rev++; rememberLang(S.settings.lang); await db.kvSet('settings', S.settings); }
 // Switches the interface language and says whether it worked. When the text cannot be loaded (offline before it was cached)
 // the screen stays in the language it had; the saved preference is never touched here, so the next start tries again.
 async function applyLang(lang) {
@@ -26,23 +27,35 @@ async function applyLang(lang) {
 async function saveDay(day, patch) {
   const d = { ...(S.days[day] || { day }), ...patch };
   S.days[day] = d;
+  S.rev++;
   await db.put('days', d);
 }
 async function saveEntry(e) {
   const i = S.entries.findIndex((x) => x.id === e.id);
   if (i >= 0) S.entries[i] = e; else S.entries.push(e);
+  S.rev++;
   await db.put('entries', e);
 }
 
 let toastTimer;
-export function toast(msg, action) {
+// rich: {mark, sub} puts a badge mark before the text and a second line under it
+export function toast(msg, action, rich) {
   const el = $('#toast');
   const live = $('#toast-live');
   live.textContent = '';
-  setTimeout(() => { live.textContent = action ? t('{msg}. {label} is available.', { msg, label: action.label }) : msg; }, 50); // a change after a pause is announced even when the text repeats
+  const said = rich ? `${msg}. ${rich.sub}` : msg;
+  setTimeout(() => { live.textContent = action ? t('{msg}. {label} is available.', { msg: said, label: action.label }) : said; }, 50); // a change after a pause is announced even when the text repeats
   el.innerHTML = '';
   const sp = document.createElement('span');
-  sp.textContent = msg;
+  if (rich) {
+    if (rich.mark) { const m = document.createElement('span'); m.className = 'toast-mark'; m.setAttribute('aria-hidden', 'true'); m.innerHTML = rich.mark; el.append(m); }
+    const b = document.createElement('b');
+    b.textContent = msg;
+    const sub = document.createElement('small');
+    sub.textContent = rich.sub;
+    sp.className = 'toast-text';
+    sp.append(b, sub);
+  } else sp.textContent = msg;
   el.append(sp);
   if (action) {
     const b = document.createElement('button');
@@ -88,6 +101,7 @@ async function removeEntry(id, silent) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return;
   S.entries = S.entries.filter((x) => x.id !== id);
+  S.rev++;
   if (S.sheet && S.sheet.type === 'entry' && S.sheet.id === id) closeSheet();
   await db.del('entries', id);
   for (const pid of e.photoIds || []) {
@@ -660,7 +674,7 @@ async function deliverFile(name, content, type) {
 
 async function exportBackup(withPhotos) {
   const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
-  const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks };
+  const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks, badges: S.badges };
   // The plan's pictures always travel with the backup; photos of logged meals only when asked for.
   // They are read one at a time, so the photos that are left out are never loaded.
   const planIds = new Set(Object.values(S.settings.planPhotos || {}));
@@ -680,7 +694,7 @@ async function exportBackup(withPhotos) {
 
 // For analysis elsewhere: a .sql file that builds the tables in any SQLite database
 async function exportSql() {
-  const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), appVersion: APP_VERSION });
+  const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), badges: S.badges && S.badges.got, appVersion: APP_VERSION });
   const done = await deliverFile(exportName(), sql, 'text/plain');
   if (done) toast(t('Exported {days} and {meals}', { days: tn('{n} day|{n} days', counts.days), meals: tn('{n} meal|{n} meals', counts.meals) }));
 }
@@ -694,6 +708,7 @@ async function importBackup(file) {
   // Everything read from the file is checked first (see backup.js).
   let restored = 0;
   let skipped = 0;
+  const gotBefore = S.badges ? S.badges.got : {};
   try {
     for (const p of Array.isArray(data.photos) ? data.photos : []) {
       const photo = cleanPhoto(p); // photos go in one at a time: a damaged one is skipped, and the others are not held in memory together
@@ -724,12 +739,17 @@ async function importBackup(file) {
       const added = data.checks.map(cleanCheck).filter((c) => c && !have.has(c.id));
       await db.kvSet('checks', S.checks.concat(added).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
     }
+    // Earned badges are added to, never replaced: the earliest day wins. An old backup has none; checkBadges then works them out from the restored log.
+    if (data.badges && typeof data.badges === 'object') await badgeQueue(() => db.kvSet('badges', restoreBadges(S.badges, data.badges)));
   } catch (err) {
     toast(t('The backup could not be restored completely'));
     await load();
     return render();
   }
   await load();
+  badgesMode = 'restore';
+  restoredFrom = gotBefore;
+  checkBadges(); // silently: the restored log may earn more than the backup recorded
   render();
   if (S.sheet && S.sheet.type === 'settings') await openSettings(); // the open sheet shows the restored language
   const back = tn('{n} entry restored|{n} entries restored', restored);
@@ -738,11 +758,14 @@ async function importBackup(file) {
 
 // ——— Loading and rendering ———
 async function load() {
+  S.rev++;
   const stored = await db.kvGet('settings', null);
   S.entries = await db.all('entries');
   if (stored) S.settings = { ...S.settings, ...stored, usage: { ...S.settings.usage, ...(stored.usage || {}) } };
   S.days = Object.fromEntries((await db.all('days')).map((d) => [d.day, d]));
   S.checks = await db.kvGet('checks', []);
+  const badges = await badgeQueue(() => db.kvGet('badges', null)); // after any write still on its way
+  S.badges = badges ? cleanBadges(badges) : null;
 }
 
 async function refreshStorage() {
@@ -753,6 +776,7 @@ async function refreshStorage() {
 }
 
 export function go(tab) {
+  if (tab !== 'progress') S.badgeIntro = 0; // the "from your history" line was there to be seen
   S.tab = tab;
   render();
   window.scrollTo(0, 0);
@@ -778,8 +802,11 @@ function render() {
   hydratePhotos();
   if (S.tab === 'progress') attachChart(v);
   checkWins();
+  checkBadges();
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
+  if (S.sheet && S.sheet.type === 'badge') $('#sheet-body').innerHTML = renderBadgeSheet(S.sheet.id);
+  if (S.sheet && S.sheet.type === 'avatar') $('#sheet-body').innerHTML = renderAvatarSheet();
   if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
@@ -832,6 +859,95 @@ async function checkWins() {
   if (msg) { celebrate(); toast(msg); }
 }
 
+// Earned badges: worked out from the whole log and stored only when something is new.
+// Debounced, because every render asks; saves, edits, deletes, loading and restoring all end in a render.
+// Only a save in normal use tells the person (one toast). The first evaluation after loading is quiet: the log may have moved on while the app was closed.
+// Taking in a history (the first run with a log, a record from before `told`, a restore) marks everything seen and says nothing but one line on the Progress tab,
+// never a toast: a restore's own toast would be replaced, and a toast on opening the app is not a moment the person asked for.
+const badgeQueue = serial(); // every write to kv `badges`, one at a time, each from the latest S.badges
+let announceTimer;
+let badgesBusy = false;
+let badgesAgain = false;
+let badgesTimer;
+let badgesMode = 'load'; // 'load' (the first evaluation after starting), 'restore', or '' (normal use)
+let restoredFrom = null; // what was earned before a restore
+function checkBadges() {
+  clearTimeout(badgesTimer);
+  badgesTimer = setTimeout(runBadges, 300);
+}
+async function runBadges() {
+  if (badgesBusy) { badgesAgain = true; return; }
+  badgesBusy = true;
+  const mode = badgesMode;
+  badgesMode = '';
+  try {
+    const backfill = mode === 'restore' ? { from: restoredFrom || {} } : mode === 'load' && !(S.badges && S.badges.told) ? { from: {} } : null;
+    const { added: news, intro } = await badgeQueue(async () => {
+      const r = settle(S.badges, S, today(), { backfill });
+      if (r.changed) {
+        const before = S.badges;
+        S.badges = r.next; // at once, so the next turn in the queue builds on it
+        try { await db.kvSet('badges', r.next); } catch (err) { S.badges = before; throw err; }
+      }
+      return r;
+    });
+    if (intro) { S.badgeIntro = intro; if (S.tab === 'progress') render(); } else if (!mode) announceBadges(unseenAdded(news, S.badges && S.badges.seen));
+  } catch { /* badges are a bonus: a failure here must not get in the way of logging */ } finally {
+    badgesBusy = false;
+    if (badgesAgain) { badgesAgain = false; checkBadges(); }
+  }
+}
+// One toast for what was just earned. It waits for a toast that is showing (an Undo must not be taken away) and gives up after a few seconds.
+function announceBadges(news, tries = 0) {
+  // What is still earned and not seen now: a reset or a look at the badge while this waited cancels the toast
+  const have = (S.badges && S.badges.got) || {};
+  const u = unlockToast(unseenAdded(news.filter(([id, thr]) => Object.hasOwn(have, id) && Object.hasOwn(have[id], thr)), S.badges && S.badges.seen));
+  if (!u) return;
+  if (!$('#toast').hidden && tries < 8) { announceTimer = setTimeout(() => announceBadges(news, tries + 1), 1000); return; }
+  toast(u.msg, { label: t('View'), fn: () => (u.id ? showBadge(u.id) : showBadges()) }, { mark: u.mark, sub: u.sub });
+}
+// The badge sheet. Viewing it is what makes a badge no longer new.
+async function showBadge(id) {
+  const html = renderBadgeSheet(id);
+  if (!html) return;
+  openSheet(html, { type: 'badge', id });
+  try {
+    const changed = await badgeQueue(async () => {
+      const next = viewed(S.badges, badgeContext().got, id);
+      if (next === S.badges) return false;
+      const before = S.badges;
+      S.badges = next;
+      try { await db.kvSet('badges', next); } catch (err) { S.badges = before; throw err; }
+      return true;
+    });
+    if (changed) render();
+  } catch { /* seen again next time */ }
+}
+// The avatar picker. A chosen part is written through the same queue, from the latest S.badges, and rolled back if the write fails.
+function showAvatar() { openSheet(renderAvatarSheet(), { type: 'avatar' }); }
+async function wearPart(part) {
+  try {
+    const changed = await badgeQueue(async () => {
+      const next = wear(S.badges, part);
+      if (next === S.badges) return false;
+      const before = S.badges;
+      S.badges = next;
+      try { await db.kvSet('badges', next); } catch (err) { S.badges = before; throw err; }
+      return true;
+    });
+    if (changed) render();
+    const h = $('#av-hint');
+    if (h) h.textContent = t('Locked parts show what to earn. Nothing changes by itself.');
+  } catch { /* not saved: the picker shows what is worn */ }
+  const again = S.sheet && S.sheet.type === 'avatar' && document.querySelector(`#sheet-body [data-part="${part}"]`);
+  if (again) again.focus({ preventScroll: true });
+}
+function showBadges() {
+  go('progress');
+  const h = $('#badges-title');
+  if (h) h.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+
 function renderFavorites() {
   const row = $('#favorites');
   const favorites = S.settings.favorites || [];
@@ -870,9 +986,10 @@ async function hydratePhotos() {
 }
 
 let sheetOpener = null;
+let sheetOpenerId = '';
 function openSheet(html, state, focusSel, keepFocus) {
   const wasHidden = $('#sheet').hidden;
-  if (wasHidden) { sheetOpener = document.activeElement; $('#toast').hidden = true; }
+  if (wasHidden) { sheetOpener = document.activeElement; sheetOpenerId = sheetOpener ? sheetOpener.id : ''; $('#toast').hidden = true; }
   const body = $('#sheet-body');
   const keep = !wasHidden && S.sheet && S.sheet.type === state.type ? body.scrollTop : 0;
   S.sheet = state;
@@ -889,14 +1006,21 @@ function openSheet(html, state, focusSel, keepFocus) {
   hydratePhotos();
 }
 function closeSheet() {
+  const was = S.sheet;
   if (S.sheet && S.sheet.type === 'settings') S.suppEdit = '';
   $('#sheet').hidden = true;
   S.sheet = null;
   frame = null; // a photo being framed is dropped with the sheet
   $('#app').inert = false;
   document.body.classList.remove('sheet-open');
-  if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
+  // A render may have replaced the button that opened the sheet: find it again by its id
+  // (an opener that is hidden, such as the toast's View button, cannot take focus: use the badge's cell, else the Progress tab)
+  const ok = (el) => el && el !== document.body && document.contains(el) && !el.closest('[hidden]');
+  let back = ok(sheetOpener) ? sheetOpener : sheetOpenerId ? document.getElementById(sheetOpenerId) : null;
+  if (!ok(back) && was && was.type === 'badge') back = document.getElementById(`badge-${was.id}`) || document.querySelector('.tabs [data-tab="progress"]');
+  if (back) back.focus({ preventScroll: true });
   sheetOpener = null;
+  sheetOpenerId = '';
 }
 async function openSettings(section, focusSel) {
   if (section) S.openSetting = section;
@@ -945,6 +1069,12 @@ const ACT = {
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
+  'badge': (el) => showBadge(el.dataset.id),
+  'avatar': () => showAvatar(),
+  'avatar-pick': (el) => { // a locked chip carries its hint and changes nothing
+    if (el.dataset.hint) { const h = $('#av-hint'); if (h) h.textContent = el.dataset.hint; return; }
+    return wearPart(el.dataset.part);
+  },
   'plan-meal': (el) => openSheet(renderPlanSheet(el.dataset.id), { type: 'plan', id: el.dataset.id }),
   'check-cam': () => { photoTarget = CHECK_PHOTOS; $('#f-cam').click(); },
   'check-lib': () => { photoTarget = CHECK_PHOTOS; $('#f-lib').click(); },
@@ -1248,7 +1378,7 @@ const ACT = {
   },
   'wipe': async () => {
     if (busyNow()) return toast(t('Something is still being analysed. Try again in a moment'));
-    if (!window.confirm(t('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?'))) return;
+    if (!window.confirm(t('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay, and so do the badges you have earned. It cannot be undone. Do you have a backup?'))) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {
@@ -1274,13 +1404,18 @@ const ACT = {
     if (!typed || !['delete', 'sil'].includes(foldKey(typed.trim()))) return;
     const kept = { lang: S.settings.lang }; // the language is not data: a reset keeps it, and so does its mirror
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
-    for (const store of ['entries', 'days', 'photos', 'kv']) await db.clear(store);
+    clearTimeout(announceTimer);
+    clearTimeout(badgesTimer);
+    // The log goes from memory first: a badge turn that gets in line while the stores are cleared then sees an empty log and writes nothing
+    S.entries = []; S.days = {}; S.badges = null; S.badgeIntro = 0; S.rev++;
+    for (const store of ['entries', 'days', 'photos', 'kv']) { if (store === 'kv') await badgeQueue(() => db.clear(store)); else await db.clear(store); }
     S.urls.forEach((u) => URL.revokeObjectURL(u));
     S.urls.clear();
     S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
-    S.entries = []; S.days = {}; S.checks = []; S.check = freshCheck();
+    clearTimeout(announceTimer);
+    S.entries = []; S.days = {}; S.checks = []; S.badges = null; S.badgeIntro = 0; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = ''; S.suppEdit = '';
     S.busy.clear(); S.retry.clear(); S.reviewing.clear(); S.reviewErr.clear(); S.coaching.clear(); S.coachErr.clear(); S.reviewOpen.clear();
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;

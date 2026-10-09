@@ -29,8 +29,8 @@ export function tn(text, n, params) {
 }
 // Marks a string in a data table so the extraction test finds it; the caller translates it at render time
 export const T = (text) => text;
-// Translates a string that was marked with T() in a data table, at render time (t() itself needs a literal)
-export const td = (text) => pick(text) ?? text;
+// Translates a string that was marked with T() in a data table, at render time (t() itself needs a literal); params fill its {placeholders}
+export const td = (text, params) => fill(pick(text) ?? text, params);
 // Runs fn with English text, English number and date formats, whatever the language is, and gives back what it returns.
 // For what is sent to the model. fn must not be async: the language is put back when it returns.
 export function inEnglish(fn) {
