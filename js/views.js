@@ -1,5 +1,5 @@
 import {
-  S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, avg7, latestWeight, weightSeries, projection,
+  S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, dayNotes, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
@@ -644,7 +644,7 @@ function logRow(e) {
 function reviewBlock(day) {
   const v = dayVerdict(day);
   if (!v) return '';
-  const pill = { on: 'pill-good', near: 'pill-warn', under: 'pill-warn', over: 'pill-warn', back: 'pill-warn' }[v.level] || 'pill-plain';
+  const pill = { on: 'pill-good', under: 'pill-warn', over: 'pill-warn', back: 'pill-warn' }[v.level] || 'pill-plain';
   const r = S.days[day] && S.days[day].review;
   const busy = S.reviewing.has(day);
   const err = S.reviewErr.get(day);
@@ -973,8 +973,11 @@ function calendar() {
     const tot = dayTotals(d);
     const dd = S.days[d] || {};
     const st = dayStatus(d);
-    const why = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
-      : `${{ near: 'Close', over: 'A bigger day', partial: 'Not much logged' }[st]}${dayReasons(d).length ? `: ${dayReasons(d).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : ''}.`;
+    const join = (list) => list.join(', ').replace(/, ([^,]*)$/, ' and $1');
+    const main = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
+      : `${{ near: 'Close', over: 'A bigger day', partial: 'Not much logged' }[st]}${dayReasons(d).length ? `: ${join(dayReasons(d))}` : ''}.`;
+    const notes = tot.n && st !== 'open' && dayNotes(d).length ? ` Also: ${join(dayNotes(d))}.` : '';
+    const why = main + notes;
     pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. ${esc(why)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
   }
   return `<div class="calendar card">

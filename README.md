@@ -33,7 +33,7 @@ your start weight to your goal.
   and calories, including what it had to assume ("falafel (assumed fried)"). Tell it in a few words
   what the photo does not show and it revises the items; you can also correct the portion, the
   numbers or the time. Every day with a logged meal carries a review. The verdict is worked out on
-  the device (in line, mostly in line, under budget, a little above, a bigger day) and, for a surplus,
+  the device (in line, under budget, a little above, a bigger day) and, for a surplus,
   what it costs on the schedule, at 7,700 kcal to the kilo ("491 kcal above budget: about 0.06 kg,
   69% of what the day was meant to lose"). The model then writes a short note on what helped, what
   cost the most and what would have reduced it, and one thing to do next.

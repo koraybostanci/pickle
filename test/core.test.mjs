@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  S, BAND, proteinFloor, dayStatus, dayReasons, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
+  S, BAND, proteinFloor, dayStatus, dayReasons, dayNotes, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
   isPerfect, streak, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
@@ -17,12 +17,20 @@ const reset = () => {
 };
 const meal = (d, kcal, p, extra = {}) => S.entries.push({ id: `e${S.entries.length}`, day: d, ts: Date.now(), kind: 'meal', status: 'ok', slot: 'lunch', kcal, p, c: 0, f: 0, fib: 0, mult: 1, tier: 'plan', ...extra });
 
-test('the protein goal, the day status and the verdict agree at 119.6 g with a 120 g minimum', () => {
+test('calories decide the day: protein short at 119.6 g misses the protein goal and is noted, but the day is still on plan', () => {
   reset(); meal(day(-1), 1500, 119.6);
   const goal = dayGoals(day(-1)).find((g) => g.id === 'protein').done;
   assert.equal(goal, false);
-  assert.notEqual(dayStatus(day(-1)), 'on');
+  assert.equal(dayStatus(day(-1)), 'on');
+  assert.equal(dayVerdict(day(-1)).level, 'on');
   assert.ok(dayVerdict(day(-1)).proteinGap > 0);
+  assert.deepEqual(dayNotes(day(-1)), ['protein 1 g short of your minimum']);
+  assert.deepEqual(dayReasons(day(-1)), []);
+});
+test('an off-plan entry does not take a day off plan while the calories are in budget', () => {
+  reset(); meal(day(-1), 1500, 135, { tier: 'off' });
+  assert.equal(dayStatus(day(-1)), 'on');
+  assert.deepEqual(dayNotes(day(-1)), ['1 off-plan entry']);
 });
 
 test('a protein minimum above the target is capped at the target', () => {
@@ -277,12 +285,12 @@ test('supplements taken: only ids still in the list count', () => {
   assert.deepEqual(suppTaken(day(-1)), []);
 });
 
-test('today is "open" until it is on plan; a finished day keeps its colour; the reasons say what was short', () => {
+test('today is "open" until it is on plan; a finished day keeps its colour; the reasons name the calories, the notes the rest', () => {
   reset(); meal(T, 600, 40);
   assert.equal(dayStatus(T), 'open');
   meal(day(-1), 1500, 119.6);
-  assert.equal(dayStatus(day(-1)), 'near');
-  assert.deepEqual(dayReasons(day(-1)), ['protein 1 g short of your minimum']);
+  assert.equal(dayStatus(day(-1)), 'on'); // protein is a note, not a verdict
+  assert.deepEqual(dayReasons(day(-1)), []);
   S.entries = []; meal(T, 1500, 130);
   assert.equal(dayStatus(T), 'on');
   assert.deepEqual(dayReasons(T), []);
@@ -290,7 +298,7 @@ test('today is "open" until it is on plan; a finished day keeps its colour; the 
   assert.equal(dayStatus(T), 'over');
 });
 
-test('a day that is still open does not break or inflate the run; reasons list what was short', () => {
+test('a day that is still open does not break or inflate the run; the reasons and notes are kept apart', () => {
   reset();
   for (const o of [-3, -2, -1]) meal(day(o), 1500, 130);
   meal(T, 600, 40); // today, still being eaten
@@ -299,7 +307,8 @@ test('a day that is still open does not break or inflate the run; reasons list w
   S.entries = [];
   meal(day(-1), 1700, 100, { tier: 'off' }); // 110% of the budget, protein short, one off-plan entry
   assert.equal(dayStatus(day(-1)), 'near');
-  assert.deepEqual(dayReasons(day(-1)), ['protein 20 g short of your minimum', '1 off-plan entry', '150 kcal above the budget']);
+  assert.deepEqual(dayReasons(day(-1)), ['150 kcal above the budget']);
+  assert.deepEqual(dayNotes(day(-1)), ['protein 20 g short of your minimum', '1 off-plan entry']);
   S.entries = []; meal(day(-1), 700, 60);
   assert.equal(dayStatus(day(-1)), 'partial');
   S.entries = []; meal(T, 1700, 135); // 110% today: judged, not open
