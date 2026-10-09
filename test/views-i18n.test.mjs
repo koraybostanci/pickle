@@ -16,7 +16,7 @@ const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 // ——— Reverse lint: English text in views.js that is not inside t() / tn() / T() ———
 // Words that are not English text to be translated: units, brand names, the two language names
 // (standalone and svg are a media query and a selector in the code, not text)
-const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg', 'art']); // art: the badge-art.js import path
+const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg']);
 // Lone lower-case words that are code: Intl options, element and event names, the screen and section ids, the values of the code's own states, attribute
 // words (` disabled`). Words that only appear in a comparison (`=== 'week'`) need no entry. Anything else, say `[x, 'weigh-in']` or `ok ? 'kg' : 'steps'`, is flagged.
 const CODE_WORDS = new Set(['numeric', 'long', 'short', 'future', 'before', 'over', 'top', 'more', 'morning', 'late', 'workout', 'true', 'false', 'decimal', 'start', 'middle',
@@ -60,6 +60,7 @@ export function lint(src) {
     if (/(?<![\w$.])(?:tn|t|T)\(\s*$/.test(before) || /\$id:\s*$/.test(before)) continue; // wrapped, or an id override
     if (/^[a-z]+$/.test(lit.text) && /(?:===|!==|==|!=)\s*$/.test(before)) continue; // compared with: a state name
     if (lit.quote !== '`' && /^[.#][\w-]|^\(display-mode:/.test(lit.text)) continue; // a selector or a media query
+    if (/(?:^|\n)import [^\n]*$/.test(before)) continue; // an import path
     if (/\/\/ i18n-ok\b/.test(src.slice(lit.start, src.indexOf('\n', lit.start)))) continue; // a line marked as English on purpose
     const html = lit.text.includes('<');
     // Without tags the text may be a piece of an attribute (` aria-current="date"`): only the attributes a person reads count, by their value

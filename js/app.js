@@ -936,6 +936,8 @@ async function wearPart(part) {
       return true;
     });
     if (changed) render();
+    const h = $('#av-hint');
+    if (h) h.textContent = t('Locked parts show what to earn. Nothing changes by itself.');
   } catch { /* not saved: the picker shows what is worn */ }
   const again = S.sheet && S.sheet.type === 'avatar' && document.querySelector(`#sheet-body [data-part="${part}"]`);
   if (again) again.focus({ preventScroll: true });
@@ -1403,13 +1405,13 @@ const ACT = {
     const kept = { lang: S.settings.lang }; // the language is not data: a reset keeps it, and so does its mirror
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
     clearTimeout(announceTimer);
+    clearTimeout(badgesTimer);
     for (const store of ['entries', 'days', 'photos', 'kv']) { if (store === 'kv') await badgeQueue(() => db.clear(store)); else await db.clear(store); }
     S.urls.forEach((u) => URL.revokeObjectURL(u));
     S.urls.clear();
     S.check.photos.forEach((p) => URL.revokeObjectURL(p.url));
     S.settings = { ...freshSettings(), ...kept };
     await saveSettings();
-    clearTimeout(badgesTimer);
     clearTimeout(announceTimer);
     S.entries = []; S.days = {}; S.checks = []; S.badges = null; S.badgeIntro = 0; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = ''; S.suppEdit = '';

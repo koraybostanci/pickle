@@ -161,10 +161,22 @@ test('the picker renders in English and Turkish: chips, locks, hints, pressed st
 test('the header carries the avatar button next to Settings, and shows a plain pickle when the record wears what is not earned', () => {
   fixture();
   let h = views.renderToday();
-  assert.match(h, /<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="Your pickle">.*?<\/button><button type="button" class="icon-btn" data-act="settings"/s);
+  assert.match(h, /<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="Your pickle[^"]*">.*?<\/button><button type="button" class="icon-btn" data-act="settings"/s);
   core.S.badges.av = { stage: 'stage3', face: 'face_star', acc: 'acc_crown' };
   h = views.renderToday();
   assert.match(h, /aria-label="Your pickle, Gherkin, Calm, None"/);
   core.S.badges = null;
   assert.match(views.renderToday(), /aria-label="Your pickle, Gherkin, Calm, None"/);
+});
+
+test('the Badges section shows one gentle line until a badge is earned', () => {
+  fixture();
+  assert.doesNotMatch(views.renderProgress(), /first badge is on its way/);
+  const [e, d, b] = [core.S.entries, core.S.days, core.S.badges];
+  core.S.entries = []; core.S.days = {}; core.S.badges = null; core.S.rev++;
+  try {
+    assert.match(views.renderProgress(), /Log a meal and your first badge is on its way\./);
+    core.S.badgeIntro = 2;
+    assert.doesNotMatch(views.renderProgress(), /first badge is on its way/);
+  } finally { core.S.entries = e; core.S.days = d; core.S.badges = b; core.S.badgeIntro = 0; core.S.rev++; }
 });

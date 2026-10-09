@@ -956,7 +956,7 @@ export default {
   // ——— js/badges.js, js/views.js: the avatar ———
   Gherkin: 'Kornişon',
   Dill: 'Dereotlu',
-  'Well-brined': 'İyi turşu',
+  'Well-brined': 'Tam kıvamında',
   Calm: 'Sakin',
   Smile: 'Gülümseme',
   Cool: 'Havalı',
@@ -965,7 +965,7 @@ export default {
   Leaf: 'Yaprak',
   Cap: 'Şapka',
   Scarf: 'Atkı',
-  Headband: 'Bandana',
+  Headband: 'Saç bandı',
   Crown: 'Taç',
   Growth: 'Büyüme',
   Face: 'Yüz',
@@ -973,5 +973,6 @@ export default {
   'Your pickle': 'Turşun',
   'Earn {name}: {n}': 'Kazan: {name} ({n})',
   'Earn {name}': 'Kazan: {name}',
+  'Log a meal and your first badge is on its way.': 'Bir öğün kaydet, ilk rozetin yolda.',
   'Locked parts show what to earn. Nothing changes by itself.': 'Kilitli parçalar neyi kazanman gerektiğini gösterir. Kendiliğinden hiçbir şey değişmez.',
 };

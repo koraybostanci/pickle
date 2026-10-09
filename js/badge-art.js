@@ -56,7 +56,7 @@ export const GLYPHS = {
   protein_days: EGG,
   goals_days: `<path d="M4 19.5V7.5h3.8l1.5 3.5c1.5 1.7 3.4 2 5.7 2.4 2.8.5 4.5 1.4 4.5 3.6v2z"${Q}/>`,
   protein_week: EGG,
-  weigh_days: '<path d="M3.5 5L8.5 11.5 12 8.5 16.5 15.5 20.5 19.5"/>',
+  weigh_days: '<path d="M3.5 4L8.5 11.5 12 8.5 16.5 16 20.5 20"/>',
   weigh_week: SCALE,
   log_week: LOG,
   kilos: '<path d="M12 3.5v11M7 10.5l5 5 5-5M5.5 20h13"/>',

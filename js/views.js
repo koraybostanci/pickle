@@ -39,7 +39,7 @@ const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
 const partName = (p) => td(PART_NAME[p]);
 const avatarLabel = (av) => [t('Your pickle'), partName(av.stage), partName(av.face), partName(av.acc)].join(', ');
-const avatarButton = () => { const av = wornAv(S.badges); return `<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="${t('Your pickle')}"><span aria-hidden="true">${avatarSvg(av, { size: 34, label: avatarLabel(av) })}</span></button>`; };
+const avatarButton = () => { const av = wornAv(S.badges); return `<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="${avatarLabel(av)}"><span aria-hidden="true">${avatarSvg(av, { size: 34, label: avatarLabel(av) })}</span></button>`; };
 const settingsButton = () => `<button type="button" class="icon-btn" data-act="settings" aria-label="${t('Settings')}">${ICON.settings}</button>`;
 
 // Where the weight stands against the schedule, in plain words
@@ -1211,6 +1211,7 @@ function badgesSection() {
   return `<section class="badges" aria-labelledby="badges-title">
     <div class="card-head"><h2 id="badges-title">${t('Badges')}</h2><span class="label">${t('{n} of {total}', { n: col.earned, total: col.total })}</span></div>
     ${S.badgeIntro ? `<p class="note bd-intro">${tn('{n} badge from your history|{n} badges from your history', S.badgeIntro)}</p>` : ''}
+    ${col.earned || S.badgeIntro ? '' : `<p class="note bd-intro">${t('Log a meal and your first badge is on its way.')}</p>`}
     ${col.groups.map((g) => `<h3 class="bd-group">${esc(td(GROUP_NAME[g.group]))}</h3>
     <div class="bd-grid">
     ${g.cells.map(badgeCell).join('\n    ')}
