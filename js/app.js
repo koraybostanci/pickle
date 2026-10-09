@@ -932,12 +932,13 @@ const ACT = {
     render();
     toast(el.dataset.kind === 'kg' ? t('Weight removed') : t('Steps removed'));
   },
-  'lang': async (el) => { // the language control in Settings (hidden while LANG_SWITCH_VISIBLE is false)
+  'lang': async (el) => { // the language control in Settings
     const prev = S.settings.lang;
     S.settings.lang = el.dataset.lang === 'tr' ? 'tr' : 'en';
     if (!(await applyLang(S.settings.lang))) { S.settings.lang = prev; return; } // only a choice made here is rolled back
     await saveSettings();
     render();
+    await openSettings('', '[data-act="lang"][aria-pressed="true"]'); // the open sheet is rebuilt in the new language, focus stays on the pressed button
   },
   'hide-start': async () => { S.settings.hideStart = true; await saveSettings(); render(); },
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
@@ -1448,11 +1449,13 @@ window.addEventListener('online', () => { if (RUNS) resumePending(); });
 
 (async function start() {
   setupUpdates(); // first, so that a fixed version can still arrive when the database does not open
-  await applyLang(storedLang()); // the mirror in localStorage is read at once, so the first paint is already in the right language
+  const mirror = storedLang();
+  const mirrorLoaded = await applyLang(mirror); // the mirror in localStorage is read at once, so the first paint is already in the right language
   if (!RUNS) { $('.tabs').hidden = true; $('#view').innerHTML = installHtml(); return; } // a browser tab would get its own, separate database
   try {
     await load();
-    if (S.settings.lang !== getLang()) await applyLang(S.settings.lang); // the stored setting wins over the mirror
+    // The stored setting wins over the mirror; when it is the one that just failed to load, it is not tried (and toasted) a second time
+    if (S.settings.lang !== getLang() && !(S.settings.lang === mirror && !mirrorLoaded)) await applyLang(S.settings.lang);
     rememberLang(S.settings.lang);
   } catch (err) {
     $('#view').innerHTML = `<div class="empty"><h1>${t('Could not open the database')}</h1><p>${t('Local storage may be off in private browsing. Open the app in a normal window or add it to the Home Screen.')}</p></div>`;

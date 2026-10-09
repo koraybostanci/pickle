@@ -3,7 +3,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { setLang } from '../js/i18n.js';
+import { setLang, t } from '../js/i18n.js';
 import tr from '../js/tr.js';
 import { MODELS, PRESETS } from '../js/ai.js';
 import { extract, literals } from './extract.mjs';
@@ -204,7 +204,7 @@ function extras() {
   S.settings.provider = 'openai';
   S.settings.oaBase = PRESETS[0].base;
   S.settings.oaKey = 'k';
-  add('settings-gemini', () => views.renderSettings({ showLang: true }));
+  add('settings-gemini', () => views.renderSettings());
   S.suppEdit = 's1';
   add('settings-supp-edit', views.renderSettings);
   for (const id of ['pe', 'ps', 'pw', 'pp', burger.id]) add(`entry-${id}`, () => views.renderEntrySheet(id));
@@ -244,18 +244,11 @@ test('pseudo-locale: every screen shows only translated text in Turkish mode', a
 });
 
 // ——— The language control in Settings ———
-test('Settings: the language control is shown by default, first, and can be left out', async () => {
+test('Settings: the language control is the first section', () => {
   fixture();
-  const i18n = await import('../js/i18n.js');
-  const plain = views.renderSettings();
-  assert.equal(i18n.LANG_SWITCH_VISIBLE, true, 'the Turkish text is complete, so the switch is shown');
-  assert.equal(plain.includes('data-act="lang"'), true);
-  const hidden = views.renderSettings({ showLang: false });
-  assert.equal(hidden.includes('data-act="lang"'), false);
-  const shown = views.renderSettings({ showLang: true });
-  assert.equal(shown, plain);
-  assert.ok(shown.indexOf('data-sec="language"') > -1 && shown.indexOf('data-sec="language"') < shown.indexOf('data-sec="analysis"'));
-  assert.equal(shown.replace(/<details class="setting" data-sec="language"[\s\S]*?<\/details>\n {4}/, ''), hidden, 'apart from the control the sheet is the same');
+  const html = views.renderSettings();
+  assert.equal(html.includes('data-act="lang"'), true);
+  assert.ok(html.indexOf('data-sec="language"') > -1 && html.indexOf('data-sec="language"') < html.indexOf('data-sec="analysis"'));
 });
 
 test('Settings: the control is a labelled group of two buttons with the language names, the chosen one pressed', async () => {
@@ -263,16 +256,18 @@ test('Settings: the control is a labelled group of two buttons with the language
   const seg = (html) => html.match(/<div class="seg" role="group" aria-label="([^"]*)">([\s\S]*?)<\/div>/);
   for (const lang of ['en', 'tr']) {
     S.settings.lang = lang;
-    const html = views.renderSettings({ showLang: true });
-    const m = html.match(/<div class="seg" role="group" aria-label="Language">([\s\S]*?)<\/div>/);
-    assert.ok(m, 'a group labelled Language');
-    const buttons = [...m[1].matchAll(/<button type="button" lang="(\w+)" data-act="lang" data-lang="(\w+)" aria-pressed="(\w+)">([^<]*)<\/button>/g)].map((b) => b.slice(1));
+    await setLang(lang); // the control shows the language on the screen, which a rebuilt sheet reads
+    const html = views.renderSettings();
+    const m = html.match(/<div class="seg" role="group" aria-label="([^"]*)">([\s\S]*?)<\/div>/);
+    assert.ok(m, 'a labelled group');
+    assert.equal(m[1], t('Language')); // the label follows the language, the buttons do not
+    const buttons = [...m[2].matchAll(/<button type="button" lang="(\w+)" data-act="lang" data-lang="(\w+)" aria-pressed="(\w+)">([^<]*)<\/button>/g)].map((b) => b.slice(1));
     assert.deepEqual(buttons, [['en', 'en', String(lang === 'en'), 'English'], ['tr', 'tr', String(lang === 'tr'), 'Türkçe']]);
     assert.match(html, new RegExp(`<small>${lang === 'tr' ? 'Türkçe' : 'English'}</small>`)); // the heading shows the current language
   }
   // The two names and the control stay as they are in a translated sheet, while the label and the note follow the language
   await pseudoOn();
-  const html = views.renderSettings({ showLang: true });
+  const html = views.renderSettings();
   assert.match(html, />English<\/button>/);
   assert.match(html, />Türkçe<\/button>/);
   const m = seg(html);

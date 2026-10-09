@@ -31,8 +31,6 @@ export function tn(text, n, params) {
 export const T = (text) => text;
 // Translates a string that was marked with T() in a data table, at render time (t() itself needs a literal)
 export const td = (text) => pick(text) ?? text;
-// English whatever the language is, for what is sent to the model
-export const tEn = (text, params) => fill(text, params);
 // Runs fn with English text, English number and date formats, whatever the language is, and gives back what it returns.
 // For what is sent to the model. fn must not be async: the language is put back when it returns.
 export function inEnglish(fn) {
@@ -85,9 +83,6 @@ export function parseNum(s) {
   if (lang === 'tr' && /^[1-9]\d{0,2}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '');
   return /^\d+([.,]\d+)?$/.test(s) ? Number(s.replace(',', '.')) : NaN;
 }
-
-// The language control in Settings stays hidden until the Turkish text is complete; flipping this on shows it
-export const LANG_SWITCH_VISIBLE = true;
 
 // The text of index.html that no code renders: data-t is the element's text, and data-t-aria, -placeholder, -fill (what a chip types into
 // the composer) and -content (the meta description) are attributes. The English stays in the markup, so English needs none of this to be right;

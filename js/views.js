@@ -5,7 +5,7 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { dateFmt, td, t, tn, T, lc, LANG_SWITCH_VISIBLE } from './i18n.js';
+import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1285,7 +1285,7 @@ export function renderPlanSheet(id) {
 }
 
 // ——— Settings: every section starts collapsed and shows its current state in the heading ———
-export function renderSettings({ showLang = LANG_SWITCH_VISIBLE } = {}) {
+export function renderSettings() {
   const s = S.settings;
   const u = s.usage || { in: 0, out: 0, calls: 0, usd: 0 };
   const storage = S.storage;
@@ -1413,15 +1413,15 @@ export function renderSettings({ showLang = LANG_SWITCH_VISIBLE } = {}) {
       <p class="note">${t('You will be asked to type {word}.', { word: t('DELETE', { $id: 'reset.word' }) })}</p>
     </section>`;
 
-  // The language control: the two names and the heading are written in both languages and never translated. Hidden until LANG_SWITCH_VISIBLE.
-  const lang = s.lang === 'tr' ? 'tr' : 'en';
+  // The language control: the two names and the heading are written in both languages and never translated.
+  const lang = getLang() === 'tr' ? 'tr' : 'en'; // the language on the screen, which is English when the Turkish text could not be loaded
   const langBody = `
     <div class="seg" role="group" aria-label="${t('Language')}">
       <button type="button" lang="en" data-act="lang" data-lang="en" aria-pressed="${lang === 'en'}">English</button>
       <button type="button" lang="tr" data-act="lang" data-lang="tr" aria-pressed="${lang === 'tr'}">Türkçe</button>
     </div>
     <p class="note">${t('The change applies at once. Your entries are not changed.')}</p>`;
-  const langSection = showLang ? section('language', 'Language / Dil', lang === 'tr' ? 'Türkçe' : 'English', langBody) + '\n    ' : ''; // i18n-ok: the heading names both languages
+  const langSection = section('language', 'Language / Dil', lang === 'tr' ? 'Türkçe' : 'English', langBody) + '\n    '; // i18n-ok: the heading names both languages
 
   return `
   <header class="sheet-top"><h2 id="sheet-title">${t('Settings')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>

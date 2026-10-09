@@ -1,7 +1,7 @@
 // The interface language: js/i18n.js, the Turkish table js/tr.js and the extraction check that keeps them in step. `node --test`
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { t, tn, T, tEn, lc, foldKey, parseNum, setLang, getLang, dateFmt, storedLang, rememberLang, LOCALE } from '../js/i18n.js';
+import { t, tn, T, lc, foldKey, parseNum, setLang, getLang, dateFmt, storedLang, rememberLang, LOCALE } from '../js/i18n.js';
 import * as i18n from '../js/i18n.js';
 import tr from '../js/tr.js';
 import { cleanSettings } from '../js/backup.js';
@@ -31,7 +31,6 @@ test('English: t fills placeholders, strips the id override and leaves unknown p
   assert.equal(t('No params {x}'), 'No params {x}');
   assert.equal(t('Count {n}', { n: 0 }), 'Count 0');
   assert.equal(T('Breakfast'), 'Breakfast');
-  assert.equal(tEn('Hi {x}', { x: 2 }), 'Hi 2');
 });
 
 test('English: tn picks the pair by the plural rule', () => {
@@ -62,7 +61,6 @@ test('setLang: Turkish falls back to English for a missing entry and uses a pres
   assert.equal(t('Open', { $id: 'menu.open' }), 'Aç');
   assert.equal(tn('{n} day|{n} days', 5), '5 gün');
   assert.equal(t('Fn {x}', { x: 7 }), 'F:7');
-  assert.equal(tEn('Saved {name}', { name: 'Oats' }), 'Saved Oats');
   await setLang('en');
   assert.equal(t('Saved {name}', { name: 'Oats' }), 'Saved Oats');
   assert.equal(tn('{n} day|{n} days', 5), '5 days');
