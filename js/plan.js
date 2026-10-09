@@ -151,6 +151,7 @@ export const DEFAULTS = {
 
 // Numbers that the rules text, the checks and the screens must agree on
 export const KCAL_FLOOR = 1500; // daily calories are never set or advised below this
+export const KCAL_MIN_DAY = 1400; // a day with fewer calories logged does not count as on plan
 export const SMALL_TREAT_KCAL = 250; // a flex entry up to this size (or any alcohol) is a "small" treat, not the weekly flexible dinner
 const num = (x) => x.toLocaleString(LOCALE);
 

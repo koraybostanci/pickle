@@ -2,11 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  S, BAND, proteinFloor, dayStatus, dayReasons, dayNotes, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
+  S, BAND, proteinFloor, proteinLevel, weekResult, dayStatus, dayReasons, dayNotes, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
   isPerfect, streak, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
 } from '../js/core.js';
-import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS } from '../js/plan.js';
+import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS, KCAL_MIN_DAY } from '../js/plan.js';
 
 const T = today();
 const day = (off) => addDays(T, off);
@@ -43,11 +43,62 @@ test('a protein minimum above the target is capped at the target', () => {
 test('calorie bands decide the verdict level', () => {
   reset(); meal(day(-1), 1550 * 1.16, 135);
   assert.equal(dayVerdict(day(-1)).level, 'back');
-  assert.equal(dayStatus(day(-1)), 'over');
-  S.entries = []; meal(day(-1), 1550 * 1.10, 135);
+  assert.equal(dayStatus(day(-1)), 'far');
+  S.entries = []; meal(day(-1), 1550 * 1.12, 135);
   assert.equal(dayVerdict(day(-1)).level, 'over');
-  assert.equal(dayStatus(day(-1)), 'near');
-  assert.ok(BAND.low < BAND.high && BAND.high < BAND.near);
+  assert.equal(dayStatus(day(-1)), 'over');
+  assert.ok(BAND.high < BAND.near);
+});
+
+test('a day counts from the 1,400 minimum up to 110% of its budget, on rest and workout days', () => {
+  reset();
+  const at = (kcal, train) => { S.entries = []; S.days[day(-1)] = train ? { day: day(-1), train: true } : undefined; meal(day(-1), kcal, 135); return dayStatus(day(-1)); };
+  assert.equal(KCAL_MIN_DAY, 1400);
+  assert.equal(at(1399), 'under');
+  assert.equal(at(1400), 'on');
+  assert.equal(at(1550), 'on');
+  assert.equal(at(1550 * 1.10), 'on');
+  assert.equal(at(1550 * 1.10 + 1), 'over');
+  assert.equal(at(1550 * 1.15), 'over');
+  assert.equal(at(1550 * 1.15 + 1), 'far');
+  assert.equal(at(1750 * 1.10, true), 'on'); // a workout day has its own budget
+  assert.equal(at(1750 * 1.10 + 1, true), 'over');
+  delete S.days[day(-1)];
+});
+
+test('a little over the budget still counts, with a note; under the minimum names the minimum', () => {
+  reset(); meal(day(-1), 1600, 135);
+  assert.equal(dayStatus(day(-1)), 'on');
+  assert.deepEqual(dayReasons(day(-1)), []);
+  assert.deepEqual(dayNotes(day(-1)), ['50 kcal above the budget, within the 10% margin']);
+  S.entries = []; meal(day(-1), 1300, 135);
+  assert.equal(dayStatus(day(-1)), 'under');
+  assert.deepEqual(dayReasons(day(-1)), ['100 kcal under the 1,400 minimum']);
+});
+
+test('protein levels: target, minimum, nearly, short; they never change the day', () => {
+  reset();
+  const at = (p) => { S.entries = []; meal(day(-1), 1500, p); return [proteinLevel(day(-1)), dayStatus(day(-1))]; };
+  assert.deepEqual(at(135), ['target', 'on']);
+  assert.deepEqual(at(120), ['min', 'on']);
+  assert.deepEqual(at(96), ['near', 'on']);
+  assert.deepEqual(at(95), ['short', 'on']);
+  S.entries = [];
+  assert.equal(proteinLevel(day(-1)), 'none');
+});
+
+test('a week is only judged once its Sunday is over, by the days on plan', () => {
+  reset();
+  const ws = weekStart(day(-14)); // a week that is over
+  for (let i = 0; i < 7; i++) meal(addDays(ws, i), i < 5 ? 1500 : 1900, i < 6 ? 130 : 80);
+  const r = weekResult(ws);
+  assert.equal(r.done, true); assert.equal(r.onPlan, 5); assert.equal(r.proteinDays, 6);
+  assert.equal(r.tier.title, 'Steady week');
+  const tier = (n) => { S.entries = []; for (let i = 0; i < 7; i++) meal(addDays(ws, i), i < n ? 1500 : 1900, 130); return weekResult(ws).tier.title; };
+  assert.equal(tier(7), 'Strong week'); assert.equal(tier(6), 'Solid week'); assert.equal(tier(4), 'Rough patch'); assert.equal(tier(3), 'Rough patch');
+  assert.equal(tier(2), 'Time to reset'); assert.equal(tier(0), 'Time to reset');
+  const now = weekResult(weekStart(T));
+  assert.equal(now.done, false); assert.equal(now.tier, null);
 });
 
 test('the verdict wording says budget and plan, never target', () => {
@@ -232,7 +283,7 @@ test('the budget verdict today: no pill before the plan starts, then the plan\'s
   const slow = budgetVerdict({ target, eaten: 250, planned: 500 });
   assert.equal(slow.tone, 'calm'); assert.match(slow.text, /^250 under plan pace$/);
   assert.deepEqual(budgetVerdict({ target, eaten: target * 1.05, planned: target }), { level: '', tone: 'good', text: 'Budget used' });
-  const over = budgetVerdict({ target, eaten: target * 1.10, planned: target });
+  const over = budgetVerdict({ target, eaten: target * 1.12, planned: target });
   assert.equal(over.level, 'over'); assert.equal(over.tone, 'warn');
   const back = budgetVerdict({ target, eaten: target * 1.20, planned: target });
   assert.equal(back.level, 'back'); assert.equal(back.tone, 'warn');
@@ -251,13 +302,13 @@ test('the budget verdict on a past day says how it ended, without praising an un
   const at = (eaten) => budgetVerdict({ target, eaten, planned: null });
   assert.deepEqual(at(0), { level: '', tone: 'calm', text: 'Nothing logged' });
   assert.equal(at(target * 0.5).tone, 'calm'); assert.match(at(target * 0.5).text, /^Ended .+ under$/);
-  assert.equal(at(target * 0.9).tone, 'good');
+  assert.equal(at(target * 0.95).tone, 'good');
   assert.equal(at(target + 10).text, 'Ended on budget');
   assert.equal(at(target - 10).text, 'Ended on budget');
 });
 
 test('the budget verdict and the day verdict agree on over and well over', () => {
-  for (const share of [1.10, 1.20]) {
+  for (const share of [1.12, 1.20]) {
     reset(); meal(day(-1), 1550 * share, 135);
     assert.equal(budgetVerdict({ target: 1550, eaten: 1550 * share, planned: null }).level, dayVerdict(day(-1)).level);
   }
@@ -295,7 +346,7 @@ test('today is "open" until it is on plan; a finished day keeps its colour; the 
   assert.equal(dayStatus(T), 'on');
   assert.deepEqual(dayReasons(T), []);
   S.entries = []; meal(T, 1550 * 1.3, 130);
-  assert.equal(dayStatus(T), 'over');
+  assert.equal(dayStatus(T), 'far');
 });
 
 test('a day that is still open does not break or inflate the run; the reasons and notes are kept apart', () => {
@@ -305,12 +356,12 @@ test('a day that is still open does not break or inflate the run; the reasons an
   assert.equal(dayStatus(T), 'open');
   assert.equal(streak(), 3); // today waits; the three days before it stand
   S.entries = [];
-  meal(day(-1), 1700, 100, { tier: 'off' }); // 110% of the budget, protein short, one off-plan entry
-  assert.equal(dayStatus(day(-1)), 'near');
-  assert.deepEqual(dayReasons(day(-1)), ['150 kcal above the budget']);
+  meal(day(-1), 1750, 100, { tier: 'off' }); // 113% of the budget, protein short, one off-plan entry
+  assert.equal(dayStatus(day(-1)), 'over');
+  assert.deepEqual(dayReasons(day(-1)), ['200 kcal above the budget']);
   assert.deepEqual(dayNotes(day(-1)), ['protein 20 g short of your minimum', '1 off-plan entry']);
   S.entries = []; meal(day(-1), 700, 60);
-  assert.equal(dayStatus(day(-1)), 'partial');
-  S.entries = []; meal(T, 1700, 135); // 110% today: judged, not open
-  assert.equal(dayStatus(T), 'near');
+  assert.equal(dayStatus(day(-1)), 'under');
+  S.entries = []; meal(T, 1750, 135); // 113% today: judged, not open
+  assert.equal(dayStatus(T), 'over');
 });
