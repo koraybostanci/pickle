@@ -1410,7 +1410,7 @@ export function renderSettings({ showLang = LANG_SWITCH_VISIBLE } = {}) {
       </dl>
       <label class="check"><input type="checkbox" id="keep-key" checked> ${t('Keep my API key and provider')}</label>
       <div class="actions"><button type="button" class="btn btn-danger btn-danger-solid" data-act="wipe-all">${t('Factory reset')}</button></div>
-      <p class="note">${t('You will be asked to type DELETE.')}</p>
+      <p class="note">${t('You will be asked to type {word}.', { word: t('DELETE', { $id: 'reset.word' }) })}</p>
     </section>`;
 
   // The language control: the two names are written in their own language and never translated. Hidden until LANG_SWITCH_VISIBLE.

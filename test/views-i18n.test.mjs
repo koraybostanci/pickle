@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { setLang } from '../js/i18n.js';
 import tr from '../js/tr.js';
 import { MODELS, PRESETS } from '../js/ai.js';
-import { extract } from './extract.mjs';
+import { extract, literals } from './extract.mjs';
 import { screens, fixture, core, views, day, at, meal, T as TODAY } from './screens.mjs';
 
 const { S } = core;
@@ -14,55 +14,6 @@ const VIEWS = readFileSync(new URL('../js/views.js', import.meta.url), 'utf8');
 const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 
 // ——— Reverse lint: English text in views.js that is not inside t() / tn() / T() ———
-// Walks the source the way the JavaScript parser does for strings, template literals (with their ${} code), comments and regexes,
-// and gives every literal with its position. A template's ${} holes become \0 in its text.
-export function literals(src) {
-  const out = [];
-  let i = 0;
-  let prev = ''; // the last significant character, to tell a regex from a division
-  function code(stop) {
-    let depth = 0;
-    while (i < src.length) {
-      const c = src[i];
-      if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
-      if (c === '/' && src[i + 1] === '*') { i = src.indexOf('*/', i + 2) + 2; continue; }
-      if (c === "'" || c === '"') {
-        const start = i;
-        let text = '';
-        for (i++; src[i] !== c; i++) { if (src[i] === '\\') { text += src[i + 1]; i++; } else text += src[i]; }
-        i++;
-        out.push({ quote: c, text, start });
-        prev = c;
-        continue;
-      }
-      if (c === '`') { template(); prev = c; continue; }
-      if (c === '/' && '(,=:[!&|?{};'.includes(prev || ';')) { // a regex literal
-        let inClass = false;
-        for (i++; src[i] !== '/' || inClass; i++) { if (src[i] === '\\') i++; else if (src[i] === '[') inClass = true; else if (src[i] === ']') inClass = false; }
-        i++;
-        while (/[a-z]/.test(src[i])) i++;
-        prev = '/';
-        continue;
-      }
-      if (c === '{') depth++;
-      if (c === '}') { if (stop === '}' && depth === 0) { i++; return; } depth--; }
-      if (!/\s/.test(c)) prev = c;
-      i++;
-    }
-  }
-  function template() {
-    const start = i;
-    let text = '';
-    for (i++; src[i] !== '`';) {
-      if (src[i] === '\\') { text += src[i + 1]; i += 2; } else if (src[i] === '$' && src[i + 1] === '{') { text += '\0'; i += 2; code('}'); } else text += src[i++];
-    }
-    i++;
-    out.push({ quote: '`', text, start });
-  }
-  code();
-  return out;
-}
-
 // Words that are not English text to be translated: units, brand names, the two language names
 // (standalone and svg are a media query and a selector in the code, not text)
 const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg']);

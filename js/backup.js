@@ -1,6 +1,7 @@
 // A backup file comes from outside the app. Everything read from one is checked and given the right
 // type and size before it is stored or shown, so a damaged or hostile file cannot break the screens.
 // Pure functions: no DOM and no storage.
+import { T } from './i18n.js';
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict } from './ai.js';
 import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX, TK_KINDS, tkValid } from './core.js';
@@ -36,9 +37,9 @@ function cleanTk(tk) {
 
 // Why a file cannot be restored, or '' when it can be tried
 export function backupProblem(data) {
-  if (!data || typeof data !== 'object' || data.app !== APP_ID || !Array.isArray(data.entries)) return 'This is not a Pickle backup';
-  if (!Number.isInteger(data.v)) return 'This backup has no valid version number, so it cannot be restored';
-  if (data.v > SCHEMA_VERSION) return 'This backup is from a newer version of Pickle. Update the app first';
+  if (!data || typeof data !== 'object' || data.app !== APP_ID || !Array.isArray(data.entries)) return T('This is not a Pickle backup');
+  if (!Number.isInteger(data.v)) return T('This backup has no valid version number, so it cannot be restored');
+  if (data.v > SCHEMA_VERSION) return T('This backup is from a newer version of Pickle. Update the app first');
   return '';
 }
 

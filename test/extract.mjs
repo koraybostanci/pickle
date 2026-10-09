@@ -57,7 +57,7 @@ export function scan(file, src) {
     if (next !== ',' && next !== ')') { problems.push(`${file}:${line} ${m[1]}( first argument is built by concatenation`); continue; }
     found.push({ file, line, fn: m[1], text: lit.text, key: idOf(src, lit.end) ?? lit.text });
   }
-  if (file.endsWith('.html')) for (const m of src.matchAll(/\bdata-t(?:-aria)?="([^"]*)"/g)) found.push({ file, line: 0, fn: 'data-t', text: m[1], key: m[1] });
+  if (file.endsWith('.html')) for (const m of src.matchAll(/\bdata-t(?:-aria|-placeholder|-fill|-content)?="([^"]*)"/g)) found.push({ file, line: 0, fn: 'data-t', text: m[1], key: m[1] });
   return { found, problems };
 }
 export function extract() {
@@ -68,4 +68,53 @@ export function extract() {
     all.problems.push(...r.problems);
   }
   return all;
+}
+
+// Walks the source the way the JavaScript parser does for strings, template literals (with their ${} code), comments and regexes,
+// and gives every literal with its position. A template's ${} holes become \0 in its text.
+export function literals(src) {
+  const out = [];
+  let i = 0;
+  let prev = ''; // the last significant character, to tell a regex from a division
+  function code(stop) {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+      if (c === '/' && src[i + 1] === '*') { i = src.indexOf('*/', i + 2) + 2; continue; }
+      if (c === "'" || c === '"') {
+        const start = i;
+        let text = '';
+        for (i++; src[i] !== c; i++) { if (src[i] === '\\') { text += src[i + 1]; i++; } else text += src[i]; }
+        i++;
+        out.push({ quote: c, text, start });
+        prev = c;
+        continue;
+      }
+      if (c === '`') { template(); prev = c; continue; }
+      if (c === '/' && '(,=:[!&|?{};'.includes(prev || ';')) { // a regex literal
+        let inClass = false;
+        for (i++; src[i] !== '/' || inClass; i++) { if (src[i] === '\\') i++; else if (src[i] === '[') inClass = true; else if (src[i] === ']') inClass = false; }
+        i++;
+        while (/[a-z]/.test(src[i])) i++;
+        prev = '/';
+        continue;
+      }
+      if (c === '{') depth++;
+      if (c === '}') { if (stop === '}' && depth === 0) { i++; return; } depth--; }
+      if (!/\s/.test(c)) prev = c;
+      i++;
+    }
+  }
+  function template() {
+    const start = i;
+    let text = '';
+    for (i++; src[i] !== '`';) {
+      if (src[i] === '\\') { text += src[i + 1]; i += 2; } else if (src[i] === '$' && src[i + 1] === '{') { text += '\0'; i += 2; code('}'); } else text += src[i++];
+    }
+    i++;
+    out.push({ quote: '`', text, start });
+  }
+  code();
+  return out;
 }

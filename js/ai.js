@@ -2,7 +2,7 @@
 // (Gemini, OpenCode Zen/Go, OpenRouter…). Kept token-lean: small image, short fixed
 // instruction, short JSON output.
 import { planDigest, planFoods, RULES, SLOTS, hhmm } from './plan.js';
-import { T, inEnglish } from './i18n.js';
+import { T, inEnglish, getUiLang } from './i18n.js';
 import { decode } from './picture.js';
 
 export const MODELS = {
@@ -25,6 +25,15 @@ flags: add "alcohol" for any alcohol.
 conf: 0–1 confidence in the kcal total. q: if something you cannot see (cooking method, fat content, a count, hidden oil or sugar) could change kcal by more than 10%, ask about it in one short line, else "".
 Plan meals:
 ${planDigest()}`;
+
+// The prompts are English and built once, and what the model sends back is shown as it comes. For Turkish one line is added at request time,
+// from the language the person chose (getUiLang, not changed by inEnglish). English adds nothing, so its prompts are byte-identical.
+// Entries keep English food names and titles (the plan and the favourites match on them), so only the question is asked for in Turkish.
+const TURKISH = {
+  entry: '\nWrite q in Turkish; keep food names and title in English. Keep JSON keys and enum values exactly as specified.',
+  text: '\nWrite all user-facing text (titles, notes, questions, reviews, glosses) in Turkish; keep JSON keys and enum values exactly as specified.',
+};
+export const langLine = (kind = 'text') => (getUiLang() === 'tr' ? TURKISH[kind] : '');
 
 const SCHEMA = {
   type: 'object',
@@ -259,7 +268,7 @@ export async function analyze(o) {
   const lines = [`Time ${hhmm(o.when)}` + (o.place ? `, place: ${o.place}` : '')];
   if (o.text) lines.push(`Note: ${o.text}`);
   if (o.hint) lines.push(o.hint);
-  const req = { system: SYSTEM, shape: SHAPE, text: lines.join('\n'), blobs: o.blobs || [], schema: SCHEMA, json: true };
+  const req = { system: SYSTEM + langLine('entry'), shape: SHAPE, text: lines.join('\n'), blobs: o.blobs || [], schema: SCHEMA, json: true };
   return callWithFallback(o.cfg, req, o.onRetry);
 }
 
@@ -315,7 +324,7 @@ const REVIEW_SCHEMA = {
  * @returns {Promise<{data:{head:string,good:string[],cut:string[],next:string}, usage:{in:number,out:number}, model:string}>}
  */
 export async function review(o) {
-  const req = { system: REVIEW_SYSTEM, shape: REVIEW_SHAPE, text: o.brief, schema: REVIEW_SCHEMA, json: true, maxTokens: 400 };
+  const req = { system: REVIEW_SYSTEM + langLine(), shape: REVIEW_SHAPE, text: o.brief, schema: REVIEW_SCHEMA, json: true, maxTokens: 400 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanReview(r.data);
   if (!data.head) throw new AiError('empty', 'The model returned no review');
@@ -346,7 +355,7 @@ const COACH_SCHEMA = { type: 'object', additionalProperties: false, required: ['
  * @returns {Promise<{data:{note:string}, usage:{in:number,out:number}, model:string}>}
  */
 export async function coach(o) {
-  const req = { system: COACH_SYSTEM, shape: COACH_SHAPE, text: o.brief, schema: COACH_SCHEMA, json: true, maxTokens: 250 };
+  const req = { system: COACH_SYSTEM + langLine(), shape: COACH_SHAPE, text: o.brief, schema: COACH_SCHEMA, json: true, maxTokens: 250 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanCoach(r.data);
   if (!data.note) throw new AiError('empty', 'The model returned no note');
@@ -404,7 +413,7 @@ const CHECK_SCHEMA = {
  * @returns {Promise<{data:{kind:string,title:string,answer:string,options:object[]}, usage:{in:number,out:number}, model:string}>}
  */
 export async function check(o) {
-  const req = { system: CHECK_SYSTEM, shape: CHECK_SHAPE, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: CHECK_SCHEMA, json: true, maxTokens: 1400, timeout: 90000 };
+  const req = { system: CHECK_SYSTEM + langLine(), shape: CHECK_SHAPE, text: o.brief, blobs: o.blobs || [], maxImages: 4, schema: CHECK_SCHEMA, json: true, maxTokens: 1400, timeout: 90000 };
   const r = await callWithFallback(o.cfg, req, o.onRetry);
   const data = cleanVerdict(r.data);
   if (!data.answer && !data.options.length) throw new AiError('empty', 'The model returned no verdict');

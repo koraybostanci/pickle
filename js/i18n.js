@@ -2,6 +2,7 @@
 // English is the default and costs nothing: t() returns its text with the {x} placeholders filled in.
 const LOCALES = { en: 'en-GB', tr: 'tr-TR' };
 let lang = 'en';
+let uiLang = 'en'; // the language the person chose: inEnglish() changes `lang` for a moment, never this
 let table = {};
 export let LOCALE = LOCALES.en; // a live binding: importers see the locale of the language set last
 const formats = new Map();
@@ -42,6 +43,8 @@ export function inEnglish(fn) {
 // Lower case for the active language ("ISPARTA" is "ısparta" in Turkish)
 export const lc = (s) => String(s).toLocaleLowerCase(lang);
 export const getLang = () => lang;
+// The language of the screen, also while inEnglish() is running: for what depends on the person's language, not on the text being built
+export const getUiLang = () => uiLang;
 export const storedLang = () => { try { return localStorage.getItem('lang') === 'tr' ? 'tr' : 'en'; } catch { return 'en'; } };
 export const rememberLang = (l) => { try { localStorage.setItem('lang', l); } catch { /* no storage; the setting itself is kept */ } };
 
@@ -57,7 +60,7 @@ export async function setLang(next) {
     try { loaded = (await import(loadFailed ? `./tr.js?retry=${Date.now()}` : './tr.js')).default; } catch (err) { loadFailed = true; throw err; }
   }
   if (mine !== seq) return;
-  lang = next;
+  lang = uiLang = next;
   table = loaded;
   LOCALE = LOCALES[next];
   formats.clear();
@@ -85,3 +88,14 @@ export function parseNum(s) {
 
 // The language control in Settings stays hidden until the Turkish text is complete; flipping this on shows it
 export const LANG_SWITCH_VISIBLE = false;
+
+// The text of index.html that no code renders: data-t is the element's text, and data-t-aria, -placeholder, -fill (what a chip types into
+// the composer) and -content (the meta description) are attributes. The English stays in the markup, so English needs none of this to be right;
+// this runs at boot and on a language change. The document is a parameter so a test can hand it a stand-in.
+const STATIC_ATTRS = { 'data-t-aria': 'aria-label', 'data-t-placeholder': 'placeholder', 'data-t-fill': 'data-fill', 'data-t-content': 'content' };
+export function applyStatic(doc = typeof document === 'undefined' ? null : document) {
+  if (!doc) return;
+  doc.documentElement.lang = lang;
+  for (const el of doc.querySelectorAll('[data-t]')) el.textContent = t(el.getAttribute('data-t'));
+  for (const [from, to] of Object.entries(STATIC_ATTRS)) for (const el of doc.querySelectorAll(`[${from}]`)) el.setAttribute(to, t(el.getAttribute(from)));
+}

@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { setLang, getLang, storedLang, rememberLang, td, foldKey } from './i18n.js';
+import { setLang, getLang, storedLang, rememberLang, applyStatic, t, tn, td, foldKey } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
@@ -9,7 +9,7 @@ import { reviewBrief, coachBrief, checkBrief } from './briefs.js';
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
 import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor, titleOf,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -21,7 +21,7 @@ async function saveSettings() { rememberLang(S.settings.lang); await db.kvSet('s
 // Switches the interface language and says whether it worked. When the text cannot be loaded (offline before it was cached)
 // the screen stays in the language it had; the saved preference is never touched here, so the next start tries again.
 async function applyLang(lang) {
-  try { await setLang(lang); return true; } catch { toast('Could not load that language. Try again when you are online.'); return false; }
+  try { await setLang(lang); applyStatic(); return true; } catch { toast(t('Could not load that language. Try again when you are online.')); return false; }
 }
 async function saveDay(day, patch) {
   const d = { ...(S.days[day] || { day }), ...patch };
@@ -39,7 +39,7 @@ export function toast(msg, action) {
   const el = $('#toast');
   const live = $('#toast-live');
   live.textContent = '';
-  setTimeout(() => { live.textContent = action ? `${msg}. ${action.label} is available.` : msg; }, 50); // a change after a pause is announced even when the text repeats
+  setTimeout(() => { live.textContent = action ? t('{msg}. {label} is available.', { msg, label: action.label }) : msg; }, 50); // a change after a pause is announced even when the text repeats
   el.innerHTML = '';
   const sp = document.createElement('span');
   sp.textContent = msg;
@@ -78,7 +78,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
   };
   await saveEntry(e);
   render();
-  toast(`${tpl.name} logged`, { label: 'Undo', fn: () => removeEntry(e.id, true) });
+  toast(t('{name} logged', { name: td(tpl.name) }), { label: t('Undo'), fn: () => removeEntry(e.id, true) });
   return e.id;
 }
 // A beer, typed or tapped, goes in the late slot, so it never stands in for a planned meal. A typed count is 0.5 l each
@@ -102,7 +102,7 @@ async function removeEntry(id, silent) {
     await saveDay(e.day, { [key]: left ? left[key] : null });
   }
   render();
-  if (!silent) toast('Entry deleted');
+  if (!silent) toast(t('Entry deleted'));
 }
 
 async function noteEntry(kind, titled, extra, day = today()) {
@@ -111,20 +111,20 @@ async function noteEntry(kind, titled, extra, day = today()) {
   return e;
 }
 
-const weightTitle = (kg) => titleFor('weight', { kg }).title;
-const stepsTitle = (steps) => titleFor('steps', { steps }).title;
+const weightTitle = (kg) => titleOf(titleFor('weight', { kg })); // for the screen: in the interface language
+const stepsTitle = (steps) => titleOf(titleFor('steps', { steps }));
 
 async function setWeight(kg, day = today(), viaLog = true) {
   await saveDay(day, { kg });
   if (viaLog) await noteEntry('weight', titleFor('weight', { kg }), { kg }, day);
   render();
-  toast(`${weightTitle(kg)} saved`);
+  toast(t('{title} saved', { title: weightTitle(kg) }));
 }
 async function setSteps(steps, day = today(), viaLog = true) {
   await saveDay(day, { steps });
   if (viaLog) await noteEntry('steps', titleFor('steps', { steps }), { steps }, day);
   render();
-  toast(`${stepsTitle(steps)} saved`);
+  toast(t('{title} saved', { title: stepsTitle(steps) }));
 }
 
 async function submitText(text) {
@@ -136,9 +136,9 @@ async function submitText(text) {
       const cur = (S.days[today()] && S.days[today()].water) || 0;
       await saveDay(today(), { water: cur + local.ml });
       render();
-      return toast(`${local.ml} ml of water added`);
+      return toast(t('{ml} ml of water added', { ml: local.ml }));
     }
-    if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(`Today is a workout day: budget ${fmtInt(S.settings.kcalTrain)} kcal`); }
+    if (local.type === 'train') { await saveDay(today(), { train: true }); render(); return toast(t('Today is a workout day: budget {kcal} kcal', { kcal: fmtInt(S.settings.kcalTrain) })); }
     if (local.type === 'plan') return logMeal(local.meal, 'plan', today());
     if (local.type === 'flex') return logMeal({ ...local.flex, slot: (local.flex.flags || []).includes('alcohol') ? 'late' : 'any', tier: 'flex' }, 'flex', today());
     if (local.type === 'favorite') return logMeal({ ...local.favorite, slot: 'any' }, 'favorite', today());
@@ -148,13 +148,13 @@ async function submitText(text) {
       const added = next - cur;
       await saveDay(today(), { coffee: next });
       render();
-      return toast(!added ? 'Coffee is at the day’s maximum' : added === 1 ? 'A coffee added' : `${added} coffees added`);
+      return toast(!added ? t('Coffee is at the day’s maximum') : added === 1 ? t('A coffee added') : t('{n} coffees added', { n: added }));
     }
     if (local.type === 'count') {
       const ids = [];
       for (let i = 0; i < local.n; i++) ids.push(await logBeer(today()));
       // One toast whose Undo takes back every beer just logged
-      if (local.n > 1) toast(`${local.n} beers logged`, { label: 'Undo', fn: async () => { for (const id of ids) await removeEntry(id, true); } });
+      if (local.n > 1) toast(t('{n} beers logged', { n: local.n }), { label: t('Undo'), fn: async () => { for (const id of ids) await removeEntry(id, true); } });
       return;
     }
   }
@@ -192,7 +192,7 @@ async function prepareAndQueue(files, note) {
   const list = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
   if (!list.length) return;
   go('log');
-  toast(list.length > 1 ? `Preparing ${list.length} photos` : 'Preparing photo');
+  toast(list.length > 1 ? t('Preparing {n} photos', { n: list.length }) : t('Preparing photo'));
   const prepared = [];
   for (const f of list) {
     try {
@@ -207,7 +207,7 @@ async function prepareAndQueue(files, note) {
       if (ts > Date.now() + 60000) { ts = Date.now(); timeSrc = 'now'; }
       prepared.push({ small, ts, timeSrc, lat: meta.lat, lon: meta.lon });
     } catch (err) {
-      toast(`Could not open a photo: ${f.name}`);
+      toast(t('Could not open a photo: {name}', { name: f.name }));
     }
   }
   if (!prepared.length) return;
@@ -268,7 +268,7 @@ function resumePending() {
   S.entries.filter((e) => e.status === 'pending' && !S.busy.has(e.id)).forEach((e) => queueAnalyze(e.id));
 }
 // What the person sees while a request is retried
-const retryNote = (n, of, alt, why) => (alt ? `${why === 'server' ? 'Model busy' : 'Quota reached'}, trying ${alt}` : `Provider busy, retrying (${n}/${of})`);
+const retryNote = (n, of, alt, why) => (alt ? (why === 'server' ? t('Model busy, trying {alt}', { alt }) : t('Quota reached, trying {alt}', { alt })) : t('Provider busy, retrying ({n}/{of})', { n, of }));
 // What the model has used so far, kept in Settings
 async function addUsage(model, usage) {
   const u = S.settings.usage;
@@ -277,15 +277,18 @@ async function addUsage(model, usage) {
 }
 
 // ——— The day's review, written by the model ———
+// `what` names the thing asked for. Each has whole sentences, so a translation never has to fit a fragment into one
+const NO_KEY = { review: () => t('Add an API key in Settings to get a review.'), note: () => t('Add an API key in Settings to get a note.'), check: () => t('Add an API key in Settings to get a check.'), 'new estimate': () => t('Add an API key in Settings to get a new estimate.') };
+const FAILED = { review: (detail) => t('The review failed. {detail}', { detail }), note: (detail) => t('The note failed. {detail}', { detail }), check: (detail) => t('The check failed. {detail}', { detail }), 'new estimate': (detail) => t('The new estimate failed. {detail}', { detail }) };
 function modelFailure(err, what = 'review') {
   const code = err && err.code;
-  if (code === 'no_key') return `Add an API key in Settings to get a ${what}.`;
-  if (code === 'empty') return 'The model sent nothing usable. Try again.';
-  if (!AI_ERRORS[code]) return `The ${what} failed. ${errorDetail(err, 120)}`.trim();
+  if (code === 'no_key') return NO_KEY[what]();
+  if (code === 'empty') return t('The model sent nothing usable. Try again.');
+  if (!AI_ERRORS[code]) return FAILED[what](errorDetail(err, 120)).trim();
   // The same wording as for an entry, plus what the provider said where that explains it
-  const later = code === 'offline' || code === 'net' ? ' Try again when you are online.' : ['rate', 'no_quota', 'server', 'timeout'].includes(code) ? ' Try again a little later.' : '';
-  const said = ['rate', 'no_quota', 'server', 'no_credit', 'needs_billing'].includes(code) ? ` ${errorDetail(err, 120)}` : '';
-  return `${td(AI_ERRORS[code])}${later}${said}`.trim();
+  const later = code === 'offline' || code === 'net' ? t('Try again when you are online.') : ['rate', 'no_quota', 'server', 'timeout'].includes(code) ? t('Try again a little later.') : '';
+  const said = ['rate', 'no_quota', 'server', 'no_credit', 'needs_billing'].includes(code) ? errorDetail(err, 120) : '';
+  return [td(AI_ERRORS[code]), later, said].filter(Boolean).join(' ').trim();
 }
 
 async function runReview(day, auto) {
@@ -362,9 +365,9 @@ async function addCheckPhotos(files) {
     try {
       const { blob } = await shrink(f, CHECK_EDGE);
       S.check.photos.push({ id: db.uid(), blob, url: URL.createObjectURL(blob) });
-    } catch { toast('Could not open that photo'); }
+    } catch { toast(t('Could not open that photo')); }
   }
-  if (files.length > room) toast(`A check takes up to ${CHECK_MAX} photos`);
+  if (files.length > room) toast(t('A check takes up to {n} photos', { n: CHECK_MAX }));
   S.check.err = '';
   render();
 }
@@ -398,7 +401,7 @@ async function runCheck() {
     await addUsage(model, usage);
     if (data.kind === 'none' || !data.options.length) {
       // Nothing to judge: the photos stay, so one more can be added
-      c.err = data.answer || 'Nothing to judge was found. Try a closer or sharper photo.';
+      c.err = data.answer || t('Nothing to judge was found. Try a closer or sharper photo.');
     } else {
       const rec = { id: db.uid(), ts: Date.now(), ...data, note, photos: blobs.length, model };
       S.checks = [rec, ...S.checks].slice(0, CHECK_KEEP);
@@ -471,7 +474,7 @@ function zoomFrame(z) {
 async function openFrame(mealId, file) {
   if (!MEAL_BY_ID[mealId]) return;
   let src;
-  try { src = await picture.prepare(file); } catch (err) { return toast('Could not open that photo'); }
+  try { src = await picture.prepare(file); } catch (err) { return toast(t('Could not open that photo')); }
   frame = { id: mealId, src, zoom: 1, cx: src.width / 2, cy: src.height / 2 };
   openSheet(renderFrameSheet(mealId), { type: 'plan-frame', id: mealId });
   paintFrame();
@@ -504,11 +507,11 @@ async function saveFrame() {
     await storePlanPhoto(id, await picture.render(src, zoom, cx, cy), picture.PICTURE_SIZE, picture.PICTURE_SIZE);
   } catch (err) {
     frame = f;
-    return toast('Could not save the picture');
+    return toast(t('Could not save the picture'));
   }
   openSheet(renderPlanSheet(id), { type: 'plan', id });
   render();
-  toast('Picture saved');
+  toast(t('Picture saved'));
 }
 function cancelFrame() {
   const id = frame ? frame.id : S.sheet && S.sheet.id;
@@ -582,7 +585,7 @@ async function analyzeEntry(id, opts = {}) {
         const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String((i && i.n) || '').slice(0, 80), g: cap(i && i.g, 5000), kcal: cap(i && i.kcal, 3000), p: cap(i && i.p, 300) })) : [];
         const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
         Object.assign(e, {
-          planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items,
+          planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items, // i18n-ok: the stored title stays English
           // The item list is what explains the total, so the total is their sum whenever items carry calories
           kcal: Math.round(cap(sumKcal || data.kcal, 6000)), p: cap(data.p, 500) || items.reduce((a, i) => a + i.p, 0), edited: false,
           c: cap(data.c, 800), f: cap(data.f, 500), fib: cap(data.fib, 150),
@@ -596,9 +599,9 @@ async function analyzeEntry(id, opts = {}) {
         conf: Math.max(0, Math.min(1, +data.conf || 0)), q: String(data.q || '').slice(0, 160),
       });
     } else if (settled) {
-      failure = 'Nothing to log was found in that, so the entry is unchanged.';
+      failure = t('Nothing to log was found in that, so the entry is unchanged.');
     } else {
-      Object.assign(e, { status: 'error', err: 'Nothing to log was found: no food, weight or step count.' });
+      Object.assign(e, { status: 'error', err: t('Nothing to log was found: no food, weight or step count.') });
     }
   } catch (err) {
     const code = err && err.code;
@@ -606,7 +609,7 @@ async function analyzeEntry(id, opts = {}) {
     const waiting = ['no_key', 'offline', 'net', 'timeout', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     const detail = ['bad_request', 'http', 'bad_model', 'server', 'rate', 'no_quota', 'no_credit', 'needs_billing'].includes(code) ? ' ' + errorDetail(err, 140) : '';
     if (settled) failure = modelFailure(err, 'new estimate');
-    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] ? td(AI_ERRORS[code]) : 'Analysis failed.') + (waiting ? td(WAITING) : '') + detail });
+    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] ? td(AI_ERRORS[code]) : t('Analysis failed.')) + (waiting ? td(WAITING) : '') + detail });
   }
   S.busy.delete(id);
   S.retry.delete(id);
@@ -635,8 +638,8 @@ async function deliverFile(name, content, type) {
     if (err && err.name === 'NotAllowedError') {
       return new Promise((res) => {
         const timer = setTimeout(() => res(false), 7000);
-        toast('The file is ready', {
-          label: 'Save',
+        toast(t('The file is ready'), {
+          label: t('Save'),
           fn: () => {
             clearTimeout(timer);
             navigator.share({ files: [file], title: name }).then(() => res(true), () => res(false));
@@ -672,21 +675,21 @@ async function exportBackup(withPhotos) {
   S.settings.lastBackup = Date.now();
   await saveSettings();
   render();
-  toast('Backup ready');
+  toast(t('Backup ready'));
 }
 
 // For analysis elsewhere: a .sql file that builds the tables in any SQLite database
 async function exportSql() {
   const { sql, counts } = buildSql({ settings: S.settings, entries: S.entries, days: Object.values(S.days), appVersion: APP_VERSION });
   const done = await deliverFile(exportName(), sql, 'text/plain');
-  if (done) toast(`Exported ${counts.days} ${counts.days === 1 ? 'day' : 'days'} and ${counts.meals} ${counts.meals === 1 ? 'meal' : 'meals'}`);
+  if (done) toast(t('Exported {days} and {meals}', { days: tn('{n} day|{n} days', counts.days), meals: tn('{n} meal|{n} meals', counts.meals) }));
 }
 
 async function importBackup(file) {
   let data;
-  try { data = JSON.parse(await file.text()); } catch { return toast('Could not read the file'); }
+  try { data = JSON.parse(await file.text()); } catch { return toast(t('Could not read the file')); }
   const problem = backupProblem(data);
-  if (problem) return toast(problem);
+  if (problem) return toast(td(problem)); // backup.js marks its messages as translatable
   // Restoring adds to what is on the device; an entry or day that is in both is replaced by the backup's version.
   // Everything read from the file is checked first (see backup.js).
   let restored = 0;
@@ -722,13 +725,14 @@ async function importBackup(file) {
       await db.kvSet('checks', S.checks.concat(added).sort((a, b) => b.ts - a.ts).slice(0, CHECK_KEEP));
     }
   } catch (err) {
-    toast('The backup could not be restored completely');
+    toast(t('The backup could not be restored completely'));
     await load();
     return render();
   }
   await load();
   render();
-  toast(`${restored} ${restored === 1 ? 'entry' : 'entries'} restored${skipped ? `; ${skipped} damaged ${skipped === 1 ? 'item' : 'items'} skipped` : ''}`);
+  const back = tn('{n} entry restored|{n} entries restored', restored);
+  toast(skipped ? t('{restored}; {skipped}', { restored: back, skipped: tn('{n} damaged item skipped|{n} damaged items skipped', skipped) }) : back);
 }
 
 // ——— Loading and rendering ———
@@ -809,16 +813,16 @@ function celebrate() {
 let winsBusy = false;
 async function checkWins() {
   if (winsBusy) return;
-  const t = today();
-  const kilos = kilosDown(t);
-  const perfect = isPerfect(t);
+  const day = today();
+  const kilos = kilosDown(day);
+  const perfect = isPerfect(day);
   const w = S.settings.wins;
   // First run with this feature: note where things stand without celebrating the past
-  const next = w ? { ...w } : { kilos, perfect: perfect ? t : '' };
+  const next = w ? { ...w } : { kilos, perfect: perfect ? day : '' };
   let msg = '';
   if (w) {
-    if (kilos > (w.kilos || 0)) { msg = kilos === 1 ? 'First kilo down' : `${kilos} kilos down`; next.kilos = kilos; }
-    if (perfect && w.perfect !== t) { msg = msg || 'All five goals done today'; next.perfect = t; }
+    if (kilos > (w.kilos || 0)) { msg = kilos === 1 ? t('First kilo down') : t('{n} kilos down', { n: kilos }); next.kilos = kilos; }
+    if (perfect && w.perfect !== day) { msg = msg || t('All five goals done today'); next.perfect = day; }
     if (!msg) return;
   }
   winsBusy = true;
@@ -836,7 +840,7 @@ function renderFavorites() {
   if (!show) return;
   const label = document.createElement('span');
   label.className = 'favorites-label';
-  label.textContent = 'Favourites';
+  label.textContent = t('Favourites');
   row.append(label);
   for (const f of favorites) {
     const b = document.createElement('button');
@@ -926,7 +930,7 @@ const ACT = {
     await saveDay(el.dataset.day, el.dataset.kind === 'kg' ? { kg: null } : { steps: null });
     closeSheet();
     render();
-    toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
+    toast(el.dataset.kind === 'kg' ? t('Weight removed') : t('Steps removed'));
   },
   'lang': async (el) => { // the language control in Settings (hidden while LANG_SWITCH_VISIBLE is false)
     const prev = S.settings.lang;
@@ -966,7 +970,7 @@ const ACT = {
     const next = Math.max(0, cur + Number(el.dataset.v));
     await saveDay(day, { water: next });
     render();
-    if (next > cur) toast('A glass of water added', { label: 'Undo', fn: async () => { await saveDay(day, { water: cur }); render(); } });
+    if (next > cur) toast(t('A glass of water added'), { label: t('Undo'), fn: async () => { await saveDay(day, { water: cur }); render(); } });
   },
   'coffee': async (el) => {
     const day = S.viewDay;
@@ -974,7 +978,7 @@ const ACT = {
     const next = Math.max(0, Math.min(COUNT_MAX, cur + Number(el.dataset.v)));
     await saveDay(day, { coffee: next });
     render();
-    if (next > cur) toast('A coffee added', { label: 'Undo', fn: async () => { await saveDay(day, { coffee: cur }); render(); } });
+    if (next > cur) toast(t('A coffee added'), { label: t('Undo'), fn: async () => { await saveDay(day, { coffee: cur }); render(); } });
   },
   'supp': async (el) => {
     const day = S.viewDay;
@@ -986,11 +990,11 @@ const ACT = {
   'supp-save': async () => {
     const name = $('#supp-name').value.replace(/\s+/g, ' ').trim().slice(0, 40);
     const dose = $('#supp-dose').value.replace(/\s+/g, ' ').trim().slice(0, 30);
-    if (!name) return toast('Give the supplement a name');
+    if (!name) return toast(t('Give the supplement a name'));
     const list = S.settings.supplements || [];
     const edit = list.find((x) => x.id === S.suppEdit);
-    if (!edit && list.length >= SUPP_MAX) return toast(`At most ${SUPP_MAX} supplements`);
-    if (list.some((x) => x.id !== S.suppEdit && x.name.toLowerCase() === name.toLowerCase())) return toast('Already in the list');
+    if (!edit && list.length >= SUPP_MAX) return toast(t('At most {n} supplements', { n: SUPP_MAX }));
+    if (list.some((x) => x.id !== S.suppEdit && x.name.toLowerCase() === name.toLowerCase())) return toast(t('Already in the list'));
     S.settings.supplements = edit ? list.map((x) => (x.id === edit.id ? { ...x, name, dose } : x)) : [...list, { id: db.uid(), name, dose }];
     S.suppEdit = '';
     await saveSettings();
@@ -1001,7 +1005,7 @@ const ACT = {
   'supp-cancel': () => { S.suppEdit = ''; openSettings('', '#supp-name'); },
   'supp-remove': async (el) => {
     const x = (S.settings.supplements || []).find((y) => y.id === el.dataset.id);
-    if (!x || !window.confirm(`Remove ${x.name}? Its history is no longer shown.`)) return;
+    if (!x || !window.confirm(t('Remove {name}? Its history is no longer shown.', { name: x.name }))) return;
     S.settings.supplements = S.settings.supplements.filter((y) => y.id !== x.id);
     if (S.suppEdit === x.id) S.suppEdit = '';
     await saveSettings();
@@ -1032,13 +1036,13 @@ const ACT = {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return;
     const favorites = S.settings.favorites || [];
-    if (favorites.some((f) => f.name === e.title)) return toast('Already in favourites');
+    if (favorites.some((f) => f.name === e.title)) return toast(t('Already in favourites'));
     const v = eff(e);
     favorites.push({ id: db.uid(), name: e.title, slot: 'any', kcal: Math.round(v.kcal), p: v.p, c: v.c, f: v.f, fib: v.fib, tier: e.tier, flags: e.flags || [], items: e.items || [] });
     S.settings.favorites = favorites;
     await saveSettings();
     render();
-    toast('Added to favourites. One tap next time.');
+    toast(t('Added to favourites. One tap next time.'));
   },
   'favorite-remove': async (el) => {
     S.settings.favorites = (S.settings.favorites || []).filter((f) => f.id !== el.dataset.id);
@@ -1065,7 +1069,7 @@ const ACT = {
     await saveEntry(next);
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // Safari keeps a field focused when a button is tapped, which would keep the sheet from refreshing
     render();
-    toast('Entry updated');
+    toast(t('Entry updated'));
   },
   'chart-range': (el) => { S.chartRange = ['week', 'whole'].includes(el.dataset.v) ? el.dataset.v : 'weeks'; render(); },
   'cal': (el) => { S.calPick = S.calPick === el.dataset.day ? null : el.dataset.day; render(); },
@@ -1075,7 +1079,7 @@ const ACT = {
     if (S.settings.provider === 'openai') {
       // The key is sent to this address, so it must be a secure one; a schemeless address would be read as a path on this site
       const base = $('#set-base').value.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
-      if (base && !/^https:\/\/[^/\s]+/i.test(base)) { toast('The address must start with https://'); return false; }
+      if (base && !/^https:\/\/[^/\s]+/i.test(base)) { toast(t('The address must start with https://')); return false; }
       S.settings.oaBase = base;
       S.settings.oaModel = $('#set-oamodel').value.trim();
       S.settings.oaKey = $('#set-oakey').value.trim();
@@ -1084,7 +1088,7 @@ const ACT = {
       S.settings.model = $('#set-model').value;
     }
     await saveSettings();
-    toast(aiCfg().key ? 'Saved on this device' : 'Key removed');
+    toast(aiCfg().key ? t('Saved on this device') : t('Key removed'));
     render();
     await openSettings();
     if (hasKey()) ACT['analyze-all']();
@@ -1092,20 +1096,20 @@ const ACT = {
   'test-key': async () => {
     if ((await ACT['save-key']()) === false) return;
     const out = $('#key-test');
-    if (!hasKey()) { out.textContent = S.settings.provider === 'openai' ? 'Address, model and key are all required.' : 'A key is required.'; return; }
+    if (!hasKey()) { out.textContent = S.settings.provider === 'openai' ? t('Address, model and key are all required.') : t('A key is required.'); return; }
     const cfg = aiCfg();
     const add = (u) => addUsage(cfg.model, u);
     // Always show what the provider said, so the cause can be checked
     const gemini = cfg.provider === 'openai' && /generativelanguage\.googleapis\.com/.test(cfg.base || '');
-    const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? ' Your plan and limits: aistudio.google.com/rate-limit' : '');
-    const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? ` ${d}` : ` The provider said: “${d}”`; };
-    const why = (err) => `${AI_ERRORS[err.code] ? td(AI_ERRORS[err.code]) : 'Failed.'}${said(err)}${limitsHint(err)}`;
-    out.textContent = 'Testing text…';
+    const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? t('Your plan and limits: aistudio.google.com/rate-limit') : '');
+    const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? d : t('The provider said: “{detail}”', { detail: d }); };
+    const why = (err) => [AI_ERRORS[err.code] ? td(AI_ERRORS[err.code]) : t('Failed.'), said(err), limitsHint(err)].filter(Boolean).join(' ');
+    out.textContent = t('Testing text…');
     let textLine;
     try {
       const r = await analyze({ cfg, text: '1 medium apple', when: new Date() });
       await add(r.usage);
-      textLine = `Text works: “${r.data.title}”, ${Math.round(r.data.kcal)} kcal (${r.usage.in} input and ${r.usage.out} output tokens).`;
+      textLine = t('Text works: “{title}”, {kcal} kcal ({tokensIn} input and {tokensOut} output tokens).', { title: r.data.title, kcal: Math.round(r.data.kcal), tokensIn: r.usage.in, tokensOut: r.usage.out });
       if (r.model !== cfg.model) {
         // The chosen model was out of quota or busy and a fallback answered
         const from = cfg.model;
@@ -1116,47 +1120,47 @@ const ACT = {
           await saveSettings();
           const inp = $('#set-oamodel');
           if (inp) inp.value = r.model;
-          textLine = `${from}: ${reason}\nSwitched to ${r.model}. ${textLine}`;
+          textLine = t('{from}: {reason}\nSwitched to {model}. {line}', { from, reason, model: r.model, line: textLine });
         } else {
-          textLine = `${from}: ${reason}\nFor now ${r.model} answers instead. ${textLine}`;
+          textLine = t('{from}: {reason}\nFor now {model} answers instead. {line}', { from, reason, model: r.model, line: textLine });
         }
       }
     } catch (err) {
-      out.textContent = 'Text: ' + why(err);
+      out.textContent = t('Text: {why}', { why: why(err) });
       return;
     }
-    out.textContent = textLine + ' Testing photo…';
+    out.textContent = `${textLine} ${t('Testing photo…')}`;
     try {
       const v = await probeVision(cfg);
       await add(v.usage);
-      out.textContent = textLine + (v.ok ? ' Photos work: the model read the number in the test image.' : ' Photos do not work: the model could not read the test image. Pick a model with image support.');
+      out.textContent = `${textLine} ${v.ok ? t('Photos work: the model read the number in the test image.') : t('Photos do not work: the model could not read the test image. Pick a model with image support.')}`;
     } catch (err) {
-      out.textContent = textLine + ' Photo: ' + why(err);
+      out.textContent = `${textLine} ${t('Photo: {why}', { why: why(err) })}`;
     }
   },
   'find-vision': async () => {
     if ((await ACT['save-key']()) === false) return;
     const out = $('#key-test');
-    if (!S.settings.oaBase || !S.settings.oaKey) { out.textContent = 'Enter the address and key first.'; return; }
+    if (!S.settings.oaBase || !S.settings.oaKey) { out.textContent = t('Enter the address and key first.'); return; }
     const base = { provider: 'openai', key: S.settings.oaKey, base: S.settings.oaBase };
-    out.textContent = 'Fetching the model list…';
+    out.textContent = t('Fetching the model list…');
     let ids = await listModels(base);
     const zen = /opencode\.ai\/zen\/v1$/.test(S.settings.oaBase);
     if (zen) ids = ids.filter((id) => /free|big-pickle/i.test(id));
     if (!ids.length && zen) ids = ZEN_FREE.slice();
     if (S.settings.oaModel && !ids.includes(S.settings.oaModel)) ids.unshift(S.settings.oaModel);
     ids = ids.slice(0, 16);
-    if (!ids.length) { out.textContent = 'Could not fetch the model list. Type a model name and tap “Save and test”.'; return; }
+    if (!ids.length) { out.textContent = t('Could not fetch the model list. Type a model name and tap “Save and test”.'); return; }
     const lines = [];
     let found = '';
     for (const id of ids) {
-      out.textContent = lines.concat(`${id}: testing…`).join('\n');
+      out.textContent = lines.concat(t('{id}: testing…', { id })).join('\n');
       try {
         const v = await probeVision({ ...base, model: id });
-        lines.push(`${id}: ${v.ok ? 'read the photo' : 'could not read the photo'}`);
+        lines.push(v.ok ? t('{id}: read the photo', { id }) : t('{id}: could not read the photo', { id }));
         if (v.ok && !found) found = id;
       } catch (err) {
-        lines.push(`${id}: ${(AI_ERROR_LABEL[err.code] ? td(AI_ERROR_LABEL[err.code]) : 'error')}`);
+        lines.push(t('{id}: {label}', { id, label: AI_ERROR_LABEL[err.code] ? td(AI_ERROR_LABEL[err.code]) : t('error') }));
         if (err.code === 'net' || err.code === 'offline' || err.code === 'bad_key') break;
       }
     }
@@ -1165,8 +1169,8 @@ const ACT = {
       await saveSettings();
       const inp = $('#set-oamodel');
       if (inp) inp.value = found;
-      lines.push(`Selected model: ${found}. Now tap “Save and test”.`);
-    } else lines.push('No model that reads photos was found.');
+      lines.push(t('Selected model: {model}. Now tap “Save and test”.', { model: found }));
+    } else lines.push(t('No model that reads photos was found.'));
     out.textContent = lines.join('\n');
     render();
   },
@@ -1178,36 +1182,36 @@ const ACT = {
       kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), protein: Math.round(num('#set-prot')),
     };
     if (!patch.startDate || !patch.targetDate || patch.targetDate <= patch.startDate || !(patch.startKg > patch.targetKg) || !(patch.kcalRest >= KCAL_FLOOR) || !(patch.kcalTrain >= patch.kcalRest) || !(patch.protein > 50)) {
-      return toast(`Check the values: the end must be after the start, the goal weight below the start weight, and calories at least ${fmtInt(KCAL_FLOOR)}, as the plan's rules say`);
+      return toast(t('Check the values: the end must be after the start, the goal weight below the start weight, and calories at least {kcal}, as the plan\'s rules say', { kcal: fmtInt(KCAL_FLOOR) }));
     }
     S.settings = { ...S.settings, ...patch, proteinMin: Math.round(patch.protein * 0.89) };
     await saveSettings();
     render();
-    toast('Goals saved');
+    toast(t('Goals saved'));
   },
   'loc-toggle': async (el) => { S.settings.useLocation = el.checked; await saveSettings(); openSettings(); },
   'review-toggle': async (el) => { S.settings.autoReview = el.checked; await saveSettings(); },
   'coach-day': (el) => {
-    if (!hasKey()) return toast('Add an API key in Settings to get a note');
-    if (navigator.onLine === false) return toast('No connection. Try again when you are online');
+    if (!hasKey()) return toast(t('Add an API key in Settings to get a note'));
+    if (navigator.onLine === false) return toast(t('No connection. Try again when you are online'));
     queueCoach(el.dataset.day);
   },
   'review-day': (el) => {
-    if (!hasKey()) return toast('Add an API key in Settings to get a review');
-    if (navigator.onLine === false) return toast('No connection. Try again when you are online');
+    if (!hasKey()) return toast(t('Add an API key in Settings to get a review'));
+    if (navigator.onLine === false) return toast(t('No connection. Try again when you are online'));
     queueReview(el.dataset.day);
   },
   'loc-save': async (el) => {
     const out = $('#loc-out');
-    out.textContent = 'Getting your location…';
+    out.textContent = t('Getting your location…');
     posCache = null;
     const pos = await getPos(true);
-    if (!pos) { out.textContent = 'Could not get a location. Check that the browser has location permission.'; return; }
+    if (!pos) { out.textContent = t('Could not get a location. Check that the browser has location permission.'); return; }
     const name = el.dataset.name;
     S.settings.places = (S.settings.places || []).filter((p) => p.name !== name).concat([{ name, lat: pos.lat, lon: pos.lon }]);
     await saveSettings();
     openSettings();
-    toast(`This spot is saved as “${name}”`);
+    toast(t('This spot is saved as “{name}”', { name }));
   },
   'export': () => exportBackup(false),
   'export-photos': () => exportBackup(true),
@@ -1219,14 +1223,14 @@ const ACT = {
   },
   'check-update': async () => {
     const out = $('#update-out');
-    if (!swReg) { out.textContent = 'Offline caching is off in this browser; reloading the page is enough.'; return; }
-    out.textContent = 'Checking…';
+    if (!swReg) { out.textContent = t('Offline caching is off in this browser; reloading the page is enough.'); return; }
+    out.textContent = t('Checking…');
     try {
       await swReg.update();
       // A new version installs itself and the page reloads on its own
-      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? 'Installing the new version…' : 'Up to date: this is the latest version.'; }, 1500);
+      setTimeout(() => { if (document.contains(out)) out.textContent = swReg.installing || swReg.waiting ? t('Installing the new version…') : t('Up to date: this is the latest version.'); }, 1500);
     } catch {
-      out.textContent = 'Could not check. Check your internet connection.';
+      out.textContent = t('Could not check. Check your internet connection.');
     }
   },
   'hard-reload': async () => {
@@ -1241,8 +1245,8 @@ const ACT = {
     location.reload();
   },
   'wipe': async () => {
-    if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
-    if (!window.confirm('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?')) return;
+    if (busyNow()) return toast(t('Something is still being analysed. Try again in a moment'));
+    if (!window.confirm(t('Clear your log? This deletes meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts from this device. Your goals, favourites, saved places, plan pictures and API key stay. It cannot be undone. Do you have a backup?'))) return;
     const keep = new Set(Object.values(S.settings.planPhotos || {})); // the plan's own pictures stay
     await db.clear('entries'); await db.clear('days'); await db.kvSet('checks', []);
     for (const id of await db.keys('photos')) {
@@ -1256,14 +1260,15 @@ const ACT = {
     S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
     closeSheet();
     render();
-    toast('Log cleared');
+    toast(t('Log cleared'));
   },
   // Back to how the app was on its first launch: the database is emptied and the settings start again.
   // The API key and provider can stay, so they need not be typed in again.
   'wipe-all': async () => {
-    if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
+    if (busyNow()) return toast(t('Something is still being analysed. Try again in a moment'));
     const keepKey = !!($('#keep-key') && $('#keep-key').checked);
-    const typed = window.prompt('Factory reset: this deletes everything on this device: your log and photos, goals, favourites, saved places, the plan’s pictures and the usage totals. ' + (keepKey ? 'Your API key and provider stay.' : 'Your API key and provider are deleted too.') + ' It cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
+    const word = t('DELETE', { $id: 'reset.word' }); // the word to type; the Turkish one and the English one are both accepted
+    const typed = window.prompt(t('Factory reset: this deletes everything on this device: your log and photos, goals, favourites, saved places, the plan’s pictures and the usage totals. {keyNote} It cannot be undone. Do you have a backup?\n\nType {word} to continue.', { keyNote: keepKey ? t('Your API key and provider stay.') : t('Your API key and provider are deleted too.'), word }));
     if (!typed || !['delete', 'sil'].includes(foldKey(typed.trim()))) return;
     const kept = { lang: S.settings.lang }; // the language is not data: a reset keeps it, and so does its mirror
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
@@ -1279,7 +1284,7 @@ const ACT = {
     autoTried.clear(); posCache = null; pausedUntil = 0; frame = null; photoTarget = null;
     closeSheet();
     go('today');
-    toast(keepKey ? 'Factory reset done. Your API key is kept' : 'Factory reset done');
+    toast(keepKey ? t('Factory reset done. Your API key is kept') : t('Factory reset done'));
   },
 };
 // Work that a wipe must not run into: it would write its result into the emptied app
@@ -1287,7 +1292,7 @@ const busyNow = () => S.busy.size > 0 || S.reviewing.size > 0 || S.coaching.size
 
 // A handler that fails (storage full, a database that will not open) says so, instead of the screen showing
 // something that was never saved. Runs fn straight away: file pickers need the tap's own turn.
-const report = (err) => toast(`Could not save: ${(err && err.message) || 'storage error'}`);
+const report = (err) => toast(t('Could not save: {reason}', { reason: (err && err.message) || t('storage error') }));
 function guard(fn, undo) {
   const fail = (err) => { if (undo) undo(); report(err); };
   try {
@@ -1350,12 +1355,12 @@ document.addEventListener('submit', (ev) => {
   const day = f.dataset.day;
   if (f.dataset.kind === 'kg') {
     const kg = parseFloat(raw.replace(',', '.'));
-    if (!(kg >= 50 && kg <= 160)) { err.textContent = 'Enter a value between 50 and 160 kg. Example: 85.4'; err.hidden = false; return; }
+    if (!(kg >= 50 && kg <= 160)) { err.textContent = t('Enter a value between 50 and 160 kg. Example: 85.4'); err.hidden = false; return; }
     closeSheet();
     guard(() => setWeight(Math.round(kg * 10) / 10, day, false));
   } else {
     const steps = parseInt(raw.replace(/\D/g, ''), 10);
-    if (!(steps >= 0 && steps <= 100000)) { err.textContent = 'Enter the step count in digits. Example: 8200'; err.hidden = false; return; }
+    if (!(steps >= 0 && steps <= 100000)) { err.textContent = t('Enter the step count in digits. Example: 8200'); err.hidden = false; return; }
     closeSheet();
     guard(() => setSteps(steps, day, false));
   }
@@ -1431,7 +1436,7 @@ function setupUpdates() {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || reloading) return; // no reload needed on first install
-    if (safeToReload()) { reloading = true; location.reload(); } else toast('A new version is ready', { label: 'Reload', fn: () => location.reload() });
+    if (safeToReload()) { reloading = true; location.reload(); } else toast(t('A new version is ready'), { label: t('Reload'), fn: () => location.reload() });
   });
   navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => { swReg = reg; }).catch(() => {});
   // A Home Screen app that was waiting in the background also checks when it comes forward
@@ -1450,7 +1455,7 @@ window.addEventListener('online', () => { if (RUNS) resumePending(); });
     if (S.settings.lang !== getLang()) await applyLang(S.settings.lang); // the stored setting wins over the mirror
     rememberLang(S.settings.lang);
   } catch (err) {
-    $('#view').innerHTML = '<div class="empty"><h1>Could not open the database</h1><p>Local storage may be off in private browsing. Open the app in a normal window or add it to the Home Screen.</p></div>';
+    $('#view').innerHTML = `<div class="empty"><h1>${t('Could not open the database')}</h1><p>${t('Local storage may be off in private browsing. Open the app in a normal window or add it to the Home Screen.')}</p></div>`;
     return;
   }
   render();
