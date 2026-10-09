@@ -12,7 +12,7 @@ import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDa
 import {
   APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor, titleOf,
 } from './core.js';
-import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderBadgeSheet, renderFrameSheet, attachChart } from './views.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -787,6 +787,7 @@ function render() {
   checkBadges();
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
+  if (S.sheet && S.sheet.type === 'badge') $('#sheet-body').innerHTML = renderBadgeSheet(S.sheet.id);
   if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
@@ -973,6 +974,7 @@ const ACT = {
   'camera': () => { photoTarget = null; $('#f-cam').click(); },
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
+  'badge': (el) => { const html = renderBadgeSheet(el.dataset.id); if (html) openSheet(html, { type: 'badge', id: el.dataset.id }); },
   'plan-meal': (el) => openSheet(renderPlanSheet(el.dataset.id), { type: 'plan', id: el.dataset.id }),
   'check-cam': () => { photoTarget = CHECK_PHOTOS; $('#f-cam').click(); },
   'check-lib': () => { photoTarget = CHECK_PHOTOS; $('#f-lib').click(); },

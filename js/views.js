@@ -5,6 +5,8 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
+import { BY_ID, GROUP_NAME, FINISH_NAME, context, cellOf, collection, stepRows } from './badges.js';
+import { badgeSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
@@ -16,6 +18,7 @@ const lazyDate = (opts) => ({ format: (d) => dateFmt(opts).format(d) });
 const dLong = lazyDate({ day: 'numeric', month: 'long', weekday: 'long' });
 const dShort = lazyDate({ day: 'numeric', month: 'long' });
 const dTiny = lazyDate({ day: 'numeric', month: 'short' });
+const dFull = lazyDate({ day: 'numeric', month: 'short', year: 'numeric' });
 const dWeekday = lazyDate({ weekday: 'long' });
 const dMonth = lazyDate({ month: 'short' });
 const dMonthYear = lazyDate({ month: 'long', year: 'numeric' });
@@ -1159,12 +1162,67 @@ export function renderProgress() {
     <h2>${t('Checkpoints')}</h2>
     ${checkpoints()}
   </section>
+  ${badgesSection()}
   <section>
     <details class="table-details">
       <summary>${t('Weigh-in table')}</summary>
       ${rows ? `<table class="table"><thead><tr><th scope="col">${t('Day')}</th><th scope="col">${t('Weigh-in')}</th><th scope="col">${t('Avg')}</th><th scope="col">${t('Line')}</th><th scope="col">kcal</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">${t('No weigh-ins yet. Enter one on Today, or type a number into the log.')}</p>`}
     </details>
   </section>`;
+}
+
+// ——— Badges: the collection on the Progress tab and the sheet for one badge ———
+const badgeName = (id) => td(BY_ID[id].name);
+const badgeFinish = (c) => td(FINISH_NAME[c.step]);
+// How far along: '18 / 30', or '2 of 3 kg' for the kilos (text only); nothing for a one-shot or a badge that has no steps left
+function badgeProgress(c) {
+  const { cur, target } = c.prog || { cur: 0, target: 0 };
+  if (!c.ladder || !target) return '';
+  const p = { cur: n0(cur), target: n0(target) };
+  return c.id === 'kilos' ? t('{cur} of {target} kg', p) : t('{cur} / {target}', p);
+}
+const badgeDay = (d) => esc(dFull.format(parseDay(d)));
+// The line under the name in the grid
+const badgeLine = (c) => (c.ladder ? badgeProgress(c) : c.state === 'earned' ? dTiny.format(parseDay(c.day)) : '');
+const badgeAria = (c) => [badgeName(c.id), c.state === 'earned' ? (c.ladder ? badgeFinish(c) : '') : t('Locked'), c.state === 'earned' && !c.ladder ? dFull.format(parseDay(c.day)) : badgeProgress(c)].filter(Boolean).join(', ');
+
+function badgeCell(c) {
+  const pips = c.ladder ? `<span class="bd-pips" aria-hidden="true">${Array.from({ length: c.total }, (_, i) => `<i${i < c.earned ? ' class="on"' : ''}></i>`).join('')}</span>` : '';
+  return `<button type="button" class="bd-cell is-${c.state}" id="badge-${c.id}" data-act="badge" data-id="${c.id}" aria-label="${esc(badgeAria(c))}">
+      ${badgeSvg(c.id, { step: c.step, state: c.state, size: 50, label: badgeName(c.id) })}
+      <span class="bd-name">${esc(badgeName(c.id))}</span>
+      <span class="bd-line">${esc(badgeLine(c))}</span>${pips}
+    </button>`;
+}
+
+function badgesSection() {
+  const col = collection(context(S, today(), S.badges));
+  return `<section class="badges" aria-labelledby="badges-title">
+    <div class="card-head"><h2 id="badges-title">${t('Badges')}</h2><span class="label">${t('{n} of {total}', { n: col.earned, total: col.total })}</span></div>
+    ${col.groups.map((g) => `<h3 class="bd-group">${esc(td(GROUP_NAME[g.group]))}</h3>
+    <div class="bd-grid">
+    ${g.cells.map(badgeCell).join('\n    ')}
+    </div>`).join('\n    ')}
+  </section>`;
+}
+
+// One badge in the bottom sheet: the big badge, what it asks for with the count so far, and each step of the ladder
+export function renderBadgeSheet(id) {
+  if (!Object.hasOwn(BY_ID, id)) return '';
+  const ctx = context(S, today(), S.badges);
+  const c = cellOf(id, ctx);
+  const name = badgeName(id);
+  const earned = c.state === 'earned';
+  const status = earned ? (c.ladder ? t('{finish}, earned {date}', { finish: esc(badgeFinish(c)), date: badgeDay(c.day) }) : t('Earned {date}', { date: badgeDay(c.day) })) : t('Not earned yet');
+  const more = badgeProgress(c);
+  const rows = stepRows(id, ctx);
+  const kg = id === 'kilos' ? ' kg' : '';
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${esc(name)}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <div class="bd-hero"><span aria-hidden="true">${badgeSvg(id, { step: c.step, state: c.state, size: 88, label: name })}</span>
+    <p class="bd-status"><b>${status}</b>${more && !(earned && c.earned === c.total) ? `<span>${esc(more)}</span>` : ''}</p></div>
+  <p class="note bd-desc">${esc(td(BY_ID[id].desc, { n: n0(c.cur) }))}</p>
+  ${rows.length ? `<ol class="bd-steps" aria-label="${t('Steps to earn')}">${rows.map((r) => `<li class="${r.day ? 'is-earned' : r.next ? 'is-next' : ''}"><span aria-hidden="true">${badgeSvg(id, { step: r.step, state: r.state, size: 32, label: '' })}</span><span class="bd-step-n">${n0(r.n)}${kg}<small>${esc(td(FINISH_NAME[r.step]))}</small></span><span class="bd-step-d">${r.day ? badgeDay(r.day) : r.next ? t('Next up') : ''}</span></li>`).join('')}</ol>` : ''}`;
 }
 
 // The beam in its card: every kilo between the start and the target, the ones collected, and the next one by name
@@ -1397,7 +1455,7 @@ export function renderSettings() {
       <p class="note">${t('Starts your tracking over; the app stays set up as it is.')}</p>
       <dl class="reset-diff">
         <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.')}</dd></div>
-        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider.')}</dd></div>
+        <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, saved places, the plan’s pictures, your API key and provider, and the badges you have earned.')}</dd></div>
       </dl>
       <div class="actions"><button type="button" class="btn btn-danger" data-act="wipe">${t('Clear my log')}</button></div>
     </section>

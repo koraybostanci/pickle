@@ -148,6 +148,15 @@ test('table lookups ignore inherited names', () => {
   assert.equal(tn('constructor|hasOwnProperty', 2), 'hasOwnProperty');
 });
 
+test('td translates a marked string and fills its placeholders, in English and in Turkish', async () => {
+  assert.equal(i18n.td(T('Days: {n}'), { n: 4 }), 'Days: 4');
+  assert.equal(i18n.td('Days: {n}'), 'Days: {n}'); // no params: left as it is
+  assert.equal(i18n.td('Days: {n}', { m: 1 }), 'Days: {n}'); // a placeholder with no param stays visible rather than becoming "undefined"
+  await setLang('tr');
+  addTr('Days: {n}', 'Gün: {n}');
+  assert.equal(i18n.td('Days: {n}', { n: 4 }), 'Gün: 4');
+});
+
 test('function translations get the params, also from tn, and tn never splits a function', async () => {
   await setLang('tr');
   addTr('Fn {x}', (p) => `F:${p.x}`);

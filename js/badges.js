@@ -50,6 +50,10 @@ export const CATALOG = [
 export const BY_ID = Object.fromEntries(CATALOG.map((b) => [b.id, b]));
 export const isLadder = (id) => BY_ID[id].steps.length > 1;
 export const GROUPS = ['start', 'consistency', 'complete', 'habits', 'progress'];
+export const GROUP_NAME = { start: T('Start'), consistency: T('Consistency'), complete: T('Complete days'), habits: T('Habits'), progress: T('Progress') };
+// Bronze to Platinum: finish n is step n of a ladder; the caller translates with td()
+export const FINISH_NAME = [T('Bronze'), T('Silver'), T('Gold'), T('Platinum')];
+export const ONE_SHOT_FINISH = 2; // a one-shot is drawn in Gold
 
 // The most kilos the plan can ask for: the span between the start and the target weight
 export const kilosCap = (base) => Math.max(0, Math.floor(base.startKg - base.targetKg + 1e-6));
@@ -219,4 +223,61 @@ export function settle(prev, S, today) {
   const news = added(cur.got, got);
   const changed = news.length > 0 || (!cur.base && !!base);
   return { next: changed ? { ...cur, got, base } : prev, added: news, changed };
+}
+
+// ——— What the collection screen shows ———
+// ctx for the screens: the stored earned set, plus whatever the log earns now (union only), and the counts to measure progress by.
+// `stored` is S.badges (or null); the weights it froze are used, and the settings until it has any.
+export function context(S, today, stored) {
+  const base = (stored && stored.base) || { startKg: S.settings.startKg, targetKg: S.settings.targetKg };
+  const { got, cur } = tally(S, today, base);
+  return { got: merge(stored && stored.got, got), cur, base };
+}
+
+// The steps to list for a badge: those it can reach, and any already earned
+export function shownSteps(id, ctx = {}) {
+  const have = (ctx.got && ctx.got[id]) || {};
+  const can = stepsOf(id, ctx.base);
+  return BY_ID[id].steps.filter((x) => can.includes(x) || Object.hasOwn(have, x));
+}
+
+// One badge as the grid and the sheet need it. step is the finish to draw (the highest step earned; a one-shot is Gold); day is when that step was earned.
+export function cellOf(id, ctx = {}) {
+  const b = BY_ID[id];
+  const have = (ctx.got && ctx.got[id]) || {};
+  const reached = b.steps.filter((x) => Object.hasOwn(have, x));
+  const top = reached.length ? reached[reached.length - 1] : null;
+  const ladder = isLadder(id);
+  const prog = progress(id, ctx);
+  if (top !== null && prog && prog.cur < top) prog.cur = top; // earned stays earned: the count never reads below the step already won
+  return {
+    id, group: b.group, ladder,
+    state: top === null ? 'locked' : 'earned',
+    step: top === null ? 0 : ladder ? b.steps.indexOf(top) : ONE_SHOT_FINISH,
+    earned: reached.length,
+    total: shownSteps(id, ctx).length,
+    day: top === null ? '' : have[top],
+    cur: Math.max((ctx.cur && ctx.cur[id]) || 0, top || 0),
+    prog,
+  };
+}
+
+// The grid: the cells by group in catalog order, and how many badges have at least one step
+export function collection(ctx = {}) {
+  const groups = GROUPS.map((group) => ({ group, cells: CATALOG.filter((b) => b.group === group).map((b) => cellOf(b.id, ctx)) }));
+  const all = groups.flatMap((g) => g.cells);
+  return { groups, earned: all.filter((c) => c.state === 'earned').length, total: all.length };
+}
+
+// The rows of a ladder's step list: each threshold with the finish it earns, the day it was earned (state earned or locked), and which one comes next
+export function stepRows(id, ctx = {}) {
+  if (!isLadder(id)) return [];
+  const have = (ctx.got && ctx.got[id]) || {};
+  let next = true;
+  return shownSteps(id, ctx).map((n) => {
+    const day = Object.hasOwn(have, n) ? have[n] : '';
+    const row = { n, step: BY_ID[id].steps.indexOf(n), day, state: day ? 'earned' : 'locked', next: !day && next };
+    if (!day) next = false;
+    return row;
+  });
 }

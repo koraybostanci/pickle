@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { S, today, dayStatus, history, dayGoals, dayTotals, weekResult, withDayIndex, weekStart } from '../js/core.js';
 import { addDays } from '../js/plan.js';
-import { CATALOG, BY_ID, PARTS, GROUPS, scan, tally, evaluate, merge, added, progress, unlocked, isLadder, stepsOf, settle, isRealDay } from '../js/badges.js';
+import { CATALOG, BY_ID, PARTS, GROUPS, GROUP_NAME, FINISH_NAME, cellOf, collection, stepRows, shownSteps, context, scan, tally, evaluate, merge, added, progress, unlocked, isLadder, stepsOf, settle, isRealDay } from '../js/badges.js';
 import tr from '../js/tr.js';
 
 const T = today();
@@ -399,4 +399,50 @@ test('clearing the log keeps what was earned; a factory reset starts again', () 
   assert.equal(after.next.base, had.base);
   // factory reset: kv is emptied (db.clear('kv') in js/app.js), so the next run has no stored copy and an empty log
   assert.deepEqual(settle(null, S, T), { next: null, added: [], changed: false });
+});
+
+// ——— The collection screen's view model ———
+test('cellOf: locked has no finish, a ladder shows its highest step earned, a one-shot is Gold, and the count never reads below a step won', () => {
+  const ctx = { got: { days_on: { 7: '2026-01-02', 30: '2026-02-01' }, first_meal: { 1: '2026-01-01' } }, cur: { days_on: 12 }, base: { startKg: 90, targetKg: 80 } };
+  const d = cellOf('days_on', ctx);
+  assert.deepEqual([d.state, d.step, d.earned, d.total, d.day, d.cur, d.prog], ['earned', 1, 2, 4, '2026-02-01', 30, { cur: 30, target: 100 }]);
+  const m = cellOf('first_meal', ctx);
+  assert.deepEqual([m.state, m.step, m.ladder, m.day], ['earned', 2, false, '2026-01-01']);
+  const l = cellOf('perfect_day', ctx);
+  assert.deepEqual([l.state, l.earned, l.cur], ['locked', 0, 0]);
+  const top = cellOf('days_on', { got: { days_on: { 7: '2026-01-01', 30: '2026-01-02', 100: '2026-01-03', 365: '2026-01-04' } }, cur: {} });
+  assert.deepEqual([top.step, top.prog], [3, { cur: 365, target: 365 }]);
+});
+
+test('cellOf: the kilos steps beyond the span are not listed, and a step already earned stays', () => {
+  const base = { startKg: 80, targetKg: 76.5 }; // a 3 kg span
+  assert.deepEqual(shownSteps('kilos', { base }), [1, 3]);
+  assert.equal(cellOf('kilos', { base, got: {}, cur: {} }).total, 2);
+  assert.deepEqual(shownSteps('kilos', { base, got: { kilos: { 5: '2026-01-01' } } }), [1, 3, 5]);
+});
+
+test('collection: every badge once, by group in catalog order, and the count of badges earned', () => {
+  const col = collection({ got: { first_meal: { 1: '2026-01-01' }, days_on: { 7: '2026-01-01' } }, cur: {} });
+  assert.deepEqual(col.groups.map((g) => g.group), GROUPS);
+  assert.equal(col.total, 18);
+  assert.equal(col.earned, 2);
+  assert.deepEqual(col.groups.flatMap((g) => g.cells.map((c) => c.id)), CATALOG.map((b) => b.id));
+  for (const g of GROUPS) assert.ok(GROUP_NAME[g] in tr, g);
+  for (const f of FINISH_NAME) assert.ok(f in tr, f);
+});
+
+test('stepRows: a ladder lists each threshold with its finish, day and the one next; a one-shot has none', () => {
+  const rows = stepRows('days_on', { got: { days_on: { 7: '2026-01-02' } } });
+  assert.deepEqual(rows.map((r) => [r.n, r.step, r.state, r.next]), [[7, 0, 'earned', false], [30, 1, 'locked', true], [100, 2, 'locked', false], [365, 3, 'locked', false]]);
+  assert.deepEqual(stepRows('first_meal', {}), []);
+});
+
+test('context: the stored set plus what the log earns now, measured from the stored base', () => {
+  reset();
+  on(-3, 3);
+  const c = context(S, T, { got: { first_weigh: { 1: '2020-01-01' } }, base: { startKg: 90, targetKg: 80 } });
+  assert.deepEqual(c.base, { startKg: 90, targetKg: 80 });
+  assert.equal(c.got.first_weigh[1], '2020-01-01');
+  assert.ok(c.got.first_meal && c.cur.days_on >= 3);
+  assert.deepEqual(context(S, T, null).base, { startKg: S.settings.startKg, targetKg: S.settings.targetKg });
 });

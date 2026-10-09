@@ -16,7 +16,7 @@ const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 // ——— Reverse lint: English text in views.js that is not inside t() / tn() / T() ———
 // Words that are not English text to be translated: units, brand names, the two language names
 // (standalone and svg are a media query and a selector in the code, not text)
-const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg']);
+const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg', 'art']); // art: the badge-art.js import path
 // Lone lower-case words that are code: Intl options, element and event names, the screen and section ids, the values of the code's own states, attribute
 // words (` disabled`). Words that only appear in a comparison (`=== 'week'`) need no entry. Anything else, say `[x, 'weigh-in']` or `ok ? 'kg' : 'steps'`, is flagged.
 const CODE_WORDS = new Set(['numeric', 'long', 'short', 'future', 'before', 'over', 'top', 'more', 'morning', 'late', 'workout', 'true', 'false', 'decimal', 'start', 'middle',
@@ -279,4 +279,25 @@ test('Settings: the control is a labelled group of two buttons with the language
 test('Settings: the buttons use what the lang action in app.js reads', () => {
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   assert.match(app, /'lang': async \(el\) => \{[^]*?el\.dataset\.lang === 'tr' \? 'tr' : 'en'/);
+});
+
+// ——— The badge sheet: every badge, in both languages, with its {n} filled ———
+test('badge sheet: no placeholder is left on screen for any badge, in English or Turkish', async () => {
+  const { BY_ID, CATALOG } = await import('../js/badges.js');
+  for (const lang of ['en', 'tr']) {
+    await setLang(lang);
+    fixture();
+    for (const b of CATALOG) {
+      const html = views.renderBadgeSheet(b.id);
+      assert.ok(html.includes('id="sheet-title"'), b.id);
+      assert.doesNotMatch(html, /[{}]/, `${lang} ${b.id}`);
+    }
+    S.tab = 'progress';
+    assert.doesNotMatch(views.renderProgress(), /\{\w+\}/, `${lang} progress`);
+    if (lang === 'tr') assert.match(views.renderBadgeSheet('days_on'), /Toplam planda geçen gün: \d+/);
+    else assert.match(views.renderBadgeSheet('days_on'), /Days on plan in total: \d+/);
+  }
+  assert.equal(views.renderBadgeSheet('nope'), '');
+  assert.equal(views.renderBadgeSheet('constructor'), '');
+  assert.ok(BY_ID.days_on);
 });
