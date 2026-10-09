@@ -2,10 +2,10 @@ import {
   S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, dayNotes, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, weekResult, proteinLevel, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
-  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
+  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { dateFmt } from './i18n.js';
+import { dateFmt, td } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -317,7 +317,7 @@ function dayList(day) {
       const v = eff(e);
       rows.push(`<li class="meal ${ok ? 'is-done' : 'is-pending'}"><button type="button" class="meal-main" data-act="open-entry" data-id="${esc(e.id)}">
         <i class="meal-mark" aria-hidden="true">${ok ? CHECK : ''}</i>
-        <span class="meal-text"><b><span class="sr-only">${ok ? 'Done: ' : 'Waiting: '}</span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(e.title)}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
+        <span class="meal-text"><b><span class="sr-only">${ok ? 'Done: ' : 'Waiting: '}</span>${sl.name}<small>${hhmm(e.ts)}</small></b><span>${esc(titleOf(e))}${ok && e.mult && e.mult !== 1 ? ` ×${multLabel(e.mult)}` : ''}</span></span>
         <span class="meal-kcal">${ok ? `<b>${n0(v.kcal)}</b><span class="sr-only"> kcal</span>` : esc(entryState(e))}</span>
       </button></li>`);
     }
@@ -532,7 +532,7 @@ function entryDetail(e) {
   if (e.kind === 'weight' || e.kind === 'steps') {
     return `<article class="entry">
       <div class="entry-body">
-        <h3>${esc(e.title)}</h3>
+        <h3>${esc(titleOf(e))}</h3>
         <p class="meta">${esc(dLong.format(parseDay(e.day)))}, ${when}</p>
         <div class="actions"><button type="button" class="btn btn-danger" data-act="delete" data-id="${esc(e.id)}">Delete</button></div>
       </div>
@@ -593,7 +593,7 @@ function entryDetail(e) {
   return `<article class="entry">
     ${photos ? `<div class="entry-photos${(e.photoIds || []).length > 1 ? ' is-multi' : ''}">${photos}</div>` : ''}
     <div class="entry-body">
-      <h3>${esc(e.title)}</h3>
+      <h3>${esc(titleOf(e))}</h3>
       <p class="meta">${meta}</p>
       ${e.text && e.src === 'photo' ? `<p class="meta">Note: ${esc(e.text)}</p>` : ''}
       ${body}
@@ -638,7 +638,7 @@ function logRow(e) {
   const state = e.kind === 'meal' && !ok ? (e.status === 'error' ? ' is-error' : ' is-pending') : '';
   return `<li><button type="button" class="log-row${state}${e.tier === 'off' && ok ? ' is-off' : ''}" data-act="open-entry" data-id="${esc(e.id)}">
     <span class="log-time">${hhmm(e.ts)}</span>
-    <span class="log-main"><span class="log-title">${esc(e.title)}</span><span class="log-meta">${meta}</span></span>
+    <span class="log-main"><span class="log-title">${esc(titleOf(e))}</span><span class="log-meta">${meta}</span></span>
     ${thumb}
     <span class="log-value">${value}</span>
   </button></li>`;
@@ -669,7 +669,7 @@ function reviewBlock(day) {
   } else if (busy) ai = wait;
   else if (hasKey()) ai = `<p class="review-foot">${ask(v.live ? 'Review the day so far' : 'Review this day')}</p>`;
   return `<div class="review">
-    <p class="review-verdict"><i class="pill ${pill}">${VERDICT[v.level]}</i><span>${esc(verdictText(v).join(' '))}</span></p>
+    <p class="review-verdict"><i class="pill ${pill}">${td(VERDICT[v.level])}</i><span>${esc(verdictText(v).join(' '))}</span></p>
     ${ai}
     ${err && !busy ? `<p class="note is-error" role="alert">${esc(err)}</p>` : ''}
   </div>`;
@@ -1012,8 +1012,8 @@ function calendar() {
     let wk = '<span class="cal-wk"></span>';
     if (!ahead) {
       const r = weekResult(ws);
-      const head = r.done ? r.tier.title : 'This week so far';
-      const body = r.done ? `${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${r.tier.text}`
+      const head = r.done ? td(r.tier.title) : 'This week so far';
+      const body = r.done ? `${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${td(r.tier.text)}`
         : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far. Keep going, the week is still yours.`;
       if (S.calPick === `week:${ws}`) marked = true;
       wk = `<button type="button" class="cal-wk is-${r.done ? r.tier.tone : 'going'}${S.calPick === `week:${ws}` ? ' is-selected' : ''}" data-act="cal" data-day="week:${ws}" title="${esc(`${head}. ${body}`)}" aria-label="${esc(`${head}. ${body}`)}">${wkIcon(r.done ? r.tier.icon : 'going')}<span>${r.onPlan}/7</span></button>`;
@@ -1039,7 +1039,7 @@ function calPick(ws) {
   if (pick.startsWith('week:')) {
     const r = weekResult(ws);
     const range = `${dTiny.format(parseDay(ws))} – ${dTiny.format(parseDay(addDays(ws, 6)))}`;
-    return `<p class="cal-pick"><b>${esc(range)}</b>: ${r.done ? `${esc(r.tier.title)}. ${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${esc(r.tier.text)}`
+    return `<p class="cal-pick"><b>${esc(range)}</b>: ${r.done ? `${esc(td(r.tier.title))}. ${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${esc(td(r.tier.text))}`
       : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far, ${diffDays(t, addDays(ws, 6))} to go. Keep going, the week is still yours.`}</p>`;
   }
   const d = pick;

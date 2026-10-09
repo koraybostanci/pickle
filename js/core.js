@@ -1,5 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
-import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, KCAL_MIN_DAY } from './plan.js';
+import { t, tn, T, td, foldKey, parseNum, inEnglish } from './i18n.js';
+import { PARSE_TR } from './parse-tr.js';
+import { MEALS, MEAL_BY_ID, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, KCAL_MIN_DAY } from './plan.js';
 
 export const APP_VERSION = '40'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
@@ -90,11 +92,11 @@ export function dayStatus(day) {
 }
 // What kept a day from being on plan: only the calories, in a few words; empty for a day that was
 export function dayReasons(day) {
-  const t = dayTotals(day);
-  if (!t.n) return [];
+  const tot = dayTotals(day);
+  if (!tot.n) return [];
   const target = dayTarget(day);
-  if (t.kcal > target * BAND.high) return [`${fmtInt(t.kcal - target)} kcal above the budget`];
-  if (t.kcal < KCAL_MIN_DAY) return [`${fmtInt(KCAL_MIN_DAY - t.kcal)} kcal under the ${fmtInt(KCAL_MIN_DAY)} minimum`];
+  if (tot.kcal > target * BAND.high) return [t('{kcal} kcal above the budget', { kcal: fmtInt(tot.kcal - target) })];
+  if (tot.kcal < KCAL_MIN_DAY) return [t('{kcal} kcal under the {min} minimum', { kcal: fmtInt(KCAL_MIN_DAY - tot.kcal), min: fmtInt(KCAL_MIN_DAY) })];
   return [];
 }
 // How well protein went: 'target' = the target reached, 'min' = the minimum reached, 'near' = within 80% of the minimum,
@@ -106,30 +108,30 @@ export function proteinLevel(day) {
 }
 // The smaller things worth a mention, which never change how a day counts
 export function dayNotes(day) {
-  const t = dayTotals(day);
-  if (!t.n) return [];
+  const tot = dayTotals(day);
+  if (!tot.n) return [];
   const out = [];
   const target = dayTarget(day);
-  if (t.kcal > target + 0.5 && t.kcal <= target * BAND.high) out.push(`${fmtInt(t.kcal - target)} kcal above the budget, within the ${Math.round((BAND.high - 1) * 100)}% margin`);
-  const gap = Math.ceil(proteinFloor() - t.p - 1e-6);
-  if (gap > 0) out.push(`protein ${gap} g short of your minimum`);
+  if (tot.kcal > target + 0.5 && tot.kcal <= target * BAND.high) out.push(t('{kcal} kcal above the budget, within the {pct}% margin', { kcal: fmtInt(tot.kcal - target), pct: Math.round((BAND.high - 1) * 100) }));
+  const gap = Math.ceil(proteinFloor() - tot.p - 1e-6);
+  if (gap > 0) out.push(t('protein {gap} g short of your minimum', { gap }));
   const off = mealsOf(day).filter((e) => e.tier === 'off').length;
-  if (off) out.push(`${off} off-plan ${off === 1 ? 'entry' : 'entries'}`);
+  if (off) out.push(tn('{n} off-plan entry|{n} off-plan entries', off));
   return out;
 }
 
 // The five things a day can get right. Calories count once enough is logged and the total is within budget.
 export function dayGoals(day) {
   const dd = S.days[day] || {};
-  const t = dayTotals(day);
+  const tot = dayTotals(day);
   const target = dayTarget(day);
   const s = S.settings;
   return [
-    { id: 'weigh', name: 'Weigh-in', done: !!dd.kg },
-    { id: 'kcal', name: 'Calories', done: t.n > 0 && t.kcal >= KCAL_MIN_DAY && t.kcal <= target * BAND.high },
-    { id: 'protein', name: 'Protein', done: t.p >= proteinFloor() },
-    { id: 'steps', name: 'Steps', done: (dd.steps || 0) >= s.steps },
-    { id: 'water', name: 'Water', done: (dd.water || 0) >= s.water },
+    { id: 'weigh', name: t('Weigh-in'), done: !!dd.kg },
+    { id: 'kcal', name: t('Calories'), done: tot.n > 0 && tot.kcal >= KCAL_MIN_DAY && tot.kcal <= target * BAND.high },
+    { id: 'protein', name: t('Protein'), done: tot.p >= proteinFloor() },
+    { id: 'steps', name: t('Steps'), done: (dd.steps || 0) >= s.steps },
+    { id: 'water', name: t('Water'), done: (dd.water || 0) >= s.water },
   ];
 }
 export const isPerfect = (day) => dayGoals(day).every((g) => g.done);
@@ -159,11 +161,11 @@ export function history() {
 
 // How a finished Monday-to-Sunday week went, by the days on plan; `done` is false until the Sunday is over
 export const WEEK_TIERS = [
-  { min: 7, icon: 'star', tone: 'strong', title: 'Strong week', text: 'Every day on plan. Beautifully steady.' },
-  { min: 6, icon: 'sprout', tone: 'solid', title: 'Solid week', text: 'Only one day off. Growing nicely.' },
-  { min: 5, icon: 'steady', tone: 'steady', title: 'Steady week', text: 'Most days on plan. A good rhythm to build on.' },
-  { min: 3, icon: 'caution', tone: 'caution', title: 'Rough patch', text: 'Less than half of the week landed. Look at which days slipped and plan those first. Next week is a fresh start.' },
-  { min: 0, icon: 'reset', tone: 'reset', title: 'Time to reset', text: 'Few days on plan this week. One day at a time, begin again on Monday.' },
+  { min: 7, icon: 'star', tone: 'strong', title: T('Strong week'), text: T('Every day on plan. Beautifully steady.') },
+  { min: 6, icon: 'sprout', tone: 'solid', title: T('Solid week'), text: T('Only one day off. Growing nicely.') },
+  { min: 5, icon: 'steady', tone: 'steady', title: T('Steady week'), text: T('Most days on plan. A good rhythm to build on.') },
+  { min: 3, icon: 'caution', tone: 'caution', title: T('Rough patch'), text: T('Less than half of the week landed. Look at which days slipped and plan those first. Next week is a fresh start.') },
+  { min: 0, icon: 'reset', tone: 'reset', title: T('Time to reset'), text: T('Few days on plan this week. One day at a time, begin again on Monday.') },
 ];
 export function weekResult(ws) {
   let onPlan = 0;
@@ -254,14 +256,57 @@ export function weekFlex(day) {
 
 // Coffee is counted, with no goal; a typed beer is logged as the Beer 0.5 l extra
 export const COUNT_MAX = 30; // a day's coffee tally is never above this, typed, tapped or restored
-// "coffee", "a beer", "2 coffees", "beer 3". "Beer 0.33 l" has a decimal, so it never matches (it is a planned extra)
-export function parseCount(t) {
-  const m = /^(?:(\d{1,2}|an?|one)\s+)?(coffees?|beers?)(?:\s+(\d{1,2}))?$/.exec(t);
+// English and Turkish words together (the Turkish are in js/parse-tr.js), so typing works in either language
+const COFFEE = ['coffee', ...PARSE_TR.coffee];
+const BEER = ['beer', ...PARSE_TR.beer];
+const plural = (en, tr) => [`(?:${en.join('|')})s?`, ...tr].join('|'); // "s" only after an English word
+// "coffee", "a beer", "2 coffees", "beer 3", "2 kahve". "Beer 0.33 l" has a decimal, so it never matches (it is a planned extra)
+const COUNT_RE = new RegExp(`^(?:(\\d{1,2}|an?|one|${PARSE_TR.one.join('|')})\\s+)?(${plural(['coffee'], PARSE_TR.coffee)}|${plural(['beer'], PARSE_TR.beer)})(?:\\s+(\\d{1,2}))?$`);
+export function parseCount(text) {
+  const m = COUNT_RE.exec(foldKey(text).trim());
   if (!m || (m[1] && m[3])) return null;
   const lead = m[1] && /^\d/.test(m[1]) ? Number(m[1]) : 1;
   const n = m[3] ? Number(m[3]) : lead;
   if (n < 1 || n > 12) return null;
-  return { key: m[2].startsWith('coffee') ? 'coffee' : 'beer', n };
+  return { key: COFFEE.some((w) => m[2].startsWith(w)) ? 'coffee' : 'beer', n };
+}
+// Text that can be resolved on the device, without spending tokens. Typed words are folded (capitals and Turkish letters), and the
+// keywords are the English and the Turkish together, whatever the interface language is.
+const norm = (s) => foldKey(s).replace(/\s+/g, ' ').trim();
+const P = PARSE_TR;
+const NUM = '(\\d+(?:[.,]\\d+)?)';
+const WEIGHT_RE = new RegExp(`^(?:weight|kg|${P.weight.join('|')})?\\s*(\\d{2,3}(?:[.,]\\d{1,2})?)\\s*(?:kg|${P.weight.join('|')})?$`);
+const STEPS_RE = new RegExp(`^(\\d{1,2}[.,\\s]?\\d{3}|\\d{3,5})\\s*(?:steps?|${P.steps.join('|')})$`);
+const UNITS = `ml|l|litres?|liters?|glass(?:es)?|${[...P.glass, ...P.litre].join('|')}`;
+const WATER_RE = new RegExp(`^(?:water|${P.water.join('|')})\\s*${NUM}\\s*(${UNITS})?$`);
+const WATER_TR_RE = new RegExp(`^${NUM}\\s*(${UNITS})?\\s*(?:${P.water.join('|')})$`); // "2 bardak su": the amount comes first
+const TRAIN_RE = new RegExp(`^(workout|training|spinning|kettlebell|gym|${P.workout.join('|')})( day| done|${P.workoutEnd.map((w) => ` ${w}`).join('|')})?$`);
+export function parseLocal(text) {
+  const t = norm(text);
+  let m = WEIGHT_RE.exec(t);
+  if (m) {
+    const kg = parseNum(m[1]);
+    if (kg >= 50 && kg <= 160) return { type: 'weight', kg: Math.round(kg * 10) / 10 };
+  }
+  m = STEPS_RE.exec(t);
+  if (m) return { type: 'steps', steps: parseInt(m[1].replace(/[.,\s]/g, ''), 10) }; // a dot or a comma inside is a thousands mark here, in both languages
+  m = WATER_RE.exec(t) || WATER_TR_RE.exec(t);
+  if (m) {
+    const v = parseNum(m[1]);
+    const unit = m[2] || (v <= 10 ? 'glass' : 'ml');
+    const ml = unit === 'ml' ? v : unit.startsWith('glass') || P.glass.includes(unit) ? v * 250 : v * 1000;
+    return { type: 'water', ml: Math.round(ml) };
+  }
+  if (TRAIN_RE.test(t)) return { type: 'train' };
+  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.name) === t);
+  if (meal) return { type: 'plan', meal };
+  const flex = FLEX.find((x) => norm(x.name) === t);
+  if (flex) return { type: 'flex', flex };
+  const favorite = (S.settings.favorites || []).find((x) => norm(x.name) === t);
+  if (favorite) return { type: 'favorite', favorite };
+  const c = parseCount(t);
+  if (c) return { type: 'count', ...c };
+  return null;
 }
 // A day's coffee count and the totals for the Monday-to-Sunday week of `day` and the week before
 export function drinkTally(day) {
@@ -340,25 +385,28 @@ export function dayVerdict(day) {
   return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
 }
 export const VERDICT = {
-  open: 'In progress', thin: 'Not much logged', on: 'In line',
-  under: 'Under budget', over: 'A little above', back: 'A bigger day',
+  open: T('In progress'), thin: T('Not much logged'), on: T('In line'),
+  under: T('Under budget'), over: T('A little above'), back: T('A bigger day'),
 };
 // The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
 export function verdictText(v) {
   const out = [];
   const kcal = fmtInt(Math.abs(v.delta));
   const judged = v.level !== 'thin' && v.level !== 'open';
-  if (v.level === 'thin') out.push(`Only ${fmtInt(v.kcal)} kcal logged, not enough to judge the day yet.`);
-  else if (v.level === 'open') out.push(v.delta < -25 ? `${kcal} kcal left for today.` : 'The budget for today is used up.');
+  if (v.level === 'thin') out.push(t('Only {kcal} kcal logged, not enough to judge the day yet.', { kcal: fmtInt(v.kcal) }));
+  else if (v.level === 'open') out.push(v.delta < -25 ? t('{kcal} kcal left for today.', { kcal }) : t('The budget for today is used up.'));
   else if (v.delta > 25) {
-    const kg = v.kg >= 0.005 ? `: about ${v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '';
-    const cost = !kg || v.share <= 0 ? '' : v.share >= 1.5 ? `, ${v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} days of the schedule`
-      : v.share >= 0.95 ? ', all of what the day was meant to lose' : `, ${Math.round(v.share * 100)}% of what the day was meant to lose`;
-    out.push(`${kcal} kcal above budget${kg}${cost}. One day does not change the trend.`);
-  } else if (v.delta < -25) out.push(`${kcal} kcal under budget${v.level === 'under' ? '; check that everything is logged' : ''}.`);
-  else out.push('On budget.');
-  if (judged && v.proteinGap > 0) out.push(`Protein ${v.proteinGap} g short of your minimum.`);
-  if (v.off) out.push(`${v.off} off-plan ${v.off === 1 ? 'entry' : 'entries'}.`);
+    // Whole sentences, so a language can order the parts its own way: the cost on the schedule is told in kg, then in days or a share of the day's loss
+    const kg = v.kg >= 0.005 ? v.kg.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    if (!kg) out.push(t('{kcal} kcal above budget. One day does not change the trend.', { kcal }));
+    else if (v.share <= 0) out.push(t('{kcal} kcal above budget: about {kg} kg. One day does not change the trend.', { kcal, kg }));
+    else if (v.share >= 1.5) out.push(t('{kcal} kcal above budget: about {kg} kg, {days} days of the schedule. One day does not change the trend.', { kcal, kg, days: v.share.toLocaleString(LOCALE, { maximumFractionDigits: 1 }) }));
+    else if (v.share >= 0.95) out.push(t('{kcal} kcal above budget: about {kg} kg, all of what the day was meant to lose. One day does not change the trend.', { kcal, kg }));
+    else out.push(t('{kcal} kcal above budget: about {kg} kg, {pct}% of what the day was meant to lose. One day does not change the trend.', { kcal, kg, pct: Math.round(v.share * 100) }));
+  } else if (v.delta < -25) out.push(v.level === 'under' ? t('{kcal} kcal under budget; check that everything is logged.', { kcal }) : t('{kcal} kcal under budget.', { kcal }));
+  else out.push(t('On budget.'));
+  if (judged && v.proteinGap > 0) out.push(t('Protein {gap} g short of your minimum.', { gap: v.proteinGap }));
+  if (v.off) out.push(tn('{n} off-plan entry.|{n} off-plan entries.', v.off));
   return out;
 }
 
@@ -384,19 +432,19 @@ export function budgetVerdict({ target, eaten: kcal, planned }) {
   const n = (x) => fmtInt(Math.abs(x));
   const past = planned == null;
   const level = rem < -target * (BAND.near - 1) ? 'back' : rem < -target * (BAND.high - 1) ? 'over' : '';
-  if (level) return { level, tone: 'warn', text: past ? `Ended ${n(rem)} above` : level === 'back' ? 'Well above budget' : 'A little above budget' };
+  if (level) return { level, tone: 'warn', text: past ? t('Ended {n} above', { n: n(rem) }) : level === 'back' ? t('Well above budget') : t('A little above budget') };
   if (past) {
-    if (!eaten) return { level, tone: 'calm', text: 'Nothing logged' };
-    const text = Math.abs(rem) <= 25 ? 'Ended on budget' : rem > 0 ? `Ended ${n(rem)} under` : `Ended ${n(rem)} above`;
+    if (!eaten) return { level, tone: 'calm', text: t('Nothing logged') };
+    const text = Math.abs(rem) <= 25 ? t('Ended on budget') : rem > 0 ? t('Ended {n} under', { n: n(rem) }) : t('Ended {n} above', { n: n(rem) });
     return { level, tone: eaten < KCAL_MIN_DAY ? 'calm' : 'good', text };
   }
-  if (rem <= 0) return planned >= target - 1 ? { level, tone: 'good', text: 'Budget used' } : { level, tone: 'warn', text: 'Budget used early' }; // within the slack still counts as on target, once the plan has spent it too
+  if (rem <= 0) return planned >= target - 1 ? { level, tone: 'good', text: t('Budget used') } : { level, tone: 'warn', text: t('Budget used early') }; // within the slack still counts as on target, once the plan has spent it too
   if (!planned) return { level, tone: 'calm', text: '' };
-  if (!eaten) return { level, tone: 'calm', text: 'Nothing eaten yet' };
+  if (!eaten) return { level, tone: 'calm', text: t('Nothing eaten yet') };
   const rate = eaten / planned;
-  if (rate > PACE.fast) return { level, tone: 'warn', text: `${n(eaten - planned)} above plan pace` };
-  if (rate < PACE.slow) return { level, tone: 'calm', text: `${n(eaten - planned)} under plan pace` };
-  return { level, tone: 'good', text: 'On plan pace' };
+  if (rate > PACE.fast) return { level, tone: 'warn', text: t('{n} above plan pace', { n: n(eaten - planned) }) };
+  if (rate < PACE.slow) return { level, tone: 'calm', text: t('{n} under plan pace', { n: n(eaten - planned) }) };
+  return { level, tone: 'good', text: t('On plan pace') };
 }
 // Where the bar's marks sit, as shares of its width: the width is the budget, or what was eaten when that is more
 export function budgetMeter({ target, eaten, planned }) {
@@ -422,6 +470,38 @@ export function coachState(day) {
 // ——— Formatting ———
 export const fmtKg = (kg) => (Math.round(kg * 10) / 10 || 0).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); // `|| 0`: never "-0.0"
 export const fmtInt = (n) => Math.round(n).toLocaleString(LOCALE);
+
+// ——— Generated entry titles ———
+// An entry made by the app keeps its English `title` (the canonical text: backups, the SQL export, favourites and the model read it) and,
+// next to it, `tk: { kind, params }`, from which the screen builds the title in the interface language. Older entries have no `tk`.
+const planName = (id) => { const x = has(MEAL_BY_ID, id) ? MEAL_BY_ID[id] : FLEX.find((f) => f.id === id); return x ? td(x.name) : null; };
+const TITLES = {
+  weight: (p) => t('Weight {kg} kg', { kg: fmtKg(p.kg) }),
+  steps: (p) => t('{steps} steps', { steps: fmtInt(p.steps) }),
+  photo: () => t('Photo'),
+  plan: (p) => planName(p.id),
+};
+// What each kind needs in its params to give a sensible title
+const numIn = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+const TK_VALID = {
+  weight: (p) => numIn(p.kg, 20, 400),
+  steps: (p) => numIn(p.steps, 0, 200000),
+  photo: () => true,
+  plan: (p) => typeof p.id === 'string',
+};
+export const tkValid = (tk) => !!tk && typeof tk === 'object' && has(TK_VALID, tk.kind) && !!tk.params && typeof tk.params === 'object' && TK_VALID[tk.kind](tk.params);
+export const TK_KINDS = Object.keys(TITLES);
+// The title of an entry in the interface language; the stored title when there is no known `tk`
+export function titleOf(e) {
+  const k = e.tk;
+  const text = tkValid(k) ? TITLES[k.kind](k.params) : null;
+  return text || e.title;
+}
+// { title, tk } for a new generated entry: the English title, built with English formats whatever the language is
+export function titleFor(kind, params) {
+  const title = inEnglish(() => TITLES[kind](params));
+  return title ? { title, tk: { kind, params } } : { title: '' };
+}
 
 export const SUPP_MAX = 12; // supplements in the list
 // The supplements taken on a day, as ids of supplements that are still in the list

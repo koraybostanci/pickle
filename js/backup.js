@@ -3,7 +3,7 @@
 // Pure functions: no DOM and no storage.
 import { MEAL_BY_ID, SLOT_NAME, has } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict } from './ai.js';
-import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX } from './core.js';
+import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX, TK_KINDS, tkValid } from './core.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -17,6 +17,22 @@ const isDay = (v) => typeof v === 'string' && DAY_RE.test(v) && !Number.isNaN(Da
 const isId = (v) => typeof v === 'string' && ID_RE.test(v);
 const flagList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').map((x) => x.slice(0, 20)).slice(0, 4) : []);
 const itemList = (v) => (Array.isArray(v) ? v : []).slice(0, 12).map((i) => ({ n: txt(i && i.n, 80), g: pos(i && i.g, 5000), kcal: pos(i && i.kcal, 6000), p: pos(i && i.p, 500) }));
+
+// The recipe of a generated title (see titleOf in js/core.js): a known kind and a few plain parameters. Anything else is dropped,
+// and the entry keeps its English title.
+const TK_PARAMS = ['kg', 'steps', 'id'];
+function cleanTk(tk) {
+  if (!tk || typeof tk !== 'object' || !TK_KINDS.includes(tk.kind)) return null;
+  const p = tk.params;
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  const params = {};
+  for (const k of Object.keys(p)) {
+    const v = p[k];
+    if (!TK_PARAMS.includes(k) || !((typeof v === 'string' && v.length <= 40) || (isNum(v) && Math.abs(v) <= 1e7))) return null;
+    params[k] = v;
+  }
+  return tkValid({ kind: tk.kind, params }) ? { kind: tk.kind, params } : null;
+}
 
 // Why a file cannot be restored, or '' when it can be tried
 export function backupProblem(data) {
@@ -58,6 +74,8 @@ export function cleanEntry(e) {
   };
   // Weigh-ins and step counts carry only the fields they had
   if (out.kind !== 'meal') for (const k of Object.keys(out)) if (e[k] === undefined) delete out[k];
+  const tk = cleanTk(e.tk);
+  if (tk) out.tk = tk;
   if (e.kg != null) out.kg = orNull(e.kg, 400);
   if (e.steps != null) out.steps = orNull(e.steps, 200000);
   return out;

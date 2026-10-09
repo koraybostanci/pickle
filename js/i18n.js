@@ -26,8 +26,17 @@ export function tn(text, n, params) {
 }
 // Marks a string in a data table so the extraction test finds it; the caller translates it at render time
 export const T = (text) => text;
+// Translates a string that was marked with T() in a data table, at render time (t() itself needs a literal)
+export const td = (text) => pick(text) ?? text;
 // English whatever the language is, for what is sent to the model
 export const tEn = (text, params) => fill(text, params);
+// Runs fn with English text, English number and date formats, whatever the language is, and gives back what it returns.
+// For what is sent to the model. fn must not be async: the language is put back when it returns.
+export function inEnglish(fn) {
+  const saved = [lang, table, LOCALE];
+  [lang, table, LOCALE] = ['en', {}, LOCALES.en];
+  try { return fn(); } finally { [lang, table, LOCALE] = saved; }
+}
 // Lower case for the active language ("ISPARTA" is "ısparta" in Turkish)
 export const lc = (s) => String(s).toLocaleLowerCase(lang);
 export const getLang = () => lang;
@@ -55,7 +64,7 @@ export async function setLang(next) {
 
 // One Intl.DateTimeFormat per option set, built on first use and dropped when the language changes
 export function dateFmt(opts) {
-  const key = JSON.stringify(opts);
+  const key = LOCALE + JSON.stringify(opts); // the locale is part of the key, so inEnglish() cannot get a Turkish formatter
   if (!formats.has(key)) formats.set(key, new Intl.DateTimeFormat(LOCALE, opts));
   return formats.get(key);
 }

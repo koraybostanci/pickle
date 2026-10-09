@@ -1,14 +1,15 @@
 import * as db from './db.js';
-import { setLang, getLang, storedLang, rememberLang } from './i18n.js';
+import { setLang, getLang, storedLang, rememberLang, td, foldKey } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
 import * as picture from './picture.js';
 import { readMeta, placeLabel } from './exif.js';
-import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { analyze, review, coach, check, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, AI_ERROR_LABEL, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
+import { reviewBrief, coachBrief, checkBrief } from './briefs.js';
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, b64FromBuf } from './backup.js';
-import { MEALS, MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, targetAt, hhmm, has, KCAL_FLOOR } from './plan.js';
+import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, KCAL_FLOOR } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, mealsOf, dayTotals, dayTarget, proteinFloor, isPerfect, suppTaken, SUPP_MAX, kilosDown, avg7, weekFlex, openSlots, planRate, dayVerdict, VERDICT, verdictText, reviewSig, fmtKg, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseCount,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor,
 } from './core.js';
 import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderFrameSheet, attachChart } from './views.js';
 
@@ -69,7 +70,7 @@ async function logMeal(tpl, src, day = S.viewDay) {
   const e = {
     id: db.uid(), ts, day, createdAt: Date.now(), kind: 'meal', status: 'ok', src,
     slot: tpl.slot && tpl.slot !== 'any' ? tpl.slot : slotByTime(new Date(ts)),
-    planId: src === 'plan' ? tpl.id : '', title: tpl.name,
+    planId: src === 'plan' ? tpl.id : '', title: tpl.name, ...((src === 'plan' || src === 'flex') && tpl.id ? { tk: { kind: 'plan', params: { id: tpl.id } } } : {}),
     items: (tpl.items || []).map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
     kcal: tpl.kcal, p: tpl.p, c: tpl.c, f: tpl.f, fib: tpl.fib,
     tier: tpl.tier || 'plan', flags: tpl.flags || [], conf: tpl.conf || 1, q: '', mult: 1,
@@ -104,56 +105,26 @@ async function removeEntry(id, silent) {
   if (!silent) toast('Entry deleted');
 }
 
-async function noteEntry(kind, title, extra, day = today()) {
-  const e = { id: db.uid(), ts: Date.now(), day, createdAt: Date.now(), kind, status: 'ok', src: 'text', title, photoIds: [], timeSrc: 'now', ...extra };
+async function noteEntry(kind, titled, extra, day = today()) {
+  const e = { id: db.uid(), ts: Date.now(), day, createdAt: Date.now(), kind, status: 'ok', src: 'text', ...titled, photoIds: [], timeSrc: 'now', ...extra };
   await saveEntry(e);
   return e;
 }
 
-const weightTitle = (kg) => `Weight ${fmtKg(kg)} kg`;
-const stepsTitle = (steps) => `${fmtInt(steps)} steps`;
+const weightTitle = (kg) => titleFor('weight', { kg }).title;
+const stepsTitle = (steps) => titleFor('steps', { steps }).title;
 
 async function setWeight(kg, day = today(), viaLog = true) {
   await saveDay(day, { kg });
-  if (viaLog) await noteEntry('weight', weightTitle(kg), { kg }, day);
+  if (viaLog) await noteEntry('weight', titleFor('weight', { kg }), { kg }, day);
   render();
   toast(`${weightTitle(kg)} saved`);
 }
 async function setSteps(steps, day = today(), viaLog = true) {
   await saveDay(day, { steps });
-  if (viaLog) await noteEntry('steps', stepsTitle(steps), { steps }, day);
+  if (viaLog) await noteEntry('steps', titleFor('steps', { steps }), { steps }, day);
   render();
   toast(`${stepsTitle(steps)} saved`);
-}
-
-// Text that can be resolved on the device, without spending tokens
-const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-export function parseLocal(text) {
-  const t = norm(text);
-  let m = /^(?:weight|kg)?\s*(\d{2,3}(?:[.,]\d{1,2})?)\s*(?:kg)?$/.exec(t);
-  if (m) {
-    const kg = parseFloat(m[1].replace(',', '.'));
-    if (kg >= 50 && kg <= 160) return { type: 'weight', kg: Math.round(kg * 10) / 10 };
-  }
-  m = /^(\d{1,2}[.,\s]?\d{3}|\d{3,5})\s*steps?$/.exec(t);
-  if (m) return { type: 'steps', steps: parseInt(m[1].replace(/[.,\s]/g, ''), 10) };
-  m = /^water\s*(\d+(?:[.,]\d+)?)\s*(ml|l|litres?|liters?|glass(?:es)?)?$/.exec(t);
-  if (m) {
-    const v = parseFloat(m[1].replace(',', '.'));
-    const unit = m[2] || (v <= 10 ? 'glass' : 'ml');
-    const ml = unit === 'ml' ? v : unit.startsWith('glass') ? v * 250 : v * 1000;
-    return { type: 'water', ml: Math.round(ml) };
-  }
-  if (/^(workout|training|spinning|kettlebell|gym)( day| done)?$/.test(t)) return { type: 'train' };
-  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.name) === t);
-  if (meal) return { type: 'plan', meal };
-  const flex = FLEX.find((x) => norm(x.name) === t);
-  if (flex) return { type: 'flex', flex };
-  const favorite = (S.settings.favorites || []).find((x) => norm(x.name) === t);
-  if (favorite) return { type: 'favorite', favorite };
-  const c = parseCount(t);
-  if (c) return { type: 'count', ...c };
-  return null;
 }
 
 async function submitText(text) {
@@ -268,7 +239,7 @@ async function prepareAndQueue(files, note) {
     const when = new Date(first.ts);
     const e = {
       id: db.uid(), ts: first.ts, day: dayKey(when), createdAt: Date.now(), kind: 'meal', status: 'pending',
-      src: 'photo', text: note || '', title: 'Photo', slot: slotByTime(when), items: [], kcal: 0, p: 0, c: 0, f: 0, fib: 0,
+      src: 'photo', text: note || '', ...titleFor('photo', {}), slot: slotByTime(when), items: [], kcal: 0, p: 0, c: 0, f: 0, fib: 0,
       tier: 'plan', flags: [], conf: 0, q: '', mult: 1, photoIds, timeSrc: first.timeSrc, place,
     };
     await saveEntry(e);
@@ -306,51 +277,6 @@ async function addUsage(model, usage) {
 }
 
 // ——— The day's review, written by the model ———
-// The day in plain lines: what the model gets to read. Text only, a few hundred tokens.
-function reviewBrief(day) {
-  const s = S.settings;
-  const dd = S.days[day] || {};
-  const t = dayTotals(day);
-  const v = dayVerdict(day);
-  const r = (x) => Math.round(x);
-  // The brief is read by the model and stays English whatever the interface language is
-  const date = (d) => new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(parseDay(d));
-  const meals = mealsOf(day).sort((a, b) => a.ts - b.ts);
-  const lines = [
-    `Day: ${date(day)}, ${dd.train ? 'workout day' : 'rest day'}, ${v.live ? `still in progress, now ${hhmm(Date.now())}` : 'finished'}.`,
-    `Daily budget and goals: ${v.target} kcal, protein ${s.protein} g (at least ${proteinFloor()}), fibre ${s.fiber} g, ${s.steps} steps, water ${s.water / 1000} l.`,
-    `Eaten: ${r(t.kcal)} kcal, protein ${r(t.p)} g, carbs ${r(t.c)} g, fat ${r(t.f)} g, fibre ${r(t.fib)} g.`,
-    'Meals:',
-  ];
-  for (const e of meals) {
-    const x = eff(e);
-    const m = e.mult || 1;
-    const kind = e.planId ? 'plan meal' : e.tier === 'off' ? 'off plan' : e.tier === 'flex' ? 'weekly flex' : 'fits the plan';
-    const items = e.planId ? '' : (e.items || []).slice(0, 6).map((i) => `${i.n}${i.g ? ` ${r(i.g * m)} g` : ''} ${r((i.kcal || 0) * m)} kcal`).join('; ');
-    lines.push(`- ${hhmm(e.ts)} ${(SLOT_NAME[e.slot] || '').toLowerCase()}: ${e.title}, ${r(x.kcal)} kcal, ${r(x.p)} g protein, ${kind}`
-      + `${(e.flags || []).includes('alcohol') ? ', alcohol' : ''}${e.place ? `, ${e.place === 'out' ? 'eaten out' : `at ${e.place}`}` : ''}${items ? ` [${items}]` : ''}`);
-  }
-  const open = openSlots(day).map((x) => x.name.toLowerCase());
-  if (open.length) lines.push(`${v.live ? 'Not eaten yet' : 'Nothing logged for'}: ${open.join(', ')}.`);
-  const waiting = S.entries.filter((e) => e.day === day && e.kind === 'meal' && e.status !== 'ok').length;
-  if (waiting) lines.push(`${waiting} more ${waiting === 1 ? 'entry is' : 'entries are'} not analysed yet and not counted.`);
-  lines.push(`Steps: ${dd.steps ? r(dd.steps) : 'not logged'}. Water: ${dd.water ? `${(dd.water / 1000).toFixed(1)} l` : 'not logged'}. Weigh-in: ${dd.kg ? `${dd.kg} kg` : 'none'}.`);
-  const rate = planRate();
-  let goal = `Goal: ${s.startKg} kg on ${s.startDate} to ${s.targetKg} kg on ${s.targetDate}, which needs about ${rate.kg.toFixed(2)} kg (${r(rate.kcal / 10) * 10} kcal) a day.`;
-  const avg = avg7(day);
-  if (day < s.startDate) goal += ' On this day the plan had not started yet.';
-  else if (avg) {
-    const sched = targetAt(day, s);
-    const gap = avg.kg - sched;
-    goal += ` Schedule for this day ${sched.toFixed(1)} kg; 7-day average ${avg.kg.toFixed(1)} kg, ${Math.abs(gap) < 0.15 ? 'on the schedule' : `${Math.abs(gap).toFixed(1)} kg ${gap > 0 ? 'above' : 'below'} the schedule`}.`;
-  }
-  lines.push(goal);
-  const f = weekFlex(day);
-  lines.push(`This week: beer or small dessert ${f.small} of 1, flexible dinner ${f.meal} of 1, off-plan entries ${f.off}.`);
-  lines.push(`App verdict: ${VERDICT[v.level].toLowerCase()}. ${verdictText(v).join(' ')}`);
-  return lines.join('\n');
-}
-
 function modelFailure(err, what = 'review') {
   const code = err && err.code;
   if (code === 'no_key') return `Add an API key in Settings to get a ${what}.`;
@@ -359,7 +285,7 @@ function modelFailure(err, what = 'review') {
   // The same wording as for an entry, plus what the provider said where that explains it
   const later = code === 'offline' || code === 'net' ? ' Try again when you are online.' : ['rate', 'no_quota', 'server', 'timeout'].includes(code) ? ' Try again a little later.' : '';
   const said = ['rate', 'no_quota', 'server', 'no_credit', 'needs_billing'].includes(code) ? ` ${errorDetail(err, 120)}` : '';
-  return `${AI_ERRORS[code]}${later}${said}`.trim();
+  return `${td(AI_ERRORS[code])}${later}${said}`.trim();
 }
 
 async function runReview(day, auto) {
@@ -386,13 +312,6 @@ function queueReview(day, auto = false) {
 }
 
 // ——— The quick note on the day so far, written by the model ———
-// The review's brief, plus what is left of the budget and the goals
-function coachBrief(day) {
-  const s = S.settings;
-  const t = dayTotals(day);
-  const r = (x) => Math.round(x);
-  return `${reviewBrief(day)}\nLeft today: ${r(Math.max(0, dayTarget(day) - t.kcal))} kcal, protein ${r(Math.max(0, s.protein - t.p))} g, fibre ${r(Math.max(0, s.fiber - t.fib))} g.`;
-}
 async function runCoach(day) {
   try {
     const sig = reviewSig(day);
@@ -454,37 +373,6 @@ function removeCheckPhoto(id) {
   if (p) URL.revokeObjectURL(p.url);
   S.check.photos = S.check.photos.filter((x) => x.id !== id);
   render();
-}
-
-// What the model needs to judge a choice: where the day stands, the week's allowance, the goal, and the person's note
-function checkBrief(note) {
-  const s = S.settings;
-  const t = today();
-  const now = new Date();
-  const tot = dayTotals(t);
-  const target = dayTarget(t);
-  const r = (x) => Math.round(x);
-  const open = openSlots(t).map((x) => x.name.toLowerCase());
-  // Like the review brief, this one is read by the model and stays English (hence 'en-GB' below)
-  const lines = [
-    `Time ${hhmm(now)} on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(now)}, a ${S.days[t] && S.days[t].train ? 'workout' : 'rest'} day.`,
-    tot.n
-      ? `Today so far: ${r(tot.kcal)} of ${target} kcal eaten, ${r(target - tot.kcal) >= 0 ? `${r(target - tot.kcal)} kcal left` : `${r(tot.kcal - target)} kcal above`}; protein ${r(tot.p)} of ${s.protein} g.${open.length ? ` Not eaten yet: ${open.join(', ')}.` : ' All meals of the day are logged.'}`
-      : `Nothing eaten yet today: the whole ${target} kcal and ${s.protein} g of protein are open. The plan's meals: ${SLOTS.filter((x) => x.id !== 'late').map((x) => `${x.name.toLowerCase()} ${x.time}`).join(', ')}.`,
-    `Daily budget and goals: ${s.kcalRest} kcal on rest days, ${s.kcalTrain} on workout days, protein ${s.protein} g, fibre ${s.fiber} g.`,
-  ];
-  const f = weekFlex(t);
-  lines.push(`This week: flexible dinner ${f.meal} of 1 used, beer or small dessert ${f.small} of 1 used, off-plan entries ${f.off}.`);
-  const rate = planRate();
-  let goal = `Goal: ${s.startKg} kg to ${s.targetKg} kg by ${s.targetDate}, about ${rate.kg.toFixed(2)} kg (${r(rate.kcal / 10) * 10} kcal) a day.`;
-  const avg = avg7(t);
-  if (avg && t >= s.startDate) {
-    const gap = avg.kg - targetAt(t, s);
-    goal += ` 7-day average ${avg.kg.toFixed(1)} kg, ${Math.abs(gap) < 0.15 ? 'on the schedule' : `${Math.abs(gap).toFixed(1)} kg ${gap > 0 ? 'above' : 'below'} the schedule`}.`;
-  }
-  lines.push(goal);
-  lines.push(note ? `Note from the person: ${note}` : 'No note from the person.');
-  return lines.join('\n');
 }
 
 function showCheckResult() {
@@ -669,17 +557,17 @@ async function analyzeEntry(id, opts = {}) {
     const cap = (v, max) => Math.min(max, Math.max(0, +v || 0));
     if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
       const kg = Math.round(data.kg * 10) / 10;
-      Object.assign(e, { kind: 'weight', status: 'ok', kg, title: weightTitle(kg) });
+      Object.assign(e, { kind: 'weight', status: 'ok', kg, ...titleFor('weight', { kg }) });
       await saveDay(e.day, { kg });
     } else if (data.kind === 'steps' && data.steps > 0 && data.steps <= 100000) {
       const steps = Math.round(data.steps);
-      Object.assign(e, { kind: 'steps', status: 'ok', steps, title: stepsTitle(steps) });
+      Object.assign(e, { kind: 'steps', status: 'ok', steps, ...titleFor('steps', { steps }) });
       await saveDay(e.day, { steps });
     } else if (data.kind === 'meal') {
       const plan = has(MEAL_BY_ID, data.plan) ? MEAL_BY_ID[data.plan] : null;
       if (plan) {
         Object.assign(e, {
-          planId: plan.id, title: plan.name, items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
+          planId: plan.id, ...titleFor('plan', { id: plan.id }), items: plan.items.map((i) => ({ n: i.n, g: i.g, kcal: i.kcal, p: i.p })),
           kcal: plan.kcal, p: plan.p, c: plan.c, f: plan.f, fib: plan.fib, tier: 'plan',
         });
         // A plan meal without a picture takes this photo as its own
@@ -690,6 +578,7 @@ async function analyzeEntry(id, opts = {}) {
           } catch (err) { /* the picture is optional; the entry itself is fine */ }
         }
       } else {
+        delete e.tk; // the title now comes from the model
         const items = Array.isArray(data.items) ? data.items.slice(0, 12).map((i) => ({ n: String((i && i.n) || '').slice(0, 80), g: cap(i && i.g, 5000), kcal: cap(i && i.kcal, 3000), p: cap(i && i.p, 300) })) : [];
         const sumKcal = items.reduce((a, i) => a + i.kcal, 0);
         Object.assign(e, {
@@ -717,7 +606,7 @@ async function analyzeEntry(id, opts = {}) {
     const waiting = ['no_key', 'offline', 'net', 'timeout', 'no_credit', 'needs_billing', 'no_quota', 'no_vision', 'bad_model', 'bad_key', 'server', 'rate'].includes(code);
     const detail = ['bad_request', 'http', 'bad_model', 'server', 'rate', 'no_quota', 'no_credit', 'needs_billing'].includes(code) ? ' ' + errorDetail(err, 140) : '';
     if (settled) failure = modelFailure(err, 'new estimate');
-    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] || 'Analysis failed.') + (waiting ? WAITING : '') + detail });
+    else Object.assign(e, { status: waiting ? 'pending' : 'error', err: (AI_ERRORS[code] ? td(AI_ERRORS[code]) : 'Analysis failed.') + (waiting ? td(WAITING) : '') + detail });
   }
   S.busy.delete(id);
   S.retry.delete(id);
@@ -1210,7 +1099,7 @@ const ACT = {
     const gemini = cfg.provider === 'openai' && /generativelanguage\.googleapis\.com/.test(cfg.base || '');
     const limitsHint = (err) => (gemini && ['rate', 'no_quota', 'no_credit', 'needs_billing'].includes(err.code) ? ' Your plan and limits: aistudio.google.com/rate-limit' : '');
     const said = (err) => { const d = errorDetail(err, 300); return !d ? '' : ['rate', 'no_quota'].includes(err.code) ? ` ${d}` : ` The provider said: “${d}”`; };
-    const why = (err) => `${AI_ERRORS[err.code] || 'Failed.'}${said(err)}${limitsHint(err)}`;
+    const why = (err) => `${AI_ERRORS[err.code] ? td(AI_ERRORS[err.code]) : 'Failed.'}${said(err)}${limitsHint(err)}`;
     out.textContent = 'Testing text…';
     let textLine;
     try {
@@ -1267,7 +1156,7 @@ const ACT = {
         lines.push(`${id}: ${v.ok ? 'read the photo' : 'could not read the photo'}`);
         if (v.ok && !found) found = id;
       } catch (err) {
-        lines.push(`${id}: ${(AI_ERRORS[err.code] || 'error').split('.')[0].toLowerCase()}`);
+        lines.push(`${id}: ${(AI_ERROR_LABEL[err.code] ? td(AI_ERROR_LABEL[err.code]) : 'error')}`);
         if (err.code === 'net' || err.code === 'offline' || err.code === 'bad_key') break;
       }
     }
@@ -1375,7 +1264,7 @@ const ACT = {
     if (busyNow()) return toast('Something is still being analysed. Try again in a moment');
     const keepKey = !!($('#keep-key') && $('#keep-key').checked);
     const typed = window.prompt('Factory reset: this deletes everything on this device: your log and photos, goals, favourites, saved places, the plan’s pictures and the usage totals. ' + (keepKey ? 'Your API key and provider stay.' : 'Your API key and provider are deleted too.') + ' It cannot be undone. Do you have a backup?\n\nType DELETE to continue.');
-    if (!typed || typed.trim().toLowerCase() !== 'delete') return;
+    if (!typed || !['delete', 'sil'].includes(foldKey(typed.trim()))) return;
     const kept = { lang: S.settings.lang }; // the language is not data: a reset keeps it, and so does its mirror
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
     for (const store of ['entries', 'days', 'photos', 'kv']) await db.clear(store);
