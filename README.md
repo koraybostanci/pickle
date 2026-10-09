@@ -45,6 +45,9 @@ your start weight to your goal.
 - **Progress:** the beam with every kilo marked and the next one named, runs of days on plan, the
   weight chart (the last 7 days, the last two weeks, or the whole plan with where this pace
   arrives) with a 7-day average, projected arrival date, a consistency calendar and checkpoints.
+  The calendar shows each day's calories (from the 1,400 kcal minimum up to 110% of the day's
+  budget counts as on plan) with its protein as a small pie, and a result icon at the end of each
+  finished week.
 - **Plan:** every meal option as a compact card with a picture, two to a row, its ingredients and
   amounts one tap away, and the rules of the plan. The pictures are your own photos: add one from
   the meal's card, or let the first logged photo that matches a plan meal fill it in. Every picture

@@ -1,11 +1,11 @@
 import {
   S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, dayNotes, avg7, latestWeight, weightSeries, projection,
-  weekStart, weekFlex, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
+  weekStart, weekFlex, weekResult, proteinLevel, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
+import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = fmtInt;
@@ -15,6 +15,7 @@ const dShort = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long' }
 const dTiny = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short' });
 const dWeekday = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
 const dMonth = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
+const dMonthYear = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
 const dWd = new Intl.DateTimeFormat(LOCALE, { weekday: 'short', day: 'numeric' });
 const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const dayWord = (n) => (n === 1 ? 'day' : 'days');
@@ -131,7 +132,7 @@ function beam(a, target, started) {
   return `${bar}<span class="beam-labels" aria-hidden="true">${labels}</span>`;
 }
 
-const STATUS_LABEL = { on: 'on plan', near: 'close', open: 'in progress', over: 'a bigger day', partial: 'partly logged', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
+const STATUS_LABEL = { on: 'on plan', open: 'in progress', over: 'over the budget', far: 'well over the budget', under: 'under the minimum', none: 'nothing logged', future: 'still to come', before: 'before the plan started' };
 
 // ——— Week strip: the seven days of the week as tokens. The colour is how the day went; tap one to open it. ———
 function weekStrip(day) {
@@ -947,45 +948,105 @@ export function attachChart(root) {
 }
 
 
+// The calendar: each day shows its calories as the big number, coloured by how the day went, and its protein as a small pie
+const WK_ICON = {
+  star: '<path d="M12 2.8l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 16.7 6.4 19.8l1.3-6.2L3 9.3l6.3-.7z" fill="currentColor" stroke="none"/>',
+  sprout: '<path d="M12 21V11"/><path d="M12 12C12 7.5 9 5 4.5 5c0 4.5 2.5 7 7.5 7z" fill="currentColor" fill-opacity=".25"/><path d="M12 14c0-3.5 2.3-5.5 7-5.5 0 3.5-2.3 5.5-7 5.5z" fill="currentColor" fill-opacity=".25"/>',
+  steady: '<circle cx="12" cy="12" r="9" fill="currentColor" fill-opacity=".15"/><path d="M7.5 12.5l3 3 6-6.5"/>',
+  caution: '<path d="M12 3.5L22 20H2z" fill="currentColor" fill-opacity=".18"/><path d="M12 10v4.5M12 17.3v.2"/>',
+  reset: '<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4.5h4.5"/>',
+  going: '<circle cx="12" cy="12" r="9" stroke-dasharray="3 3.2"/><path d="M9.5 8.5l4 3.5-4 3.5"/>',
+};
+const wkIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WK_ICON[k]}</svg>`;
+const PIE = {
+  target: '<circle cx="5" cy="5" r="4.4" fill="currentColor"/>',
+  min: '<path d="M5 5V1A4 4 0 0 1 5 9Z" fill="currentColor"/>',
+  near: '<path d="M5 5V1A4 4 0 0 1 9 5Z" fill="currentColor"/>',
+  short: '',
+};
+const pie = (lv) => `<svg viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.2"/>${PIE[lv] || ''}</svg>`;
+const PROTEIN_TEXT = { target: 'target reached', min: 'minimum reached', near: 'nearly at the minimum', short: 'short of the minimum' };
+const CAL_GLYPH = { on: '✓', over: '▲', far: '▲▲', under: '↓', open: '…', none: '' };
+const join = (list) => list.join(', ').replace(/, ([^,]*)$/, ' and $1');
+
 function calendar() {
   const s = S.settings;
   const t = today();
   const first = weekStart(s.startDate);
   const weeks = Math.ceil((diffDays(first, s.targetDate) + 1) / 7);
   let rows = '';
+  let lastMonth = '';
   for (let w = 0; w < weeks; w++) {
     const ws = addDays(first, w * 7);
-    let label = '';
-    for (let i = 0; i < 7; i++) { const d = addDays(ws, i); if (d.endsWith('-01') || (w === 0 && i === 0)) label = dMonth.format(parseDay(d)); }
+    const firstOfMonth = Array.from({ length: 7 }, (_, i) => addDays(ws, i)).find((d) => d.endsWith('-01'));
+    const monthDay = w === 0 ? ws : firstOfMonth;
+    if (monthDay && monthDay.slice(0, 7) !== lastMonth) {
+      lastMonth = monthDay.slice(0, 7);
+      rows += `<p class="cal-month">${esc(dMonthYear.format(parseDay(monthDay)))}</p>`;
+    }
+    const ahead = ws > t;
     let cells = '';
+    let marked = false;
     for (let i = 0; i < 7; i++) {
       const d = addDays(ws, i);
-      if (d < s.startDate || d > s.targetDate) { cells += '<span class="cell cell-out"></span>'; continue; }
-      if (d > t) { cells += `<span class="cell cell-future" title="${esc(dShort.format(parseDay(d)))}"></span>`; continue; }
+      const dn = parseDay(d).getDate();
+      if (d < s.startDate || d > s.targetDate) { cells += '<span class="cal-d cal-out"></span>'; continue; }
+      if (d > t) { cells += `<span class="cal-d cal-fut" title="${esc(dShort.format(parseDay(d)))}"><span class="n">${dn}</span></span>`; continue; }
       const st = dayStatus(d);
-      cells += `<button type="button" class="cell cell-${st}${d === t ? ' cell-today' : ''}${S.calPick === d ? ' cell-selected' : ''}" data-act="cal" data-day="${d}" aria-label="${esc(dShort.format(parseDay(d)))}: ${STATUS_LABEL[st]}"></button>`;
+      const tot = dayTotals(d);
+      const target = dayTarget(d);
+      const lv = proteinLevel(d);
+      const plus = st === 'on' && tot.kcal > target + 0.5;
+      const label = !tot.n ? `${dShort.format(parseDay(d))}: nothing logged`
+        : `${dShort.format(parseDay(d))}: ${n0(tot.kcal)} of ${n0(target)} kcal, ${STATUS_LABEL[st]}; protein ${n0(tot.p)} g, ${PROTEIN_TEXT[lv]}`;
+      if (S.calPick === d) marked = true;
+      cells += `<button type="button" class="cal-d cal-${st}${d === t ? ' is-today' : ''}${S.calPick === d ? ' is-selected' : ''}" data-act="cal" data-day="${d}" title="${esc(label)}" aria-label="${esc(label)}">`
+        + `<span class="n">${dn}</span><span class="g" aria-hidden="true">${CAL_GLYPH[st]}</span>`
+        + `<span class="k">${tot.n ? `${Math.round(tot.kcal)}${plus ? '<sup>+</sup>' : ''}` : '–'}</span>`
+        + `<span class="p">${tot.n ? `${pie(lv)}${n0(tot.p)}` : ''}</span></button>`;
     }
-    rows += `<div class="cal-row"><span class="cal-month">${esc(label)}</span>${cells}</div>`;
-  }
-  let pick = '';
-  if (S.calPick) {
-    const d = S.calPick;
-    const tot = dayTotals(d);
-    const dd = S.days[d] || {};
-    const st = dayStatus(d);
-    const join = (list) => list.join(', ').replace(/, ([^,]*)$/, ' and $1');
-    const main = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
-      : `${{ near: 'Close', over: 'A bigger day', partial: 'Not much logged' }[st]}${dayReasons(d).length ? `: ${join(dayReasons(d))}` : ''}.`;
-    const notes = tot.n && st !== 'open' && dayNotes(d).length ? ` Also: ${join(dayNotes(d))}.` : '';
-    const why = main + notes;
-    pick = `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. ${esc(why)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
+    // The result of the week: only once it is over; the week in progress gets an encouragement, weeks to come stay empty
+    let wk = '<span class="cal-wk"></span>';
+    if (!ahead) {
+      const r = weekResult(ws);
+      const head = r.done ? r.tier.title : 'This week so far';
+      const body = r.done ? `${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${r.tier.text}`
+        : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far. Keep going, the week is still yours.`;
+      if (S.calPick === `week:${ws}`) marked = true;
+      wk = `<button type="button" class="cal-wk is-${r.done ? r.tier.tone : 'going'}${S.calPick === `week:${ws}` ? ' is-selected' : ''}" data-act="cal" data-day="week:${ws}" title="${esc(`${head}. ${body}`)}" aria-label="${esc(`${head}. ${body}`)}">${wkIcon(r.done ? r.tier.icon : 'going')}<span>${r.onPlan}/7</span></button>`;
+    }
+    rows += `<div class="cal-row${ahead ? ' is-ahead' : ''}">${cells}${wk}</div>`;
+    if (marked) rows += calPick(ws);
   }
   return `<div class="calendar card">
-    <div class="cal-row cal-head"><span class="cal-month"></span>${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}</div>
+    <p class="cal-targets"><span>Budget <b>${n0(s.kcalRest)}</b> rest · <b>${n0(s.kcalTrain)}</b> workout</span><span>Min <b>${n0(KCAL_MIN_DAY)}</b> kcal</span><span class="is-prot">Protein <b>${n0(s.protein)} g</b> · min <b>${n0(proteinFloor())} g</b></span></p>
+    <div class="cal-row cal-head">${WEEKDAYS.map((x) => `<span>${x}</span>`).join('')}<span></span></div>
     ${rows}
-    <p class="legend"><span><i class="cell cell-on"></i>on plan</span><span><i class="cell cell-near"></i>close</span><span><i class="cell cell-over"></i>a bigger day</span><span><i class="cell cell-none"></i>nothing logged</span></p>
-    ${pick}
+    <details class="cal-key"><summary>How to read a day</summary>
+      <p><span class="cal-sw cal-on"></span>✓ on plan <span class="cal-sw cal-over"></span>▲ over <span class="cal-sw cal-far"></span>▲▲ far over <span class="cal-sw cal-under"></span>↓ under ${n0(KCAL_MIN_DAY)} <span class="cal-sw cal-open"></span>today</p>
+      <p class="is-prot">${pie('target')} ${n0(s.protein)} g target ${pie('min')} ${n0(proteinFloor())} g minimum ${pie('near')} nearly ${pie('short')} short. Protein never breaks a streak. A "+" after the calories means a little over the budget, still within the ${Math.round((BAND.high - 1) * 100)}% margin.</p>
+    </details>
   </div>`;
+}
+
+// The detail line under the week that holds the tapped day or week icon
+function calPick(ws) {
+  const t = today();
+  const pick = S.calPick;
+  if (pick.startsWith('week:')) {
+    const r = weekResult(ws);
+    const range = `${dTiny.format(parseDay(ws))} – ${dTiny.format(parseDay(addDays(ws, 6)))}`;
+    return `<p class="cal-pick"><b>${esc(range)}</b>: ${r.done ? `${esc(r.tier.title)}. ${r.onPlan} of 7 days on plan, protein reached on ${r.proteinDays}. ${esc(r.tier.text)}`
+      : `${r.onPlan} ${r.onPlan === 1 ? 'day' : 'days'} on plan so far, ${diffDays(t, addDays(ws, 6))} to go. Keep going, the week is still yours.`}</p>`;
+  }
+  const d = pick;
+  const tot = dayTotals(d);
+  const dd = S.days[d] || {};
+  const st = dayStatus(d);
+  const main = !tot.n ? '' : st === 'on' ? 'On plan.' : st === 'open' ? 'Still in progress.'
+    : `${{ over: 'Over the budget', far: 'Well over the budget', under: 'Under the minimum' }[st]}${dayReasons(d).length ? `: ${join(dayReasons(d))}` : ''}.`;
+  const notes = tot.n && st !== 'open' && dayNotes(d).length ? ` ${st === 'on' ? '' : 'Also: '}${join(dayNotes(d))}.` : '';
+  return `<p class="cal-pick"><b>${esc(dLong.format(parseDay(d)))}</b>: ${tot.n ? `${n0(tot.kcal)} / ${n0(dayTarget(d))} kcal, ${n0(tot.p)} g protein (${PROTEIN_TEXT[proteinLevel(d)]})` : 'no meals logged'}${dd.kg ? `, weigh-in ${n1(dd.kg)} kg` : ''}. ${esc(main + notes)} <button type="button" class="link link-inline" data-act="goto-day" data-day="${d}">Open day</button></p>`;
 }
 
 function checkpoints() {
@@ -1064,7 +1125,7 @@ export function renderProgress() {
   </section>
   <section>
     <h2>Consistency calendar</h2>
-    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on plan or close build a run.'}</p>
+    <p class="note">${run > 0 ? `${days(run)} on plan in a row.` : 'Days on plan build a run.'}</p>
     ${calendar()}
   </section>
   <section>
