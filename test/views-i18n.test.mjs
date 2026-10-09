@@ -1,0 +1,330 @@
+// The screens in js/views.js against the language work: no English literal left outside t()/tn()/T()/td(), every screen
+// renders only translated text in a marker-prefixed pseudo Turkish, and the language control in Settings. `node --test`
+import { test, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { setLang } from '../js/i18n.js';
+import tr from '../js/tr.js';
+import { MODELS, PRESETS } from '../js/ai.js';
+import { extract } from './extract.mjs';
+import { screens, fixture, core, views, day, at, meal, T as TODAY } from './screens.mjs';
+
+const { S } = core;
+const VIEWS = readFileSync(new URL('../js/views.js', import.meta.url), 'utf8');
+const lineOf = (src, i) => src.slice(0, i).split('\n').length;
+
+// ——— Reverse lint: English text in views.js that is not inside t() / tn() / T() ———
+// Walks the source the way the JavaScript parser does for strings, template literals (with their ${} code), comments and regexes,
+// and gives every literal with its position. A template's ${} holes become \0 in its text.
+export function literals(src) {
+  const out = [];
+  let i = 0;
+  let prev = ''; // the last significant character, to tell a regex from a division
+  function code(stop) {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+      if (c === '/' && src[i + 1] === '*') { i = src.indexOf('*/', i + 2) + 2; continue; }
+      if (c === "'" || c === '"') {
+        const start = i;
+        let text = '';
+        for (i++; src[i] !== c; i++) { if (src[i] === '\\') { text += src[i + 1]; i++; } else text += src[i]; }
+        i++;
+        out.push({ quote: c, text, start });
+        prev = c;
+        continue;
+      }
+      if (c === '`') { template(); prev = c; continue; }
+      if (c === '/' && '(,=:[!&|?{};'.includes(prev || ';')) { // a regex literal
+        let inClass = false;
+        for (i++; src[i] !== '/' || inClass; i++) { if (src[i] === '\\') i++; else if (src[i] === '[') inClass = true; else if (src[i] === ']') inClass = false; }
+        i++;
+        while (/[a-z]/.test(src[i])) i++;
+        prev = '/';
+        continue;
+      }
+      if (c === '{') depth++;
+      if (c === '}') { if (stop === '}' && depth === 0) { i++; return; } depth--; }
+      if (!/\s/.test(c)) prev = c;
+      i++;
+    }
+  }
+  function template() {
+    const start = i;
+    let text = '';
+    for (i++; src[i] !== '`';) {
+      if (src[i] === '\\') { text += src[i + 1]; i += 2; } else if (src[i] === '$' && src[i + 1] === '{') { text += '\0'; i += 2; code('}'); } else text += src[i++];
+    }
+    i++;
+    out.push({ quote: '`', text, start });
+  }
+  code();
+  return out;
+}
+
+// Words that are not English text to be translated: units, brand names, the two language names
+// (standalone and svg are a media query and a selector in the code, not text)
+const ALLOW_WORDS = new Set(['kg', 'kcal', 'mg', 'ml', 'pickle', 'claude', 'english', 'türkçe', 'standalone', 'svg']);
+// Lone lower-case words that are code: Intl options, element and event names, the screen and section ids, the values of the code's own states, attribute
+// words (` disabled`). Words that only appear in a comparison (`=== 'week'`) need no entry. Anything else, say `[x, 'weigh-in']` or `ok ? 'kg' : 'steps'`, is flagged.
+const CODE_WORDS = new Set(['numeric', 'long', 'short', 'future', 'before', 'over', 'top', 'more', 'morning', 'late', 'workout', 'true', 'false', 'decimal', 'start', 'middle',
+  'hidden', 'visible', 'span', 'pointermove', 'pointerdown', 'pointerleave', 'conjunction', 'going', 'target', 'min', 'near', 'disabled', 'selected', 'checked', 'open',
+  'visibility', 'language', 'analysis', 'targets', 'backup', 'location', 'favorites', 'supplements', 'version', 'reset', 'day', 'week:']);
+// A class name or a piece of one: is-done, cal-d, day-${st}, pill-good, log-plan
+const CLASS_NAME = /^(?:is|pill|day|cal|log|way)-[a-z0-9\0-]*$/;
+// An attribute whose value a person reads
+const TEXT_ATTR = /\s(?:aria-label|title|placeholder|alt)="([^"]*)"/g;
+// The English-looking words of a piece of text: 3 letters or more, not a unit or brand, not part of a name like is-done, a:b or a/b
+function englishWords(text, plain) {
+  const words = [...text.replace(/&#?\w+;/g, ' ').matchAll(/[A-Za-z][A-Za-z’']*/g)].filter((m) => {
+    const w = m[0];
+    const before = text[m.index - 1] || '';
+    const after = text[m.index + w.length] || '';
+    const joined = plain ? /[_:/.=#]/ : /[-_:/.=#]/; // in a plain string a dash does not make a word code: that is for CODE_WORDS and CLASS_NAME
+    return w.length >= 3 && !ALLOW_WORDS.has(w.toLowerCase()) && !joined.test(before) && !(plain ? /[_:/=#]/ : /[-_:/=#]/).test(after);
+  }).map((m) => m[0]);
+  // A plain string is code, not text, when it is a lone word from CODE_WORDS or a list of those and class names ('numeric', 'cal-d cal-out', 'day day-${st}')
+  if (plain && text.trim() && text.trim().split(/\s+/).every((w) => CODE_WORDS.has(w) || CLASS_NAME.test(w))) return [];
+  return words;
+}
+// Text nodes and readable attribute values of an HTML string (holes already turned into \0)
+function htmlTexts(html) {
+  const found = [...html.matchAll(TEXT_ATTR)].map((m) => m[1]);
+  return found.concat(html.replace(/<[^>]*>?/g, '\n').split('\n'));
+}
+
+function fragmentTexts(text) {
+  const values = [...text.matchAll(/([\w-]+)="([^"]*)"/g)];
+  if (!values.length) return [text];
+  const readable = values.filter((m) => /^(?:aria-label|title|placeholder|alt)$/.test(m[1])).map((m) => m[2]);
+  return readable.concat(text.replace(/[\w-]+="[^"]*"/g, ' '));
+}
+
+// What is wrong in a source: the literals with English text that no t()/tn()/T() call holds
+export function lint(src) {
+  const bad = [];
+  for (const lit of literals(src)) {
+    const before = src.slice(0, lit.start);
+    if (/(?<![\w$.])(?:tn|t|T)\(\s*$/.test(before) || /\$id:\s*$/.test(before)) continue; // wrapped, or an id override
+    if (/^[a-z]+$/.test(lit.text) && /(?:===|!==|==|!=)\s*$/.test(before)) continue; // compared with: a state name
+    if (lit.quote !== '`' && /^[.#][\w-]|^\(display-mode:/.test(lit.text)) continue; // a selector or a media query
+    if (/\/\/ i18n-ok\b/.test(src.slice(lit.start, src.indexOf('\n', lit.start)))) continue; // a line marked as English on purpose
+    const html = lit.text.includes('<');
+    // Without tags the text may be a piece of an attribute (` aria-current="date"`): only the attributes a person reads count, by their value
+    const words = html ? htmlTexts(lit.text).flatMap((x) => englishWords(x, false)) : fragmentTexts(lit.text).flatMap((x) => englishWords(x, lit.quote !== '`' || x === lit.text));
+    if (words.length) bad.push(`views.js:${lineOf(src, lit.start)} ${JSON.stringify(words.join(' '))} in ${JSON.stringify(lit.text.slice(0, 70))}`);
+  }
+  return bad;
+}
+
+test('reverse lint: no English literal in views.js outside t(), tn() and T()', () => {
+  assert.deepEqual(lint(VIEWS), []);
+});
+
+test('reverse lint: it flags unwrapped text and lets wrapped text, code names and units through', () => {
+  assert.equal(lint("const a = 'Hello there';").length, 1);
+  assert.equal(lint('const a = `<b>Save now</b>`;').length, 1);
+  assert.equal(lint('const a = `<button aria-label="Close it">x</button>`;').length, 1);
+  assert.equal(lint("const a = 'on plan';").length, 1);
+  assert.equal(lint("rows.push([x, 'weigh-in']);").length, 1);
+  assert.equal(lint("const a = isKg ? 'kg' : 'steps';").length, 1);
+  assert.deepEqual(lint("if (e.kind === 'steps' && x !== 'week') ok(day, 'top');"), []);
+  assert.equal(lint('const a = `<p>${x ? `Inner words` : \'\'}</p>`;').length, 1);
+  assert.deepEqual(lint("const a = t('Hello there'); const b = tn('{n} day|{n} days', n); const c = T('Mo'); const d = t('x', { $id: 'menu.open' });"), []);
+  assert.deepEqual(lint('const a = `<li class="day day-${st} is-done" data-act="goto-day">${t(\'Open\')} ${n} kg ${y} kcal</li>`; const b = \'cal-d cal-out\'; const c = \'numeric\'; const d = x / 2 / y; const e = /, ([^,]*)$/;'), []);
+  assert.deepEqual(lint('const a = `${t("Wrapped")} <svg viewBox="0 0 24 24"><path d="M4 7.5h9"/></svg>`;'), []);
+});
+
+// ——— Pseudo-locale: every string of the code in a marked "Turkish", every screen rendered in it ———
+const MARK_OPEN = '⟦';
+const MARK_CLOSE = '⟧';
+// Only the fixed text is marked; the {placeholders} stay outside the markers, so a value that was not translated
+// (a T-table word without td(), an English word passed as a param) shows up as unmarked text
+const marked = (s) => s.split(/(\{\w+\})/).map((x, i) => (i % 2 || !x ? x : `${MARK_OPEN}${x}${MARK_CLOSE}`)).join('');
+// Built from the extractor, so it follows the code: each t / tn / T literal and id of the code, its fixed parts wrapped in marker pairs.
+// (All of js/, not only views.js: the plan, rule and verdict texts that views.js shows come from plan.js and core.js.)
+function pseudoTable() {
+  const table = {};
+  for (const f of extract().found) if (f.fn !== 'data-t' && !f.file.endsWith('.html')) table[f.key] = f.fn === 'tn' ? f.text.split('|').map(marked).join('|') : marked(f.text);
+  return table;
+}
+
+const added = [];
+afterEach(async () => {
+  for (const k of added.splice(0)) delete tr[k];
+  await setLang('en');
+});
+async function pseudoOn() {
+  const table = pseudoTable();
+  Object.assign(tr, table);
+  added.push(...Object.keys(table));
+  await setLang('tr');
+}
+
+// What is allowed to stay as it is in the pseudo-locale, and why:
+const EXCEPT = {
+  // Text the person typed, or the model wrote, in the fixtures (shown as written; user data is never translated)
+  data: ['Oats with yoghurt', 'Chicken and rice', 'Pizza night', 'Salmon and salad', 'Weight', 'Is it fried?', 'Good day', 'Skyr was the best', 'Cut the sauce', 'Dinner out', 'Burger', 'Ordered a small one', 'Lunch menu', 'Fresh and light', 'Fish and salad', 'Almond milk', 'Magnesium', 'Vitamin D', 'Fits well', 'one plate', 'one', '8,200 steps', 'Home', 'home', PRESETS[0].model],
+  // Names from ai.js that are not marked with T() yet (the models and providers of the Settings sheet): brand names with a few English words
+  models: [...Object.values(MODELS).map((m) => m.name), ...PRESETS.map((p) => p.name), ...Object.values(MODELS).map((m) => m.name.split(' (')[0]), ...PRESETS.map((p) => p.name.split(' (')[0])],
+  // Words that are not English text: units, brand names, the two language names, and the host part of a placeholder
+  words: ['kg', 'kcal', 'mg', 'ml', 'Pickle', 'Claude', 'English', 'Türkçe', 'https', 'sk', 'ant'],
+};
+// The names Intl gives for the dates in Turkish (months, weekdays, long and short): the date formats follow the language by themselves
+const INTL = new Set();
+for (let m = 0; m < 12; m++) for (const month of ['long', 'short']) INTL.add(new Intl.DateTimeFormat('tr-TR', { month, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, m, 15))));
+INTL.add('ve'); // the "and" of a list in Turkish: Intl.ListFormat writes it
+for (let d = 1; d <= 7; d++) for (const weekday of ['long', 'short']) INTL.add(new Intl.DateTimeFormat('tr-TR', { weekday, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 9, 11 + d))));
+const decode = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+// The visible text of one rendered screen that is not translated: [] when every word is inside a marker pair or an exception
+export function untranslated(html) {
+  let rest = html;
+  for (let prev = ''; prev !== rest;) { prev = rest; rest = rest.replace(/⟦[^⟦⟧]*⟧/g, ''); } // innermost pairs first
+  const problems = [];
+  if (/[⟦⟧]/.test(rest)) problems.push('unbalanced marker');
+  let texts = htmlTexts(rest).map(decode);
+  const drop = [...EXCEPT.data, ...EXCEPT.models].sort((a, b) => b.length - a.length);
+  texts = texts.map((x) => drop.reduce((acc, d) => acc.split(d).join(' '), x));
+  for (const text of texts) {
+    for (const m of text.matchAll(/\p{L}[\p{L}'’]*/gu)) {
+      const w = m[0];
+      if (w.length < 2 || EXCEPT.words.includes(w) || INTL.has(w) || INTL.has(w.replace(/[’']$/, ''))) continue;
+      problems.push(`${JSON.stringify(w)} in ${JSON.stringify(text.trim().slice(0, 80))}`);
+    }
+  }
+  return problems;
+}
+
+// More state than the snapshot fixture holds, so the review, the question, the check and the error paths render too
+function extras() {
+  fixture();
+  const out = {};
+  const add = (name, fn) => { try { out[name] = fn(); } catch (e) { out[name] = `ERROR ${e.stack}`; } };
+  const s = S.settings;
+  s.supplements = [{ id: 's1', name: 'Magnesium', dose: '400 mg' }];
+  s.favorites = [{ id: 'f1', name: 'Burger', kcal: 700 }];
+  s.places = [{ name: 'Home' }];
+  s.useLocation = true;
+  s.lastBackup = null;
+  s.usage = { in: 1200, out: 300, calls: 1, usd: 0.02 };
+  s.planPhotos = { 'L-A': 'p1' };
+  S.persisted = false;
+  S.storage = { usage: 5e6 };
+  S.days[TODAY].coach = { note: 'Skyr was the best', ts: at(TODAY, 15), sig: 'x' };
+  S.days[day(-1)].review = { head: 'Good day', good: ['Cut the sauce'], cut: ['Dinner out'], next: 'Ordered a small one', ts: at(day(-1), 22), sig: 'old' };
+  S.entries.push(meal(day(-1), 20, 'dinner', 'Burger', 900, 40, { tier: 'off', src: 'photo', conf: 0.4, q: 'Is it fried?', place: 'home', timeSrc: 'exif', photoIds: ['a', 'b'], text: 'Fresh and light', items: [{ n: 'Burger', g: 200, kcal: 500 }], mult: 1.5, edited: true }));
+  S.entries.push(meal(day(-1), 21, 'late', 'Almond milk', 100, 3, { src: 'text', place: 'out', timeSrc: 'manual' }));
+  S.entries.push({ id: 'pe', day: T0(), ts: at(T0(), 9), createdAt: at(T0(), 9), kind: 'meal', status: 'error', slot: 'lunch', title: 'Lunch menu', src: 'photo', kcal: 0, p: 0, c: 0, f: 0, fib: 0, mult: 1, flags: [], items: [] });
+  S.entries.push({ id: 'ps', day: T0(), ts: at(T0(), 10), createdAt: at(T0(), 10), kind: 'steps', status: 'ok', title: '8,200 steps', steps: 8200, timeSrc: 'file' });
+  S.entries.push({ id: 'pw', day: T0(), ts: at(T0(), 11), createdAt: at(T0(), 11), kind: 'weight', status: 'ok', title: 'Weight 86 kg', kg: 86, tk: { kind: 'weight', params: { kg: 86 } } });
+  S.entries.push({ id: 'pp', day: T0(), ts: at(T0(), 12), createdAt: at(T0(), 12), kind: 'meal', status: 'pending', slot: 'snack1', title: 'Fish and salad', src: 'text', kcal: 0, p: 0, c: 0, f: 0, fib: 0, mult: 1, flags: [], items: [] });
+  const burger = S.entries.find((e) => e.title === 'Burger');
+  S.checks = [{ id: 'c1', ts: at(TODAY, 12), kind: 'menu', title: 'Lunch menu', answer: 'Fits well', note: 'Fresh and light', photos: 2, options: [{ name: 'Fish and salad', fit: 'good', rating: 4, kcal: 450, p: 40, portion: 'one plate', why: 'Fresh and light', tip: 'Cut the sauce', facts: 'Almond milk' }, { name: 'Burger', fit: 'avoid', rating: 2, kcal: 900, p: 40, portion: 'one', why: 'Skyr was the best', tip: 'Cut the sauce' }] }, { id: 'c2', ts: at(day(-3), 12), kind: 'product', title: '', answer: 'Fits well', options: [] }];
+  S.check.openId = 'c1';
+  S.check.photos = [{ id: 'k1', url: 'blob:x' }];
+  S.check.note = 'Fresh and light';
+  S.tab = 'check';
+  add('check-open', views.renderCheck);
+  S.check.openId = 'c2';
+  S.check.busy = true;
+  S.check.status = 'Skyr was the best';
+  add('check-busy', views.renderCheck);
+  S.check.busy = false;
+  S.check.openId = null;
+  S.check.photos = [];
+  S.check.note = '';
+  add('check-closed', views.renderCheck);
+  S.tab = 'log';
+  S.reviewOpen.set(day(-1), true);
+  add('log-reviewed', views.renderLog);
+  S.tab = 'today';
+  add('today-more', views.renderToday);
+  S.viewDay = day(-1);
+  add('today-reviewed-day', views.renderToday);
+  S.viewDay = TODAY;
+  S.tab = 'progress';
+  for (const d of [day(-1), day(-3), day(-6)]) { S.calPick = d; add(`progress-pick-${d}`, views.renderProgress); }
+  S.calPick = null;
+  S.settings.provider = 'openai';
+  S.settings.oaBase = PRESETS[0].base;
+  S.settings.oaKey = 'k';
+  add('settings-gemini', () => views.renderSettings({ showLang: true }));
+  S.suppEdit = 's1';
+  add('settings-supp-edit', views.renderSettings);
+  for (const id of ['pe', 'ps', 'pw', 'pp', burger.id]) add(`entry-${id}`, () => views.renderEntrySheet(id));
+  S.settings.planPhotos = {};
+  add('plan-sheet-nophoto', () => views.renderPlanSheet('D-A'));
+  add('slot-sheet-workout', () => views.renderSlotSheet('workout', TODAY));
+  add('slot-sheet-late', () => views.renderSlotSheet('late', TODAY));
+  add('slot-sheet-past', () => views.renderSlotSheet('lunch', day(-2)));
+  add('num-sheet-past', () => views.renderNumSheet('kg', day(-2)));
+  return out;
+}
+function T0() { return TODAY; }
+
+test('the pseudo-locale marks every string of the code, and the check can fail', async () => {
+  const table = pseudoTable();
+  assert.ok(Object.keys(table).length > 500, 'the extractor found the strings of the code');
+  assert.ok(Object.keys(table).some((k) => k === 'Settings'));
+  assert.deepEqual(untranslated('<p>Hello <b>world</b></p>').length, 2);
+  assert.deepEqual(untranslated('<p>⟦Hello <b>1</b> world⟧ 12 kg</p>'), []);
+  assert.deepEqual(untranslated('<button aria-label="⟦Close⟧" title="Open now">⟦x⟧</button>').length, 2);
+  assert.deepEqual(untranslated('<p>Çarşamba 14 Ekim</p>'), []);
+});
+
+test('pseudo-locale: every screen shows only translated text in Turkish mode', async () => {
+  const all = { ...screens(), ...extras() };
+  const english = { ...all };
+  await pseudoOn();
+  const problems = [];
+  const rendered = { ...screens(), ...extras() };
+  for (const [name, html] of Object.entries(rendered)) {
+    if (html.startsWith('ERROR')) { problems.push(`${name}: ${html.split('\n')[0]}`); continue; }
+    if (name in english && html === english[name] && /[A-Za-z]{3}/.test(html.replace(/<[^>]*>/g, ''))) problems.push(`${name}: rendered the same as English`);
+    for (const p of untranslated(html)) problems.push(`${name}: ${p}`);
+  }
+  assert.deepEqual(problems, []);
+  assert.ok(Object.keys(rendered).length > 40, 'the screens ran');
+});
+
+// ——— The language control in Settings ———
+test('Settings: the language control is hidden by default and first when shown', async () => {
+  fixture();
+  const i18n = await import('../js/i18n.js');
+  const plain = views.renderSettings();
+  assert.equal(plain.includes('data-act="lang"'), i18n.LANG_SWITCH_VISIBLE);
+  assert.equal(i18n.LANG_SWITCH_VISIBLE, false, 'the switch stays hidden until the Turkish text is complete');
+  const shown = views.renderSettings({ showLang: true });
+  assert.ok(shown.indexOf('data-sec="language"') > -1 && shown.indexOf('data-sec="language"') < shown.indexOf('data-sec="analysis"'));
+  assert.equal(shown.replace(/<details class="setting" data-sec="language"[\s\S]*?<\/details>\n {4}/, ''), plain, 'apart from the control the sheet is the same');
+});
+
+test('Settings: the control is a labelled group of two buttons with the language names, the chosen one pressed', async () => {
+  fixture();
+  const seg = (html) => html.match(/<div class="seg" role="group" aria-label="([^"]*)">([\s\S]*?)<\/div>/);
+  for (const lang of ['en', 'tr']) {
+    S.settings.lang = lang;
+    const html = views.renderSettings({ showLang: true });
+    const m = html.match(/<div class="seg" role="group" aria-label="Language">([\s\S]*?)<\/div>/);
+    assert.ok(m, 'a group labelled Language');
+    const buttons = [...m[1].matchAll(/<button type="button" lang="(\w+)" data-act="lang" data-lang="(\w+)" aria-pressed="(\w+)">([^<]*)<\/button>/g)].map((b) => b.slice(1));
+    assert.deepEqual(buttons, [['en', 'en', String(lang === 'en'), 'English'], ['tr', 'tr', String(lang === 'tr'), 'Türkçe']]);
+    assert.match(html, new RegExp(`<small>${lang === 'tr' ? 'Türkçe' : 'English'}</small>`)); // the heading shows the current language
+  }
+  // The two names and the control stay as they are in a translated sheet, while the label and the note follow the language
+  await pseudoOn();
+  const html = views.renderSettings({ showLang: true });
+  assert.match(html, />English<\/button>/);
+  assert.match(html, />Türkçe<\/button>/);
+  const m = seg(html);
+  assert.equal(m[1], '⟦Language⟧');
+  assert.match(html, /<summary><span>⟦Language⟧<\/span>/);
+  assert.deepEqual(untranslated(html), []);
+});
+
+test('Settings: the buttons use what the lang action in app.js reads', () => {
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /'lang': async \(el\) => \{[^]*?el\.dataset\.lang === 'tr' \? 'tr' : 'en'/);
+});

@@ -5,6 +5,8 @@ let lang = 'en';
 let table = {};
 export let LOCALE = LOCALES.en; // a live binding: importers see the locale of the language set last
 const formats = new Map();
+const plurals = new Map(); // one Intl.PluralRules per locale, dropped with the formats
+const pluralRules = () => { if (!plurals.has(LOCALE)) plurals.set(LOCALE, new Intl.PluralRules(LOCALE)); return plurals.get(LOCALE); };
 
 const fill = (text, params) => (params ? text.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(params, k) ? params[k] : m)) : text);
 // A translation may be a function where the grammar needs it; it gets the params (an empty object when there are none).
@@ -22,7 +24,7 @@ export function tn(text, n, params) {
   const p = { ...params, n };
   const v = pick(text, p);
   const forms = (typeof v === 'string' ? v : text).split('|');
-  return fill(forms[forms.length > 1 && new Intl.PluralRules(LOCALE).select(n) !== 'one' ? 1 : 0], p);
+  return fill(forms[forms.length > 1 && pluralRules().select(n) !== 'one' ? 1 : 0], p);
 }
 // Marks a string in a data table so the extraction test finds it; the caller translates it at render time
 export const T = (text) => text;
@@ -59,6 +61,7 @@ export async function setLang(next) {
   table = loaded;
   LOCALE = LOCALES[next];
   formats.clear();
+  plurals.clear();
   if (typeof document !== 'undefined') document.documentElement.lang = next;
 }
 
@@ -79,3 +82,6 @@ export function parseNum(s) {
   if (lang === 'tr' && /^[1-9]\d{0,2}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '');
   return /^\d+([.,]\d+)?$/.test(s) ? Number(s.replace(',', '.')) : NaN;
 }
+
+// The language control in Settings stays hidden until the Turkish text is complete; flipping this on shows it
+export const LANG_SWITCH_VISIBLE = false;

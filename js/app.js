@@ -928,7 +928,7 @@ const ACT = {
     render();
     toast(el.dataset.kind === 'kg' ? 'Weight removed' : 'Steps removed');
   },
-  'lang': async (el) => { // no control in Settings yet
+  'lang': async (el) => { // the language control in Settings (hidden while LANG_SWITCH_VISIBLE is false)
     const prev = S.settings.lang;
     S.settings.lang = el.dataset.lang === 'tr' ? 'tr' : 'en';
     if (!(await applyLang(S.settings.lang))) { S.settings.lang = prev; return; } // only a choice made here is rolled back
