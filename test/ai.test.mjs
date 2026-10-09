@@ -2,6 +2,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze, review, coach, check, AI_ERRORS, WAITING } from '../js/ai.js';
+import { setLang, inEnglish } from '../js/i18n.js';
 
 const sonnet = { provider: 'anthropic', key: 'sk-ant-secretsecret', model: 'claude-sonnet-5-5' };
 const haiku = { ...sonnet, model: 'claude-haiku-4-5-20251001' };
@@ -106,4 +107,43 @@ test('a quick note: text is cleaned, an empty one is an error', async () => {
   assert.equal(data.note, 'Good start. Add protein.');
   mockFetch(() => reply(200, claudeBody(JSON.stringify({ note: '' }))));
   await assert.rejects(() => coach({ cfg: haiku, brief: 'b' }), { code: 'empty' });
+});
+
+// ——— The language line in the prompts ———
+const LINE = '\nWrite all user-facing text (titles, notes, questions, reviews, glosses) in Turkish; keep JSON keys and enum values exactly as specified.';
+const ENTRY_LINE = '\nWrite q in Turkish; keep food names and title in English. Keep JSON keys and enum values exactly as specified.';
+const askers = {
+  analyze: [() => analyze({ cfg: haiku, text: 'apple', when: new Date() }), meal, ENTRY_LINE],
+  review: [() => review({ cfg: haiku, brief: 'b' }), JSON.stringify({ head: 'h', good: [], cut: [], next: 'n' }), LINE],
+  coach: [() => coach({ cfg: haiku, brief: 'b' }), JSON.stringify({ note: 'n' }), LINE],
+  check: [() => check({ cfg: haiku, brief: 'b' }), JSON.stringify({ kind: 'dish', title: 't', answer: 'a', options: [] }), LINE],
+};
+test('Turkish adds one line to each prompt; the English prompt is untouched', async () => {
+  try {
+    for (const [name, [run, body, line]] of Object.entries(askers)) {
+      mockFetch(() => reply(200, claudeBody(body)));
+      await setLang('en');
+      await run();
+      await setLang('tr');
+      await run();
+      const [en, tr] = calls.splice(0).map((c) => c.body.system);
+      assert.ok(!/Turkish/.test(en), name);
+      assert.equal(tr, en + line, name);
+    }
+  } finally { await setLang('en'); }
+});
+
+test('the line follows the language the person chose, also when the request is made inside inEnglish', async () => {
+  try {
+    mockFetch(() => reply(200, claudeBody(askers.coach[1])));
+    await setLang('tr');
+    const pending = inEnglish(() => askers.coach[0]()); // the language is English here for a moment; the choice is not
+    await pending;
+    assert.ok(calls[0].body.system.endsWith(LINE));
+  } finally { await setLang('en'); }
+});
+
+test('the vision probe prompt carries no language line', async () => {
+  const src = (await import('node:fs')).readFileSync(new URL('../js/ai.js', import.meta.url), 'utf8');
+  assert.match(src, /system: 'You read numbers from images\.'/);
 });
