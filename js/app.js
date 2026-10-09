@@ -731,6 +731,7 @@ async function importBackup(file) {
   }
   await load();
   render();
+  if (S.sheet && S.sheet.type === 'settings') await openSettings(); // the open sheet shows the restored language
   const back = tn('{n} entry restored|{n} entries restored', restored);
   toast(skipped ? t('{restored}; {skipped}', { restored: back, skipped: tn('{n} damaged item skipped|{n} damaged items skipped', skipped) }) : back);
 }

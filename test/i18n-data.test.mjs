@@ -94,6 +94,8 @@ test('generated titles: the English title stays, titleOf translates from tk', as
   const steps = { title: '8,200 steps', tk: { kind: 'steps', params: { steps: 8200 } } };
   assert.equal(titleOf(steps), '8,200 steps');
   assert.equal(titleOf({ title: 'Oats' }), 'Oats'); // older entries and typed ones
+  assert.equal(titleOf({ title: 'Egg and cheese plate', planId: 'L-A' }), 'Egg and cheese plate'); // an older plan entry without tk, in English
+  assert.equal(titleOf({ title: 'My own name', planId: 'L-A' }), 'My own name'); // renamed by the person: kept
   assert.equal(titleOf({ title: 'X', tk: { kind: 'nope', params: {} } }), 'X');
   assert.equal(titleOf({ title: 'X', tk: { kind: 'plan', params: { id: 'gone' } } }), 'X');
   for (const tk of [{ kind: 'steps', params: {} }, { kind: 'steps', params: { id: 'x' } }, { kind: 'weight', params: { kg: 'abc' } }, { kind: 'weight', params: { kg: -5 } }, { kind: 'plan', params: { id: 5 } }]) assert.equal(titleOf({ title: 'Kept', tk }), 'Kept');
@@ -104,6 +106,8 @@ test('generated titles: the English title stays, titleOf translates from tk', as
   assert.equal(titleOf(steps), `${(8200).toLocaleString('tr-TR')} adım`);
   assert.equal(titleOf(w), 'Kilo 82,5 kg');
   assert.equal(titleOf({ title: 'Egg and cheese plate', tk: { kind: 'plan', params: { id: 'L-A' } } }), 'Yumurta ve peynir tabağı');
+  assert.equal(titleOf({ title: 'Egg and cheese plate', planId: 'L-A' }), 'Yumurta ve peynir tabağı'); // older entry without tk
+  assert.equal(titleOf({ title: 'My own name', planId: 'L-A' }), 'My own name');
   assert.equal(titleFor('steps', { steps: 8200 }).title, '8,200 steps'); // the stored title is English in any language
 });
 
@@ -163,6 +167,19 @@ test('typed entries: English as before', () => {
   assert.equal(parseLocal('beer 0.5 l').flex.id, 'F-BEER50');
   assert.deepEqual(parseLocal('2 coffees'), { type: 'count', key: 'coffee', n: 2 });
   assert.equal(parseLocal('a plate of pasta'), null);
+});
+
+test('typed entries: the plan and extra names shown in Turkish are found, and the English still are', async () => {
+  S.entries = [];
+  S.settings.favorites = [];
+  await setLang('tr');
+  assert.equal(parseLocal('Yumurta ve peynir tabağı').meal.id, 'L-A');
+  assert.equal(parseLocal('yumurta ve peynir tabagi').meal.id, 'L-A');
+  assert.equal(parseLocal('Bira 0,5 l').flex.id, 'F-BEER50');
+  assert.equal(parseLocal('Egg and cheese plate').meal.id, 'L-A');
+  assert.equal(parseLocal('beer 0.5 l').flex.id, 'F-BEER50');
+  await setLang('en');
+  assert.equal(parseLocal('Yumurta ve peynir tabağı'), null); // the Turkish name is not a plan name while the screen is English
 });
 
 test('typed entries: Turkish words work in either interface language', async () => {

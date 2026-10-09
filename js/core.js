@@ -298,9 +298,9 @@ export function parseLocal(text) {
     return { type: 'water', ml: Math.round(ml) };
   }
   if (TRAIN_RE.test(t)) return { type: 'train' };
-  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.name) === t);
+  const meal = MEALS.find((x) => norm(x.id) === t || norm(x.name) === t || norm(td(x.name)) === t); // the English name or the one on the screen
   if (meal) return { type: 'plan', meal };
-  const flex = FLEX.find((x) => norm(x.name) === t);
+  const flex = FLEX.find((x) => norm(x.name) === t || norm(td(x.name)) === t);
   if (flex) return { type: 'flex', flex };
   const favorite = (S.settings.favorites || []).find((x) => norm(x.name) === t);
   if (favorite) return { type: 'favorite', favorite };
@@ -474,7 +474,8 @@ export const fmtInt = (n) => Math.round(n).toLocaleString(LOCALE);
 // ——— Generated entry titles ———
 // An entry made by the app keeps its English `title` (the canonical text: backups, the SQL export, favourites and the model read it) and,
 // next to it, `tk: { kind, params }`, from which the screen builds the title in the interface language. Older entries have no `tk`.
-const planName = (id) => { const x = has(MEAL_BY_ID, id) ? MEAL_BY_ID[id] : FLEX.find((f) => f.id === id); return x ? td(x.name) : null; };
+const planItem = (id) => (has(MEAL_BY_ID, id) ? MEAL_BY_ID[id] : FLEX.find((f) => f.id === id));
+const planName = (id) => { const x = planItem(id); return x ? td(x.name) : null; };
 const TITLES = {
   weight: (p) => t('Weight {kg} kg', { kg: fmtKg(p.kg) }),
   steps: (p) => t('{steps} steps', { steps: fmtInt(p.steps) }),
@@ -495,7 +496,10 @@ export const TK_KINDS = Object.keys(TITLES);
 export function titleOf(e) {
   const k = e.tk;
   const text = tkValid(k) ? TITLES[k.kind](k.params) : null;
-  return text || e.title;
+  if (text) return text;
+  // An older plan entry has no tk: when its title is still the plan item's English name, show that name in the interface language
+  const item = typeof e.planId === 'string' ? planItem(e.planId) : null;
+  return item && item.name === e.title ? td(item.name) : e.title;
 }
 // { title, tk } for a new generated entry: the English title, built with English formats whatever the language is
 export function titleFor(kind, params) {

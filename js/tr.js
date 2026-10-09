@@ -62,7 +62,7 @@ export default {
 
   // ——— js/core.js ———
   '{kcal} kcal above the budget': '{kcal} kcal bütçenin üstünde',
-  '{kcal} kcal under the {min} minimum': '{kcal} kcal, minimum {min} değerinin altında',
+  '{kcal} kcal under the {min} minimum': '{min} minimumunun {kcal} kcal altında',
   '{kcal} kcal above the budget, within the {pct}% margin': '{kcal} kcal bütçenin üstünde, %{pct} payın içinde',
   'protein {gap} g short of your minimum': 'protein minimumunun {gap} g altında',
   '{n} off-plan entry|{n} off-plan entries': '{n} plan dışı kayıt',

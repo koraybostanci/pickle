@@ -55,7 +55,7 @@ export async function setLang(next) {
   const mine = ++seq;
   let loaded = {};
   if (next === 'tr') {
-    try { loaded = (await import(loadFailed ? `./tr.js?retry=${Date.now()}` : './tr.js')).default; } catch (err) { loadFailed = true; throw err; }
+    try { loaded = (await import(loadFailed ? `./tr.js?retry=${Date.now()}` : './tr.js')).default; loadFailed = false; } catch (err) { loadFailed = true; throw err; }
   }
   if (mine !== seq) return;
   lang = uiLang = next;
