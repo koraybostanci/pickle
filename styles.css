@@ -738,17 +738,17 @@ body.kb-open .composer { bottom: var(--kb); }
 /* Badges: the collection on Progress and the sheet for one badge */
 .badges { margin-top: 28px; }
 .bd-group { margin-top: 16px; font: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
-.bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.bd-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 10px 4px 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); text-align: center; color: var(--ink); cursor: pointer; }
+.bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.bd-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 6px 3px 6px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-card); text-align: center; color: var(--ink); cursor: pointer; }
 .bd-cell:focus-visible { outline-offset: 2px; border-radius: var(--r-card); }
 .bd-cell svg { flex: none; }
-.bd-name { font: 500 12px/1.25 var(--txt); min-height: 2.5em; display: flex; align-items: center; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
+.bd-name { font: 500 11px/1.25 var(--txt); min-height: 2.5em; display: flex; align-items: center; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
 .bd-line { font: 400 11px/1.2 var(--mono); color: var(--ink2); min-height: 1.2em; }
 .bd-cell.is-locked .bd-name { color: var(--ink2); }
 .bd-pips { display: flex; gap: 3px; height: 6px; }
 .bd-pips i { width: 6px; height: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--ink3); }
 .bd-pips i.on { background: var(--ink); box-shadow: none; }
-.bd-cell.is-new { padding-top: 18px; }
+.bd-cell.is-new { padding-top: 16px; }
 .bd-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--tape); }
 .bd-new { position: absolute; top: 3px; left: 3px; padding: 0 4px; border-radius: 99px; background: var(--tape-track); box-shadow: inset 0 0 0 1px var(--tape); color: var(--tape-ink); font: 600 9px/1.4 var(--mono); }
 .bd-intro { margin-top: 8px; }
@@ -775,7 +775,7 @@ body.kb-open .composer { bottom: var(--kb); }
 .bd-step-n small { margin-left: 8px; font: 400 13px var(--txt); color: var(--ink2); }
 .bd-step-d { flex: none; font: 400 13px var(--mono); color: var(--ink2); text-align: right; }
 .bd-steps .is-next .bd-step-d { color: var(--ink); font-weight: 600; }
-@media (min-width: 481px) { .bd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 380px) { .bd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* Bottom sheet */
 .sheet { position: fixed; inset: 0; z-index: 20; }

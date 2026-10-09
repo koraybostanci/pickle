@@ -1200,7 +1200,7 @@ function badgeCell(c) {
   const pips = c.ladder ? `<span class="bd-pips" aria-hidden="true">${Array.from({ length: c.total }, (_, i) => `<i${i < c.earned ? ' class="on"' : ''}></i>`).join('')}</span>` : '';
   const fresh = c.isNew ? `<i class="bd-dot" aria-hidden="true"></i><span class="bd-new">${t('New')}</span>` : '';
   return `<button type="button" class="bd-cell is-${c.state}${c.isNew ? ' is-new' : ''}" id="badge-${c.id}" data-act="badge" data-id="${c.id}" aria-label="${esc(badgeAria(c) + (c.isNew ? ', ' + t('New') : ''))}">
-      ${fresh}${badgeSvg(c.id, { step: c.step, state: c.state, size: 50, label: badgeName(c.id) })}
+      ${fresh}${badgeSvg(c.id, { step: c.step, state: c.state, size: 42, label: badgeName(c.id) })}
       <span class="bd-name">${esc(badgeName(c.id))}</span>
       <span class="bd-line">${esc(badgeLine(c))}</span>${pips}
     </button>`;
