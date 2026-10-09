@@ -1,7 +1,7 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { MEALS, MEAL_BY_ID, SLOTS, DEFAULTS, LOCALE, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '37'; // bump together with VERSION in sw.js
+export const APP_VERSION = '38'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -81,26 +81,31 @@ export function dayStatus(day) {
   const t = dayTotals(day);
   if (!t.n) return 'none';
   const target = dayTarget(day);
-  const hasOff = mealsOf(day).some((e) => e.tier === 'off');
-  const on = t.kcal <= target * BAND.high && t.kcal >= target * BAND.low && t.p >= proteinFloor() && !hasOff;
+  const on = t.kcal <= target * BAND.high && t.kcal >= target * BAND.low; // the calories decide the day; protein and the rest are notes
   if (day === today() && !on && t.kcal <= target * BAND.high) return 'open';
   if (t.kcal < target * BAND.partial) return 'partial';
   if (on) return 'on';
   if (t.kcal <= target * BAND.near) return 'near';
   return 'over';
 }
-// What kept a day from being on plan, in a few words each; empty for a day that was
+// What kept a day from being on plan: only the calories, in a few words; empty for a day that was
 export function dayReasons(day) {
   const t = dayTotals(day);
   if (!t.n) return [];
   const target = dayTarget(day);
+  if (t.kcal > target * BAND.high) return [`${fmtInt(t.kcal - target)} kcal above the budget`];
+  if (t.kcal < target * BAND.low) return [`${fmtInt(target - t.kcal)} kcal under the budget`];
+  return [];
+}
+// The smaller things worth a mention, which never change how a day counts
+export function dayNotes(day) {
+  const t = dayTotals(day);
+  if (!t.n) return [];
   const out = [];
   const gap = Math.ceil(proteinFloor() - t.p - 1e-6);
   if (gap > 0) out.push(`protein ${gap} g short of your minimum`);
   const off = mealsOf(day).filter((e) => e.tier === 'off').length;
   if (off) out.push(`${off} off-plan ${off === 1 ? 'entry' : 'entries'}`);
-  if (t.kcal > target * BAND.high) out.push(`${fmtInt(t.kcal - target)} kcal above the budget`);
-  else if (t.kcal < target * BAND.low) out.push(`${fmtInt(target - t.kcal)} kcal under the budget`);
   return out;
 }
 
@@ -283,7 +288,7 @@ export function planRate() {
 }
 
 // How a day compares with the plan and what it did to the schedule. Worked out on the device, no model involved.
-// level: 'open' (today, still within budget), 'thin' (too little logged to judge), 'on', 'near' (calories fine, something else is not),
+// level: 'open' (today, still within budget), 'thin' (too little logged to judge), 'on',
 // 'under', 'over' (slightly) or 'back' (clearly over)
 export function dayVerdict(day) {
   const t = dayTotals(day);
@@ -300,12 +305,12 @@ export function dayVerdict(day) {
   else if (live) level = 'open';
   else if (t.kcal < target * BAND.partial) level = 'thin';
   else if (t.kcal < target * BAND.low) level = 'under';
-  else level = proteinGap || off ? 'near' : 'on';
+  else level = 'on';
   const rate = planRate();
   return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
 }
 export const VERDICT = {
-  open: 'In progress', thin: 'Not much logged', on: 'In line', near: 'Mostly in line',
+  open: 'In progress', thin: 'Not much logged', on: 'In line',
   under: 'Under budget', over: 'A little above', back: 'A bigger day',
 };
 // The verdict in sentences: calories against the target, what a surplus costs on the schedule, protein, off-plan entries
