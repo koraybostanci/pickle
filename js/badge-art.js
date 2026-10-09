@@ -1,7 +1,8 @@
 // Badge art: every badge drawn from tables, as SVG strings. No DOM, no storage; the caller supplies the localized label.
 // Shape = group, finish = step (0 Bronze .. 3 Platinum), glyph = id. A one-shot badge is drawn at finish 2 (Gold): the caller passes that step.
 // Colours come from the --t1..--t4, --on-t and --hi tokens in styles.css and the app's own --ink, --bg, --track, --edge and --ink3.
-import { BY_ID } from './badges.js';
+// The avatar at the end of the file is the app icon pickle on a 128 box.
+import { BY_ID, PARTS, DEFAULT_AV } from './badges.js';
 
 // The 48-unit badge outlines, one per group
 export const SHAPES = {
@@ -104,4 +105,73 @@ export function badgeSvg(id, { step = 2, state = 'earned', size = 48, label = ''
     h += `<g fill="none" stroke="var(--on-t)" color="var(--on-t)" stroke-width="${S.sw}" transform="translate(${24 + S.dx} ${24 + S.dy}) scale(${S.s}) translate(-12 -12)">${glyphMarkup(id, shape, px >= BAR_MIN)}</g>`;
   }
   return h + '</svg>';
+}
+
+// ——— The avatar: the app-icon pickle (green body, light highlight, darker warts, brass stem) with three slots ———
+// Colours are the --pickle, --pickle-hi and --pickle-d tokens plus the badge tokens; the face and outlines use --on-t, which is dark in both themes.
+// A growth stage is the body's half-width and half-height, and the face scale (the gherkin is small, so its face is drawn a little smaller).
+// Stage 3 also grows warts on its outline, so it differs from stage 2 in silhouette, not only in size.
+const STAGE = { stage1: { rx: 22, ry: 36, k: 0.9, dots: 2 }, stage2: { rx: 26, ry: 43, k: 1, dots: 3 }, stage3: { rx: 30, ry: 48, k: 1, dots: 5 } };
+const WARTS = [-148, -112, -62, -22, 18, 52, 96, 134, 172]; // degrees round the body of a well-brined pickle, none at the stem
+const DOTS = [[-0.55, 0.42], [0.5, 0.52], [0.05, 0.68], [0.58, -0.3], [-0.62, -0.28]]; // seeds, as fractions of rx and ry
+const CY = 70;
+const OUT = 'stroke="var(--on-t)" stroke-width="2.4"';
+const r1 = (n) => +n.toFixed(1);
+
+// The face on the eye line ey. All dark marks use --on-t.
+function face(f, ey) {
+  const eye = (x, r) => `<circle cx="${x}" cy="${ey}" r="${r}"/>`;
+  const m = (d, w) => `<path d="${d}" fill="none" stroke-width="${w}"/>`;
+  const star = (x) => `<path d="M${x} ${ey - 7}l2.3 4.7 5.2.7-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.7z" fill="var(--t3)" stroke="none"/>`;
+  const my = ey + 13;
+  let h;
+  if (f === 'face_cool') h = `<rect x="44" y="${ey - 6}" width="18" height="12" rx="3.5"/><rect x="66" y="${ey - 6}" width="18" height="12" rx="3.5"/>${m(`M62 ${ey - 2}h4`, 2)}${m(`M55 ${my}q9 6 18 0`, 2.8)}`;
+  else if (f === 'face_star') h = star(52) + star(76) + m(`M51 ${my - 1}q13 11 26 0`, 2.8);
+  else if (f === 'face_smile') h = eye(52, 3.4) + eye(76, 3.4) + m(`M50 ${my - 1}q14 13 28 0`, 3);
+  else h = eye(53, 3.2) + eye(75, 3.2) + m(`M57 ${my + 1}q7 4 14 0`, 2.6);
+  return `<g fill="var(--on-t)" stroke="var(--on-t)" stroke-linecap="round" stroke-linejoin="round">${h}</g>`;
+}
+
+// What is worn, placed from the body: hw(y) is the body's half-width at height y
+function worn(a, rx, ry) {
+  const top = CY - ry;
+  const hw = (y) => rx * Math.sqrt(Math.max(0, 1 - ((y - CY) / ry) ** 2));
+  if (a === 'acc_leaf') return `<path d="M64 ${top - 5}c-2-9 4-17 14-18-1 10-6 17-14 18z" fill="var(--good)" stroke="var(--pickle-d)" stroke-width="2"/>`;
+  if (a === 'acc_cap') {
+    const y = top + 17, w = r1(hw(y) + 1);
+    return `<path d="M${r1(64 - w)} ${y}Q${r1(64 - w)} ${top - 14} 64 ${top - 14}T${r1(64 + w)} ${y}z" fill="var(--prot)" ${OUT}/><path d="M${r1(64 + w * 0.3)} ${y}h${r1(w * 0.95)}" fill="none" stroke="var(--on-t)" stroke-width="4" stroke-linecap="round"/>`;
+  }
+  if (a === 'acc_headband') {
+    const y1 = top + 0.15 * ry, y2 = y1 + 8, w1 = r1(hw(y1) + 1.5), w2 = r1(hw(y2 + 5) + 1.5);
+    return `<path d="M${r1(64 - w1)} ${r1(y1)}Q64 ${r1(y1 + 8)} ${r1(64 + w1)} ${r1(y1)}L${r1(64 + w2)} ${r1(y2)}Q64 ${r1(y2 + 8)} ${r1(64 - w2)} ${r1(y2)}z" fill="var(--tape)" ${OUT}/>`;
+  }
+  if (a === 'acc_scarf') {
+    const y1 = CY + 0.46 * ry, y2 = y1 + 10, w1 = r1(hw(y1) + 1.5), w2 = r1(hw(y2 + 4) + 1.5);
+    return `<path d="M${r1(64 - w1)} ${r1(y1)}Q64 ${r1(y1 + 8)} ${r1(64 + w1)} ${r1(y1)}L${r1(64 + w2)} ${r1(y2)}Q64 ${r1(y2 + 8)} ${r1(64 - w2)} ${r1(y2)}z" fill="var(--t1)" ${OUT}/><path d="M${r1(64 + w2 * 0.45)} ${r1(y2 + 4)}v14l5-3.5 4.5 4.5v-15z" fill="var(--t1)" ${OUT}/>`;
+  }
+  if (a === 'acc_crown') {
+    const y = top + 8, w = r1(hw(y) * 0.8 + 3), h = r1(w * 0.95 + 4);
+    return `<path d="M${-w} ${y}l-3-${h} ${r1(w * 0.5 + 1.5)} ${r1(h * 0.45)} ${r1(w * 0.5 + 1.5)}-${r1(h * 0.4)} ${r1(w * 0.5 + 1.5)} ${r1(h * 0.4)} ${r1(w * 0.5 + 1.5)}-${r1(h * 0.45)}l-3 ${h}z" transform="translate(64 0)" fill="var(--t3)" ${OUT} stroke-linejoin="round"/>`;
+  }
+  return '';
+}
+
+// opts: size in px, label (already localized, escaped here). av holds part ids; a missing or unknown part is the default of its slot.
+export function avatarSvg(av, { size = 128, label = '' } = {}) {
+  const a = av && typeof av === 'object' ? av : {};
+  const pick = (slot) => (typeof a[slot] === 'string' && Object.hasOwn(PARTS, a[slot]) && PARTS[a[slot]].slot === slot ? a[slot] : DEFAULT_AV[slot]);
+  const stage = pick('stage'), f = pick('face'), acc = pick('acc');
+  const { rx, ry, k, dots } = STAGE[stage];
+  const l = esc(label);
+  const px = Math.max(1, Math.round(+size) || 128);
+  const ey = r1(CY - ry * 0.22);
+  const warts = stage === 'stage3' ? WARTS.map((d) => `<circle cx="${r1(64 + rx * Math.cos(d * Math.PI / 180))}" cy="${r1(CY + ry * Math.sin(d * Math.PI / 180))}" r="6"/>`).join('') : '';
+  const body = `<ellipse cx="64" cy="${CY}" rx="${rx}" ry="${ry}"/>${warts}`;
+  const seeds = DOTS.slice(0, dots).map(([x, y]) => `<circle cx="${r1(64 + x * rx)}" cy="${r1(CY + y * ry)}" r="2.3"/>`).join('');
+  const fk = k === 1 ? '' : ` transform="translate(64 ${ey}) scale(${k}) translate(-64 -${ey})"`;
+  return `<svg width="${px}" height="${px}" viewBox="0 0 128 128" role="img" aria-label="${l}"><title>${l}</title>`
+    + `<rect x="58" y="${CY - ry - 9}" width="12" height="14" rx="3.5" fill="var(--tape)" ${OUT}/>`
+    + `<g fill="var(--pickle-d)" stroke="var(--pickle-d)" stroke-width="5" stroke-linejoin="round">${body}</g><g fill="var(--pickle)">${body}</g>`
+    + `<path d="M${r1(64 - rx * 0.62)} ${r1(CY - ry * 0.5)}Q${r1(64 - rx * 0.86)} ${CY} ${r1(64 - rx * 0.6)} ${r1(CY + ry * 0.4)}" fill="none" stroke="var(--pickle-hi)" stroke-width="3.6" stroke-linecap="round"/>`
+    + `<g fill="var(--pickle-d)" fill-opacity=".75">${seeds}</g><g${fk}>${face(f, ey)}</g>${worn(acc, rx, ry)}</svg>`;
 }

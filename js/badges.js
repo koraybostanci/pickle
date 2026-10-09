@@ -210,6 +210,40 @@ export function unlocked(part, got) {
 export const DEFAULT_AV = { stage: 'stage1', face: 'face_plain', acc: 'acc_none' };
 export const freshBadges = () => ({ v: 1, got: {}, seen: {}, av: { ...DEFAULT_AV }, base: null });
 
+// The worn parts as shown: a part the badges do not unlock (or an unknown one) is its slot's default, whatever the record says
+export function wornAv(stored) {
+  const av = (stored && stored.av) || {};
+  const out = { ...DEFAULT_AV };
+  for (const slot of Object.keys(DEFAULT_AV)) {
+    const p = av[slot];
+    if (typeof p === 'string' && Object.hasOwn(PARTS, p) && PARTS[p].slot === slot && unlocked(p, stored && stored.got)) out[slot] = p;
+  }
+  return out;
+}
+export const PART_NAME = {
+  stage1: T('Gherkin'), stage2: T('Dill'), stage3: T('Well-brined'),
+  face_plain: T('Calm'), face_smile: T('Smile'), face_cool: T('Cool'), face_star: T('Star-eyed'),
+  acc_none: T('None'), acc_leaf: T('Leaf'), acc_cap: T('Cap'), acc_scarf: T('Scarf'), acc_headband: T('Headband'), acc_crown: T('Crown'),
+};
+export const SLOT_TITLE = { stage: T('Growth'), face: T('Face'), acc: T('Accessory') };
+// The picker: per slot, each part with whether it is locked, whether it is worn, and the badge step it needs ([id, threshold] or null)
+export function avatarChoices(stored) {
+  const worn = wornAv(stored);
+  const got = stored && stored.got;
+  return Object.keys(DEFAULT_AV).map((slot) => ({
+    slot,
+    parts: Object.keys(PARTS).filter((p) => PARTS[p].slot === slot).map((part) => ({ part, locked: !unlocked(part, got), selected: worn[slot] === part, req: PARTS[part].req })),
+  }));
+}
+// After a part is chosen: the stored record wearing it, or the same object when it is not earned, unknown, already worn, or there is no record yet
+export function wear(stored, part) {
+  if (!stored || typeof part !== 'string' || !Object.hasOwn(PARTS, part) || !unlocked(part, stored.got)) return stored;
+  const worn = wornAv(stored);
+  const slot = PARTS[part].slot;
+  if (worn[slot] === part && stored.av && stored.av[slot] === part) return stored;
+  return { ...stored, av: { ...worn, [slot]: part } };
+}
+
 // ——— What is new ———
 // The highest step of a badge in `got`, or 0
 export const topOf = (got, id) => { const have = (got && Object.hasOwn(got, id) && got[id]) || {}; return Math.max(0, ...Object.keys(have).map(Number)); };

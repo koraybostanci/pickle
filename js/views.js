@@ -5,8 +5,8 @@ import {
   plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
-import { BY_ID, GROUP_NAME, FINISH_NAME, cachedContext, cellOf, collection, stepRows, unlockSummary } from './badges.js';
-import { badgeSvg } from './badge-art.js';
+import { BY_ID, GROUP_NAME, FINISH_NAME, PART_NAME, SLOT_TITLE, cachedContext, cellOf, collection, stepRows, unlockSummary, wornAv, avatarChoices } from './badges.js';
+import { badgeSvg, avatarSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
 import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
@@ -37,6 +37,9 @@ const CHECK = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d=
 const ALERT = '<svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v5.5M8 12v.5"/></svg>';
 const CLOCK = '<svg class="clock" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l2.5 1.5"/></svg>';
 const PLATE = '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="10.5"/></svg>';
+const partName = (p) => td(PART_NAME[p]);
+const avatarLabel = (av) => [t('Your pickle'), partName(av.stage), partName(av.face), partName(av.acc)].join(', ');
+const avatarButton = () => { const av = wornAv(S.badges); return `<button type="button" class="icon-btn av-btn" id="btn-avatar" data-act="avatar" aria-label="${t('Your pickle')}"><span aria-hidden="true">${avatarSvg(av, { size: 34, label: avatarLabel(av) })}</span></button>`; };
 const settingsButton = () => `<button type="button" class="icon-btn" data-act="settings" aria-label="${t('Settings')}">${ICON.settings}</button>`;
 
 // Where the weight stands against the schedule, in plain words
@@ -503,7 +506,7 @@ export function renderToday() {
       <h1>${isToday ? t('Today') : esc(dWeekday.format(parseDay(day)))}</h1>
       <p class="sub">${isToday ? (day >= S.settings.startDate ? t('{date} · day {n}', { date: esc(dLong.format(parseDay(day))), n: diffDays(S.settings.startDate, day) + 1 }) : esc(dLong.format(parseDay(day)))) : `${esc(dShort.format(parseDay(day)))}. <button type="button" class="link link-inline" data-act="day-today">${t('Back to today')}</button>`}</p>
     </div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${isToday ? startCard() + coachLine(day) : ''}
   ${weekStrip(day)}
@@ -712,7 +715,7 @@ export function renderLog() {
   return `
   <header class="top">
     <div><h1>${t('Log')}</h1><p class="sub">${t('Everything you sent, newest first, with a review of each day. Tap an entry to correct it.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${keyNotice}${pendingNotice}
   ${groups || `<div class="empty"><p>${t('Nothing logged yet.')}</p><p>${t('Everything you send lands here: photos, meals you type, weigh-ins, steps.')}</p>
@@ -784,7 +787,7 @@ export function renderCheck() {
   return `
   <header class="top">
     <div><h1>${t('Check')}</h1><p class="sub">${t('Before you order or buy: photograph the menu, the dish or the product and get a verdict against your plan.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${keyNotice}
   <section class="check-new" aria-label="${t('New check')}">
@@ -1134,7 +1137,7 @@ export function renderProgress() {
   return `
   <header class="top">
     <div><h1>${t('Progress')}</h1><p class="sub">${esc(dTiny.format(parseDay(s.startDate)))} → ${esc(dTiny.format(parseDay(s.targetDate)))} · ${esc(kgLabel(s.startKg))} kg → ${esc(kgLabel(s.targetKg))} kg</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   ${adjustNotice()}
   <section class="glide">
@@ -1234,6 +1237,24 @@ export function renderBadgeSheet(id) {
   ${rows.length ? `<ol class="bd-steps" aria-label="${t('Steps to earn')}">${rows.map((r) => `<li class="${r.day ? 'is-earned' : r.next ? 'is-next' : ''}"><span aria-hidden="true">${badgeSvg(id, { step: r.step, state: r.state, size: 32, label: '' })}</span><span class="bd-step-n">${n0(r.n)}${kg}<small>${esc(td(FINISH_NAME[r.step]))}</small></span><span class="bd-step-d">${r.day ? badgeDay(r.day) : r.next ? t('Next up') : ''}</span></li>`).join('')}</ol>` : ''}`;
 }
 
+// What a locked part asks for: the badge's name and, for a ladder, the step ('Earn Days on plan: 30'; the kilos in kg)
+const partHint = ([id, thr]) => (BY_ID[id].steps.length > 1 ? t('Earn {name}: {n}', { name: badgeName(id), n: id === 'kilos' ? `${n0(thr)} kg` : n0(thr) }) : t('Earn {name}', { name: badgeName(id) }));
+// The avatar picker: a live preview and the three slots as chips. A locked chip shows its hint when tapped (data-hint), it never changes anything.
+export function renderAvatarSheet() {
+  const av = wornAv(S.badges);
+  const chip = (c) => {
+    const name = esc(partName(c.part));
+    const lock = c.locked ? '<svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>' : '';
+    return `<button type="button" class="chip av-chip${c.locked ? ' is-locked' : ''}" data-act="avatar-pick" data-part="${c.part}"${c.locked ? ` data-hint="${esc(partHint(c.req))}"` : ''} aria-pressed="${c.selected}">${lock}${name}${c.locked ? `<span class="sr-only">, ${t('Locked')}</span>` : ''}</button>`;
+  };
+  return `
+  <header class="sheet-top"><h2 id="sheet-title">${t('Your pickle')}</h2><button type="button" class="btn" data-act="close-sheet">${t('Close')}</button></header>
+  <div class="av-hero"><span id="av-preview" aria-hidden="true">${avatarSvg(av, { size: 168, label: avatarLabel(av) })}</span></div>
+  ${avatarChoices(S.badges).map((g) => `<h3 class="av-slot" id="av-${g.slot}">${esc(td(SLOT_TITLE[g.slot]))}</h3>
+  <div class="av-chips" role="group" aria-labelledby="av-${g.slot}">${g.parts.map(chip).join('')}</div>`).join('\n  ')}
+  <p class="note av-hint" id="av-hint" role="status">${t('Locked parts show what to earn. Nothing changes by itself.')}</p>`;
+}
+
 // The beam in its card: every kilo between the start and the target, the ones collected, and the next one by name
 function beamCard(a, target, started) {
   const s = S.settings;
@@ -1291,7 +1312,7 @@ export function renderPlan() {
   return `
   <header class="top">
     <div><h1>${t('Plan')}</h1><p class="sub">${pictured ? t('{n} of {total} meals show your own photo.', { n: pictured, total: MEALS.length }) : t('Tap a meal for its ingredients, and to add a photo of your own plate.')}</p></div>
-    <div class="top-actions">${settingsButton()}</div>
+    <div class="top-actions">${avatarButton()}${settingsButton()}</div>
   </header>
   <ul class="plan-targets" aria-label="${t('Daily goals')}">
     <li>${t('Rest day <b>{kcal}</b> kcal', { kcal: n0(s.kcalRest) })}</li>

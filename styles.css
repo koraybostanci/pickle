@@ -35,6 +35,9 @@
   --on-t: #23241F; /* glyph on a finish */
   --hi: #FFFFFF;
   --ring-p: var(--hi); /* Platinum's inner ring */
+  --pickle: #8DBA4A; /* the avatar: the app icon's pickle, its highlight and its warts */
+  --pickle-hi: #B5D77A;
+  --pickle-d: #5F8A2C;
   --track: #EAEBE4; /* the empty part of a bar */
   --fill: #008A74; /* a bar still filling; a full one turns --good */
   --edge: #C9CBC1; /* outlines of quiet controls and days still to come */
@@ -92,6 +95,9 @@
     --on-t: #14150F;
     --hi: #FFFFFF;
     --ring-p: rgba(20, 21, 15, .5); /* the white ring vanishes on the pale fill */
+    --pickle: #8DBA4A;
+    --pickle-hi: #B5D77A;
+    --pickle-d: #6C9A33; /* a little lighter, so the outline shows on the dark card */
     --track: #2C3630;
     --fill: #21937A;
     --edge: #3F4A43;
@@ -741,6 +747,17 @@ body.kb-open .composer { bottom: var(--kb); }
 .bd-intro { margin-top: 8px; }
 .bd-hero { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
 .bd-hero svg { display: block; }
+/* The avatar: the header button (the pickle itself, no stroke from .icon-btn) and the picker */
+.icon-btn.av-btn svg { width: 34px; height: 34px; fill: none; stroke: none; }
+.av-hero { display: grid; place-items: center; margin: 12px 0 4px; }
+.av-hero span { display: block; line-height: 0; padding: 8px; background: var(--track); border: 1px solid var(--edge); border-radius: 20px; }
+.av-hero svg { display: block; }
+.av-slot { margin-top: 16px; font: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.av-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.av-chip[aria-pressed="true"] { border-color: var(--tape); box-shadow: inset 0 0 0 1px var(--tape); }
+.av-chip.is-locked { color: var(--ink3); border-style: dashed; }
+.av-chip svg { width: 11px; height: 11px; flex: none; stroke: none; }
+.av-hint { margin-top: 16px; min-height: 22px; }
 .bd-status { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 15px; }
 .bd-status span { font: 400 13px var(--mono); color: var(--ink2); }
 .bd-desc { margin-top: 14px; font-size: 15px; }

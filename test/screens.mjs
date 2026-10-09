@@ -1,5 +1,5 @@
 // The fixed state and the screens rendered from it, for the English snapshot and the pseudo-locale test.
-// What is covered: Today, Log, Check, Progress, Plan, Settings and the entry, number, slot and plan sheets, which are
+// What is covered: Today, Log, Check, Progress, Plan, Settings and the entry, number, slot, plan, badge and avatar sheets, which are
 // string-returning functions of the state S and run in Node as they are. Not covered: anything that needs the DOM
 // (attachChart, toasts and the other code in app.js, which reads document and window at import time).
 process.env.TZ = 'UTC';
@@ -38,7 +38,7 @@ export function fixture() {
   S.entries.push({ id: 'p1', day: T, ts: at(T, 15), createdAt: at(T, 15), kind: 'meal', status: 'pending', slot: 'snack', title: '', kcal: 0, p: 0, c: 0, f: 0, fib: 0, mult: 1, tier: 'plan', flags: [], items: [] });
   S.checks = [];
   // Earned badges at different finishes; days_on (30) and best_run (7) are above what was seen, so they are new (stored, so they show whatever the fixture log would earn by itself)
-  S.badges = { v: 1, told: true, seen: { first_meal: 1, first_weigh: 1, first_on: 1, days_on: 7, best_run: 3, perfect_day: 1, kilos: 1, protein_days: 150 }, av: { stage: 'stage1', face: 'face_plain', acc: 'acc_none' }, base: { startKg: 87, targetKg: 78 }, got: {
+  S.badges = { v: 1, told: true, seen: { first_meal: 1, first_weigh: 1, first_on: 1, days_on: 7, best_run: 3, perfect_day: 1, kilos: 1, protein_days: 150 }, av: { stage: 'stage2', face: 'face_smile', acc: 'acc_leaf' }, base: { startKg: 87, targetKg: 78 }, got: {
     first_meal: { 1: day(-9) }, first_weigh: { 1: day(-9) }, first_on: { 1: day(-8) },
     days_on: { 7: day(-2), 30: day(-1) }, best_run: { 3: day(-6), 7: day(-2) }, perfect_day: { 1: day(-7) }, kilos: { 1: day(-3) },
     protein_days: { 10: day(-5), 50: day(-4), 100: day(-3), 150: day(-1) },
@@ -91,5 +91,6 @@ export function screens() {
   add('badge-sheet-one-shot', () => views.renderBadgeSheet('first_meal'));
   add('badge-sheet-locked', () => views.renderBadgeSheet('anniversary'));
   add('badge-sheet-kilos', () => views.renderBadgeSheet('kilos'));
+  add('avatar-sheet', views.renderAvatarSheet);
   return out;
 }

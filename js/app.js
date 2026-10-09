@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { settle, viewed, unseenAdded, serial } from './badges.js';
+import { settle, viewed, unseenAdded, serial, wear } from './badges.js';
 import { setLang, getLang, storedLang, rememberLang, applyStatic, t, tn, td, foldKey } from './i18n.js';
 import { canRun, installHtml } from './standalone.js';
 import { buildSql, exportName } from './export.js';
@@ -12,7 +12,7 @@ import { MEAL_BY_ID, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDa
 import {
   APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, aiCfg, hasKey, today, eff, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, CHECK_MAX, checkReady, COUNT_MAX, parseLocal, titleFor, titleOf,
 } from './core.js';
-import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderBadgeSheet, badgeContext, unlockToast, renderFrameSheet, attachChart } from './views.js';
+import { renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderBadgeSheet, renderAvatarSheet, badgeContext, unlockToast, renderFrameSheet, attachChart } from './views.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -806,6 +806,7 @@ function render() {
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
   window.scrollTo(0, y);
   if (S.sheet && S.sheet.type === 'badge') $('#sheet-body').innerHTML = renderBadgeSheet(S.sheet.id);
+  if (S.sheet && S.sheet.type === 'avatar') $('#sheet-body').innerHTML = renderAvatarSheet();
   if (S.sheet && S.sheet.type === 'plan') { $('#sheet-body').innerHTML = renderPlanSheet(S.sheet.id); hydratePhotos(); }
   if (S.sheet && S.sheet.type === 'entry') {
     const html = renderEntrySheet(S.sheet.id);
@@ -921,6 +922,23 @@ async function showBadge(id) {
     });
     if (changed) render();
   } catch { /* seen again next time */ }
+}
+// The avatar picker. A chosen part is written through the same queue, from the latest S.badges, and rolled back if the write fails.
+function showAvatar() { openSheet(renderAvatarSheet(), { type: 'avatar' }); }
+async function wearPart(part) {
+  try {
+    const changed = await badgeQueue(async () => {
+      const next = wear(S.badges, part);
+      if (next === S.badges) return false;
+      const before = S.badges;
+      S.badges = next;
+      try { await db.kvSet('badges', next); } catch (err) { S.badges = before; throw err; }
+      return true;
+    });
+    if (changed) render();
+  } catch { /* not saved: the picker shows what is worn */ }
+  const again = S.sheet && S.sheet.type === 'avatar' && document.querySelector(`#sheet-body [data-part="${part}"]`);
+  if (again) again.focus({ preventScroll: true });
 }
 function showBadges() {
   go('progress');
@@ -1050,6 +1068,11 @@ const ACT = {
   'library': () => { photoTarget = null; $('#f-lib').click(); },
   // Plan: a meal's details, and its picture
   'badge': (el) => showBadge(el.dataset.id),
+  'avatar': () => showAvatar(),
+  'avatar-pick': (el) => { // a locked chip carries its hint and changes nothing
+    if (el.dataset.hint) { const h = $('#av-hint'); if (h) h.textContent = el.dataset.hint; return; }
+    return wearPart(el.dataset.part);
+  },
   'plan-meal': (el) => openSheet(renderPlanSheet(el.dataset.id), { type: 'plan', id: el.dataset.id }),
   'check-cam': () => { photoTarget = CHECK_PHOTOS; $('#f-cam').click(); },
   'check-lib': () => { photoTarget = CHECK_PHOTOS; $('#f-lib').click(); },
