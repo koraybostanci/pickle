@@ -28,6 +28,13 @@
   --good-ink: #0B5D50; /* text on --good-soft, --warn-soft and --over-track: the kit's pills */
   --warn-ink: #8A4708;
   --over-ink: #9B1C32;
+  --t1: #BE8049; /* badge finishes: Bronze, Silver, Gold, Platinum */
+  --t2: #B4BAC2;
+  --t3: #DDAE2E;
+  --t4: #CFE4F2;
+  --on-t: #23241F; /* glyph on a finish */
+  --hi: #FFFFFF;
+  --ring-p: var(--hi); /* Platinum's inner ring */
   --track: #EAEBE4; /* the empty part of a bar */
   --fill: #008A74; /* a bar still filling; a full one turns --good */
   --edge: #C9CBC1; /* outlines of quiet controls and days still to come */
@@ -78,6 +85,13 @@
     --good-ink: #9FE3D0;
     --warn-ink: #F3C08A;
     --over-ink: #F9B3BB;
+    --t1: #C98455;
+    --t2: #B9BFC8;
+    --t3: #E6B93E;
+    --t4: #DCEEFA;
+    --on-t: #14150F;
+    --hi: #FFFFFF;
+    --ring-p: rgba(20, 21, 15, .5); /* the white ring vanishes on the pale fill */
     --track: #2C3630;
     --fill: #21937A;
     --edge: #3F4A43;
