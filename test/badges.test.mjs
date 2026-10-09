@@ -235,21 +235,56 @@ test('kilos are capped at the span; steps beyond it are dropped', () => {
 test('a weigh-in that implies more than a kilo a day is skipped, and so is one before the start date', () => {
   reset();
   rec(day(-4), { kg: 85.5 });
-  rec(day(-3), { kg: 70 }); // a typo: skipped, and the next one is compared with it, so it is skipped too
+  rec(day(-3), { kg: 70 }); // a typo: skipped, and the next one is compared with the last sane one (85.5), so it counts
   rec(day(-2), { kg: 85 });
   rec(day(-1), { kg: 84.9 });
   const got = scan(S, T);
-  assert.deepEqual(got.kilos, { 1: day(-1) });
+  assert.deepEqual(got.kilos, { 1: day(-2) });
   assert.equal(got.goal, undefined);
   assert.equal(got.halfway, undefined);
-  rec(day(-1), { kg: 83.4 }); // 1.6 kg in a day
-  assert.equal(scan(S, T).kilos, undefined);
-  rec(day(-1), { kg: 84 }); // exactly 1 kg in a day is fine
-  assert.deepEqual(scan(S, T).kilos, { 1: day(-1) });
+  rec(day(-1), { kg: 83.4 }); // 1.6 kg in a day: skipped
+  assert.deepEqual(scan(S, T).kilos, { 1: day(-2) });
+  rec(day(-1), { kg: 84 }); // exactly 1 kg in a day is fine (the kilos ladder has no step at 2)
+  assert.deepEqual(scan(S, T).kilos, { 1: day(-2) });
   reset();
   S.settings.startDate = day(-1);
   rec(day(-3), { kg: 80 });
   assert.equal(scan(S, T).kilos, undefined);
+});
+
+test('the first weigh-in is checked against the start weight: a transposed 8.6 earns nothing, 85.4 counts', () => {
+  reset();
+  S.settings.startKg = 86;
+  rec(day(-1), { kg: 8.6 });
+  const got = scan(S, T);
+  for (const id of ['kilos', 'halfway', 'goal']) assert.equal(got[id], undefined, id);
+  assert.deepEqual(got.first_weigh, { 1: day(-1) }); // it is still a weigh-in
+  reset();
+  S.settings.startKg = 86;
+  rec(day(-1), { kg: 85.4 });
+  assert.deepEqual(scan(S, T).first_weigh, { 1: day(-1) });
+  rec(day(-1), { kg: 84.9 }); // 1.1 kg off the start weight, within the allowance for another scale
+  assert.deepEqual(scan(S, T).kilos, { 1: day(-1) });
+});
+
+test('a long gap does not let a wild weigh-in through: the allowance stops at 15 kg', () => {
+  reset();
+  S.settings.startKg = 86;
+  rec(day(-60), { kg: 84.5 });
+  rec(day(-1), { kg: 60 }); // 59 days would allow 59 kg; 25 kg is a typo
+  const got = scan(S, T);
+  assert.equal(got.goal, undefined);
+  assert.deepEqual(got.kilos, { 1: day(-60) });
+  rec(day(-1), { kg: 72 }); // 12.5 kg over two months is believable
+  assert.ok(scan(S, T).kilos[5]);
+});
+
+test('a log dated before the year 2000 is not a day: it does not stretch the history or award an anniversary', () => {
+  reset();
+  S.settings.startDate = day(-5);
+  S.entries.push({ id: 'old', day: '0000-01-01', ts: 1, kind: 'meal', status: 'ok', slot: 'lunch', kcal: 1500, p: 135, c: 0, f: 0, fib: 0, mult: 1, tier: 'plan' });
+  assert.equal(scan(S, T).anniversary, undefined);
+  assert.equal(scan(S, T).first_meal, undefined);
 });
 
 test('under-eating earns nothing: a 1,000 kcal day is not on plan, not perfect and not a protein day', () => {

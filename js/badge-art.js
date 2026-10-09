@@ -26,39 +26,38 @@ export const PLACE = {
 // The four finishes: outer stroke, inset of the inner ring, and the ring's stroke, opacity and colour. The rims differ so a tier never relies on colour.
 export const FINISH = [
   { o: 1.8, inset: 0 },
-  { o: 1.8, inset: 3.2, w: 1.7, op: 0.6, c: 'var(--ink)' },
+  { o: 1.8, inset: 3.2, w: 1.7, op: 0.8, c: 'var(--ink)' },
   { o: 2.2, inset: 3.4, w: 1.7, op: 1, c: 'var(--ink)' },
   { o: 3.2, inset: 3.8, w: 1.6, op: 0.9, c: 'var(--ring-p)' },
 ];
 
 const Q = ' fill="currentColor" fill-opacity=".2"';
-const SCALE = `<rect x="4" y="4" width="16" height="16" rx="4"${Q}/><path d="M7.5 14a4.5 4.5 0 0 1 9 0"/><path d="M12 14l2-2.8"/>`;
-const CAL = `<rect x="4" y="5" width="16" height="15" rx="3"${Q}/><path d="M4 10h16M8.5 3v4M15.5 3v4"/><path d="M9 15l2.2 2.2L15.5 13"/>`;
-const LOG = `<rect x="5" y="3.5" width="14" height="17" rx="2.5"${Q}/><path d="M9 9h6M9 13h6M9 17h3"/>`;
-const EGG = `<path d="M12 4.5c3.6 0 6 5.2 6 9.2a6 6 0 0 1-12 0c0-4 2.4-9.2 6-9.2z"${Q}/>`;
-// The week badges draw their twin's icon at .8 above a 7-segment bar. The strokes are computed per shape (see glyphMarkup) so they stay 2.25 / 2.8 drawn
-export const WEEK_SHIFT = 'translate(2.4 1) scale(.8)';
-export const WEEK_BAR = 'M3.85 21h16.3';
-export const WEEK_IDS = ['weeks_strong', 'protein_week', 'weigh_week', 'log_week'];
-export const BAR_MIN = 40; // below this size the bar blurs the icon, so it is left out: the label carries the week
+const SEVEN = (x, y, k = 1) => `<path d="M${x - 3 * k} ${y}h${6 * k}l${-3.4 * k} ${7.2 * k}"/>`; // a 7 whose top bar starts at y, centred on x, k times the size: the mark of a week badge
+const SCALE_BODY = `<rect x="4" y="4" width="16" height="16" rx="4"${Q}/>`;
+const SCALE = `${SCALE_BODY}<path d="M7.5 14a4.5 4.5 0 0 1 9 0"/><path d="M12 14l2-2.8"/>`;
+const CAL_BODY = `<rect x="4" y="5" width="16" height="15" rx="3"${Q}/><path d="M4 10h16M8.5 3v4M15.5 3v4"/>`;
+const CAL = `${CAL_BODY}<path d="M9 15l2.2 2.2L15.5 13"/>`;
+const LOG_BODY = `<rect x="5" y="3.5" width="14" height="17" rx="2.5"${Q}/>`;
+const LOG = `${LOG_BODY}<path d="M9 9h6M9 13h6M9 17h3"/>`;
+const EGG_BODY = `<path d="M12 4.5c3.6 0 6 5.2 6 9.2a6 6 0 0 1-12 0c0-4 2.4-9.2 6-9.2z"${Q}/>`;
 
-// The 18 glyphs on a 24-unit box, keyed by catalog id. A week id holds its twin's icon; glyphMarkup adds the shift and the bar
+// The 18 glyphs on a 24-unit box, keyed by catalog id. A week badge is its day twin's icon with a 7 in it (all 7 days of a week)
 export const GLYPHS = {
-  first_meal: `<path d="M4 12h16a8 7 0 0 1-16 0z"${Q}/><path d="M9 4c-1 1.5 1 2.5 0 4M15 4c-1 1.5 1 2.5 0 4"/>`,
+  first_meal: '<path d="M6.5 3.5v5.5a2.5 2.5 0 0 0 5 0V3.5M9 3.5v17"/><path d="M16.5 20.5v-17c2.2 1.2 3 3.5 3 6.5h-3"/>',
   first_weigh: SCALE,
   first_on: `<path d="M12 20v-9"/><path d="M12 12C12 8 9.5 6 5 6c0 4 2.5 6 7 6z"${Q}/><path d="M12 14.5c0-3 2-4.5 6.5-4.5 0 3-2 4.5-6.5 4.5z"${Q}/>`,
   days_on: CAL,
   best_run: `<path d="M3.5 20L10 8.5l4.5 7 2-3L20.5 20z"${Q}/><path d="M10 8.5V3.5"/><path d="M10 3.5l5 1.75-5 1.75z" fill="currentColor"/>`,
-  weeks_strong: CAL,
-  anniversary: `<path d="M5 20v-6.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2V20z"${Q}/><path d="M12 11.5V8.5"/><path d="M12 3.5c1.2 1.2 1.2 2.4 0 3.6-1.2-1.2-1.2-2.4 0-3.6z"/>`,
-  fresh_start: '<path d="M3.5 18.5h17"/><path d="M7 18.5a5 5 0 0 1 10 0"/><path d="M12 4.5V8M5.2 9.2l1.6 1.6M18.8 9.2l-1.6 1.6"/>',
+  weeks_strong: `${CAL_BODY}${SEVEN(12, 12.4, .8)}`,
+  anniversary: `<path d="M5 20v-6.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2V20z"${Q}/><path d="M12 11.5V8.6"/><path d="M12 2.4c2 1.8 2 3.8 0 5.6-2-1.8-2-3.8 0-5.6z" fill="currentColor"/>`,
+  fresh_start: `<path d="M3 19h18"/><path d="M6.5 19a5.5 5.5 0 0 1 11 0z" fill="currentColor" fill-opacity=".5"/><path d="M12 3.5v3.5M4.6 8l2.2 2.2M19.4 8l-2.2 2.2M2.5 14.5h2.5M19 14.5h2.5"/>`,
   perfect_day: `<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8z"${Q}/>`,
-  protein_days: EGG,
-  goals_days: `<path d="M4 19.5V7.5h3.8l1.5 3.5c1.5 1.7 3.4 2 5.7 2.4 2.8.5 4.5 1.4 4.5 3.6v2z"${Q}/>`,
-  protein_week: EGG,
-  weigh_days: '<path d="M3.5 4L8.5 11.5 12 8.5 16.5 16 20.5 20"/>',
-  weigh_week: SCALE,
-  log_week: LOG,
+  protein_days: EGG_BODY,
+  goals_days: `<path d="M8 4.5c2 0 3 2 3 4.5c0 2.5-1 4-3 4c-2 0-3-1.5-3-4c0-2.5 1-4.5 3-4.5z"${Q}/><circle cx="8" cy="16" r="1.1"/><path d="M16 10c2 0 3 2 3 4.5c0 2.5-1 4-3 4c-2 0-3-1.5-3-4c0-2.5 1-4.5 3-4.5z"${Q}/><circle cx="16" cy="21" r="1.1"/>`,
+  protein_week: `${EGG_BODY}${SEVEN(12, 10.8)}`,
+  weigh_days: '<path d="M4 4v15.5h16"/><path d="M7.5 8l3.5 3.5 3-1 3.5 5"/><circle cx="17.5" cy="15.5" r="1.2" fill="currentColor"/>',
+  weigh_week: `${SCALE_BODY}${SEVEN(12, 7.6, .8)}<path d="M8 16.6h8"/>`,
+  log_week: `${LOG_BODY}<path d="M9 8h6"/>${SEVEN(12, 11.6, .75)}`,
   kilos: '<path d="M12 3.5v11M7 10.5l5 5 5-5M5.5 20h13"/>',
   halfway: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/>',
   goal: `<path d="M5 19.5L4 8.5l5 4 3-7 3 7 5-4-1 11z"${Q}/>`,
@@ -78,14 +77,6 @@ export function rim(shape, step) {
   return h;
 }
 
-// A glyph's markup in its shape: the week ids get their shifted twin and, when bar is true, the bar
-export function glyphMarkup(id, shape, bar = true) {
-  if (!WEEK_IDS.includes(id)) return GLYPHS[id];
-  const s = PLACE[shape].s;
-  const g = `<g transform="${WEEK_SHIFT}" stroke-width="${num(2.8125 / s)}">${GLYPHS[id]}</g>`;
-  return bar ? `${g}<path d="${WEEK_BAR}" stroke-linecap="butt" stroke-dasharray="1.6 .85" stroke-width="${num(2.8 / s)}"/>` : g;
-}
-
 // The padlock of a locked badge
 const LOCK = '<g transform="translate(15.5 15.5)"><circle cx="8.5" cy="8.5" r="8.5" fill="var(--bg)" stroke="var(--edge)"/><rect x="5" y="8.2" width="7" height="5.4" rx="1.1" fill="var(--ink3)"/><path d="M6.4 8.2V6.8a2.1 2.1 0 0 1 4.2 0v1.4" fill="none" stroke="var(--ink3)" stroke-width="1.4"/></g>';
 
@@ -102,7 +93,7 @@ export function badgeSvg(id, { step = 2, state = 'earned', size = 48, label = ''
     h += `<g fill="var(--track)" stroke="var(--edge)" stroke-width="1.8" stroke-dasharray="3 3">${SHAPES[shape]}</g>${LOCK}`;
   } else {
     h += rim(shape, st);
-    h += `<g fill="none" stroke="var(--on-t)" color="var(--on-t)" stroke-width="${S.sw}" transform="translate(${24 + S.dx} ${24 + S.dy}) scale(${S.s}) translate(-12 -12)">${glyphMarkup(id, shape, px >= BAR_MIN)}</g>`;
+    h += `<g fill="none" stroke="var(--on-t)" color="var(--on-t)" stroke-width="${S.sw}" transform="translate(${24 + S.dx} ${24 + S.dy}) scale(${S.s}) translate(-12 -12)">${GLYPHS[id]}</g>`;
   }
   return h + '</svg>';
 }

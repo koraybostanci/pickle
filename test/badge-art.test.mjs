@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG } from '../js/badges.js';
-import { badgeSvg, rim, glyphMarkup, GLYPHS, SHAPES, SHAPE_OF, PLACE, FINISH, WEEK_SHIFT, WEEK_IDS, BAR_MIN } from '../js/badge-art.js';
+import { badgeSvg, rim, GLYPHS, SHAPES, SHAPE_OF, PLACE, FINISH } from '../js/badge-art.js';
 
 const IDS = CATALOG.map((b) => b.id);
 const shapeOf = (id) => SHAPE_OF[CATALOG.find((b) => b.id === id).group];
@@ -94,25 +94,11 @@ test('a locked badge is the shape and a padlock only: no glyph markup', () => {
   }
 });
 
-test('week badges: twin icon plus the shared bar from 40 px up, computed numeric strokes, no --k or calc', () => {
-  for (const id of WEEK_IDS) for (const shape of Object.keys(PLACE)) {
-    const g = glyphMarkup(id, shape, true), P = PLACE[shape];
-    assert.ok(g.includes('stroke-dasharray="1.6 .85"') && g.includes(WEEK_SHIFT), id);
-    assert.ok(!/calc|--k/.test(g));
-    // drawn widths: icon 2.25 (x .8 x s), bar 2.8 (x s)
-    const [, iw] = g.match(/<g [^>]*stroke-width="([\d.]+)"/), [, bw] = g.match(/stroke-dasharray[^>]*stroke-width="([\d.]+)"/);
-    assert.ok(Math.abs(iw * 0.8 * P.s - 2.25) < 0.01 && Math.abs(bw * P.s - 2.8) < 0.01, `${id} ${shape}`);
-    assert.ok(!glyphMarkup(id, shape, false).includes('stroke-dasharray'));
-  }
-  for (const id of IDS) if (!WEEK_IDS.includes(id)) assert.equal(glyphMarkup(id, shapeOf(id)), GLYPHS[id]);
-  // the drawn stroke is sw * s = 2.25 in every shape
+test('numeric strokes only: no --k or calc, and the drawn stroke is 2.25 in every shape; a week badge differs from its day twin in the glyph itself', () => {
   for (const [shape, p] of Object.entries(PLACE)) assert.ok(Math.abs(p.sw * p.s - 2.25) < 0.02, `${shape}: ${p.sw * p.s}`);
   for (const id of IDS) for (const size of [28, 64]) assert.ok(!/calc|--k/.test(badgeSvg(id, { size, label: 'x' })));
-  // the bar is left out below BAR_MIN and kept from it
-  for (const id of WEEK_IDS) {
-    assert.ok(!badgeSvg(id, { size: BAR_MIN - 1, label: 'x' }).includes('stroke-dasharray="1.6 .85"'));
-    assert.ok(badgeSvg(id, { size: BAR_MIN, label: 'x' }).includes('stroke-dasharray="1.6 .85"'));
-  }
+  for (const [week, day] of [['weeks_strong', 'days_on'], ['protein_week', 'protein_days'], ['weigh_week', 'first_weigh'], ['log_week', 'first_meal']]) assert.notEqual(GLYPHS[week], GLYPHS[day], week);
+  for (const id of ['weeks_strong', 'protein_week', 'weigh_week', 'log_week']) assert.ok(!badgeSvg(id, { size: 28, label: 'x' }).includes('stroke-dasharray'), id);
 });
 
 // ---- bounding boxes ----
@@ -157,7 +143,7 @@ function pathPoints(d) {
   return pts;
 }
 
-// Points of a glyph in its 24-unit box, with the week shift applied; the stroke half-width (in 24-unit box units of the drawn line) is added by the caller
+// Points of a glyph in its 24-unit box; the stroke half-width (in 24-unit box units of the drawn line) is added by the caller
 function glyphPoints(g) {
   const out = [];
   const grab = (markup, f) => {
@@ -171,9 +157,7 @@ function glyphPoints(g) {
       for (const p of [[cx - r, cy - r], [cx + r, cy + r]]) out.push(f(p));
     }
   };
-  const wk = g.match(/^<g transform="translate\(([\d.]+) ([\d.]+)\) scale\(([\d.]+)\)"[^>]*>(.*?)<\/g>(.*)$/);
-  if (wk) { const [tx, ty, sc] = wk.slice(1, 4).map(Number); grab(wk[4], ([x, y]) => [tx + sc * x, ty + sc * y]); grab(wk[5], (p) => p); }
-  else grab(g, (p) => p);
+  grab(g, (p) => p);
   return out;
 }
 
@@ -190,9 +174,9 @@ const SAFE = {
 test('every glyph, placed in its shape and with its stroke, stays inside the safe rect', () => {
   for (const id of IDS) {
     const shape = shapeOf(id), P = PLACE[shape];
-    const half = 2.25 / 2; // the drawn stroke is 2.25 in every shape; the week bar's is 2.8 (its half, 1.4, is used for it)
-    const pts = glyphPoints(glyphMarkup(id, shape, true)).map(([x, y]) => [24 + P.dx + (x - 12) * P.s, 24 + P.dy + (y - 12) * P.s]);
-    const pad = /^(weeks_strong|protein_week|weigh_week|log_week)$/.test(id) ? 1.4 : half;
+    const half = 2.25 / 2; // the drawn stroke is 2.25 in every shape
+    const pts = glyphPoints(GLYPHS[id]).map(([x, y]) => [24 + P.dx + (x - 12) * P.s, 24 + P.dy + (y - 12) * P.s]);
+    const pad = half;
     const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
     if (shape === 'diamond') {
       const l1 = Math.max(...pts.map(([x, y]) => Math.abs(x - 24) + Math.abs(y - 24))) + pad * Math.SQRT2; // a stroke corner reaches pad * sqrt2 along the diagonal

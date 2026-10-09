@@ -1406,6 +1406,8 @@ const ACT = {
     if (keepKey) for (const k of ['provider', 'oaBase', 'oaModel', 'oaKey', 'apiKey', 'model']) kept[k] = S.settings[k];
     clearTimeout(announceTimer);
     clearTimeout(badgesTimer);
+    // The log goes from memory first: a badge turn that gets in line while the stores are cleared then sees an empty log and writes nothing
+    S.entries = []; S.days = {}; S.badges = null; S.badgeIntro = 0; S.rev++;
     for (const store of ['entries', 'days', 'photos', 'kv']) { if (store === 'kv') await badgeQueue(() => db.clear(store)); else await db.clear(store); }
     S.urls.forEach((u) => URL.revokeObjectURL(u));
     S.urls.clear();

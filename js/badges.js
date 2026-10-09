@@ -63,6 +63,7 @@ export const stepsOf = (id, base) => (id === 'kilos' && base ? BY_ID.kilos.steps
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // A day that exists on the calendar (2026-02-31 and 2026-99-99 do not)
 export const isRealDay = (v) => typeof v === 'string' && DAY.test(v) && dayKey(parseDay(v)) === v;
+const MAX_SWING = 15; // kg: the most a weigh-in may differ from the last sane one, whatever the gap
 const MAX_DAYS = 3660; // a pass looks back ten years at most
 const hasData = (r) => !!r && !!(r.kg || r.steps || r.water || r.coffee || (r.taken && r.taken.length));
 
@@ -82,10 +83,11 @@ export function tally(S, today, base) {
 
   return withDayIndex(() => {
     const logged = new Set();
-    for (const e of S.entries) if (DAY.test(e.day) && e.day <= today) logged.add(e.day);
-    for (const [d, r] of Object.entries(S.days)) if (DAY.test(d) && d <= today && hasData(r)) logged.add(d);
-    let first = [...logged].sort()[0];
-    if (first && diffDays(first, today) > MAX_DAYS) first = addDays(today, -MAX_DAYS);
+    const oldest = addDays(today, -MAX_DAYS); // a pass looks back ten years at most; an older or impossible date is not a day
+    const counts = (d) => isRealDay(d) && d <= today && d >= oldest;
+    for (const e of S.entries) if (counts(e.day)) logged.add(e.day);
+    for (const [d, r] of Object.entries(S.days)) if (counts(d) && hasData(r)) logged.add(d);
+    const first = [...logged].sort()[0];
 
     let started = false;
     let quiet = 0; // consecutive days with nothing logged since the last logged one
@@ -109,9 +111,12 @@ export function tally(S, today, base) {
       if (kg) {
         earn('first_weigh', 1, d);
         weighed += 1; wWeighed += 1; lift('weigh_days', weighed, d);
-        // A weigh-in that implies a change of more than a kilo a day is a typo, not a result: it moves nothing
-        const sane = !prev || Math.abs(kg - prev.kg) <= diffDays(prev.day, d);
-        prev = { kg, day: d };
+        // A weigh-in that implies a change of more than a kilo a day is a typo, not a result: it moves nothing, and the next one is
+        // judged against the last sane one. The first is judged against the start weight (3 kg of allowance for another scale), and
+        // no allowance grows past 15 kg however long the gap.
+        const ref = prev || (typeof s.startDate === 'string' && isRealDay(s.startDate) ? { kg: b.startKg, day: s.startDate, extra: 3 } : null);
+        const sane = !ref || Math.abs(kg - ref.kg) <= Math.min(MAX_SWING, Math.max(0, diffDays(ref.day, d)) + (ref.extra || 0));
+        if (sane) prev = { kg, day: d };
         if (sane && d >= s.startDate && b.startKg > b.targetKg) {
           kmax = Math.max(kmax, Math.floor(b.startKg - kg + 1e-6));
           if (kmax >= 1 && cap >= 1) lift('kilos', Math.min(kmax, cap), d);
@@ -145,7 +150,7 @@ export function tally(S, today, base) {
       }
     }
 
-    if (first && typeof s.startDate === 'string' && DAY.test(s.startDate)) {
+    if (first && typeof s.startDate === 'string' && isRealDay(s.startDate)) {
       const from = s.startDate > first ? s.startDate : first; // counted from the plan's start, or from the first log when that came later
       cur.anniversary = Math.max(0, diffDays(from, today));
       for (const x of BY_ID.anniversary.steps) if (addDays(from, x) <= today) earn('anniversary', x, addDays(from, x));
