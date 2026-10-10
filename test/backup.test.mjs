@@ -161,3 +161,9 @@ test('a backup with or without badges can be restored (old backups have none)', 
   // round trip through JSON, as a backup file does
   assert.deepEqual(cleanBadges(JSON.parse(JSON.stringify({ ...ok, badges: cleanBadges(BADGES) })).badges), cleanBadges(BADGES));
 });
+
+test('settings: the minimum kcal is kept when sane, and dropped when it is above the budget', () => {
+  assert.equal(cleanSettings({ kcalRest: 1550, kcalMinDay: 1200 }).kcalMinDay, 1200);
+  assert.equal('kcalMinDay' in cleanSettings({ kcalRest: 1550, kcalMinDay: 2000 }), false);
+  assert.equal('kcalMinDay' in cleanSettings({ kcalMinDay: 10 }), false);
+});

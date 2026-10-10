@@ -712,6 +712,7 @@ export default {
   'Goal weight': 'Hedef kilo',
   'Rest-day kcal': 'Dinlenme günü kcal',
   'Workout-day kcal': 'Antrenman günü kcal',
+  'Minimum kcal': 'En düşük kcal',
   'Save goals': 'Hedefleri kaydet',
   'Use the photo’s location': 'Fotoğrafın konumunu kullan',
   'Location is read on the device and matched to your saved places here. The model only gets the word “Home”, “Office” or “out”; coordinates are never sent to the model (they are in your backup file). When you choose from the library, location only comes through if Location is switched on under Options in the picker.': 'Konum cihazda okunur ve burada kayıtlı yerlerinle eşleştirilir. Modele yalnızca “Home”, “Office” ya da “out” kelimesi gider; koordinatlar modele asla gönderilmez (yedek dosyanda bulunurlar). Kitaplıktan seçtiğinde konum, yalnızca seçicideki Seçenekler altında Konum açıksa gelir.',

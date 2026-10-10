@@ -125,12 +125,13 @@ function cleanFavorite(f) {
 // Settings that travel with a backup: the targets, favourites, saved places and the plan's pictures.
 // What the app talks to (provider, address, model, keys) and its running totals stay as they are on this device,
 // so a backup can never point the stored key at another server.
-const RANGES = { startKg: [30, 300], targetKg: [30, 300], kcalRest: [500, 6000], kcalTrain: [500, 6000], protein: [20, 400], proteinMin: [20, 400], fiber: [0, 200], steps: [0, 100000], water: [0, 10000] };
+const RANGES = { startKg: [30, 300], targetKg: [30, 300], kcalRest: [500, 6000], kcalTrain: [500, 6000], kcalMinDay: [500, 6000], protein: [20, 400], proteinMin: [20, 400], fiber: [0, 200], steps: [0, 100000], water: [0, 10000] };
 export function cleanSettings(s) {
   s = s && typeof s === 'object' ? s : {};
   const out = {};
   for (const k of ['startDate', 'targetDate']) if (isDay(s[k])) out[k] = s[k];
   for (const [k, [lo, hi]] of Object.entries(RANGES)) if (isNum(s[k]) && s[k] >= lo && s[k] <= hi) out[k] = s[k];
+  if (out.kcalMinDay > out.kcalRest) delete out.kcalMinDay; // a minimum above the budget would leave no day on plan
   for (const k of ['useLocation', 'hideStart', 'autoReview']) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (s.lang === 'en' || s.lang === 'tr') out.lang = s.lang;
   if (Array.isArray(s.places)) {

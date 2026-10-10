@@ -135,6 +135,8 @@ export const FLEX = [
   { id: 'F-BEER50', name: T('Beer 0.5 l'), kcal: 215, p: 2, c: 17, f: 0, fib: 0, flags: ['alcohol'] },
 ];
 
+// The default of the Minimum kcal setting: daily calories are never set or advised below it, and a day under it does not count as on plan
+export const KCAL_MIN_DAY = 1500;
 export const DEFAULTS = {
   startDate: '2026-10-05',
   startKg: 87,
@@ -142,6 +144,7 @@ export const DEFAULTS = {
   targetKg: 78,
   kcalRest: 1550,
   kcalTrain: 1750,
+  kcalMinDay: KCAL_MIN_DAY,
   protein: 135,
   proteinMin: 120,
   fiber: 30,
@@ -151,10 +154,16 @@ export const DEFAULTS = {
 };
 
 // Numbers that the rules text, the checks and the screens must agree on
-export const KCAL_FLOOR = 1500; // daily calories are never set or advised below this
-export const KCAL_MIN_DAY = 1400; // a day with fewer calories logged does not count as on plan
 export const SMALL_TREAT_KCAL = 250; // a flex entry up to this size (or any alcohol) is a "small" treat, not the weekly flexible dinner
 const num = (x) => x.toLocaleString(LOCALE);
+
+// The process rules, with the calorie floor as set (the Plan tab passes the saved one; RULES.process uses the default)
+export const processRules = (kcalMinDay) => [
+  t('Weigh in every morning under the same conditions. Read the 7-day average, not a single day.'),
+  t('If the average sits more than 0.7 kg above the line two weeks in a row: cut 100 kcal or add 2,000 steps.'),
+  t('Do not go below {kcal} kcal.', { kcal: num(kcalMinDay) }),
+  t('On reaching {kg} kg, raise calories to maintenance gradually over 2 to 3 weeks.', { kg: DEFAULTS.targetKg }),
+];
 
 // Each group is built when it is read, so the text and the numbers follow the language (and a prompt can ask for them in English)
 export const RULES = {
@@ -193,12 +202,7 @@ export const RULES = {
     ];
   },
   get process() {
-    return [
-      t('Weigh in every morning under the same conditions. Read the 7-day average, not a single day.'),
-      t('If the average sits more than 0.7 kg above the line two weeks in a row: cut 100 kcal or add 2,000 steps.'),
-      t('Do not go below {kcal} kcal.', { kcal: num(KCAL_FLOOR) }),
-      t('On reaching {kg} kg, raise calories to maintenance gradually over 2 to 3 weeks.', { kg: DEFAULTS.targetKg }),
-    ];
+    return processRules(DEFAULTS.kcalMinDay);
   },
   get rotation() {
     return [

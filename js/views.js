@@ -2,13 +2,13 @@ import {
   S, today, eff, dayTotals, dayTarget, dayStatus, dayReasons, dayNotes, avg7, latestWeight, weightSeries, projection,
   weekStart, weekFlex, weekResult, proteinLevel, streak, suggest, hasKey, APP_VERSION, dayGoals, isPerfect, history, planRate,
   dayVerdict, verdictText, reviewState, coachState, VERDICT, checkReady, BAND, proteinFloor, CHECK_MAX, fmtInt, fmtKg, chartWindow, drinkTally,
-  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf,
+  plannedBy, planSteps, budgetVerdict, budgetMeter, suppTaken, titleOf, kcalMinDay,
 } from './core.js';
 import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { BY_ID, GROUP_NAME, FINISH_NAME, PART_NAME, SLOT_TITLE, cachedContext, cellOf, collection, stepRows, unlockSummary, wornAv, avatarChoices } from './badges.js';
 import { badgeSvg, avatarSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang } from './i18n.js';
-import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, KCAL_FLOOR, KCAL_MIN_DAY, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
+import { MEALS, SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, processRules, parseDay, addDays, diffDays, targetAt, dayKey, hhmm } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = fmtInt;
@@ -1043,11 +1043,11 @@ function calendar() {
     if (marked) rows += calPick(ws);
   }
   return `<div class="calendar card">
-    <p class="cal-targets"><span>${t('Budget <b>{rest}</b> rest · <b>{train}</b> workout', { rest: n0(s.kcalRest), train: n0(s.kcalTrain) })}</span><span>${t('Min <b>{kcal}</b> kcal', { kcal: n0(KCAL_MIN_DAY) })}</span><span class="is-prot">${t('Protein <b>{goal} g</b> · min <b>{min} g</b>', { goal: n0(s.protein), min: n0(proteinFloor()) })}</span></p>
+    <p class="cal-targets"><span>${t('Budget <b>{rest}</b> rest · <b>{train}</b> workout', { rest: n0(s.kcalRest), train: n0(s.kcalTrain) })}</span><span>${t('Min <b>{kcal}</b> kcal', { kcal: n0(kcalMinDay()) })}</span><span class="is-prot">${t('Protein <b>{goal} g</b> · min <b>{min} g</b>', { goal: n0(s.protein), min: n0(proteinFloor()) })}</span></p>
     <div class="cal-row cal-head">${WEEKDAYS.map((x) => `<span>${td(x)}</span>`).join('')}<span></span></div>
     ${rows}
     <details class="cal-key"><summary>${t('How to read a day')}</summary>
-      <p><span class="cal-sw cal-on"></span>✓ ${t('on plan')} <span class="cal-sw cal-over"></span>▲ ${t('over')} <span class="cal-sw cal-far"></span>▲▲ ${t('far over')} <span class="cal-sw cal-under"></span>↓ ${t('under {kcal}', { kcal: n0(KCAL_MIN_DAY) })} <span class="cal-sw cal-open"></span>${t('today')}</p>
+      <p><span class="cal-sw cal-on"></span>✓ ${t('on plan')} <span class="cal-sw cal-over"></span>▲ ${t('over')} <span class="cal-sw cal-far"></span>▲▲ ${t('far over')} <span class="cal-sw cal-under"></span>↓ ${t('under {kcal}', { kcal: n0(kcalMinDay()) })} <span class="cal-sw cal-open"></span>${t('today')}</p>
       <p class="is-prot">${pie('target')} ${t('{n} g target', { n: n0(s.protein) })} ${pie('min')} ${t('{n} g minimum', { n: n0(proteinFloor()) })} ${pie('near')} ${t('nearly')} ${pie('short')} ${t('short')}. ${t('Protein never breaks a streak. A "+" after the calories means a little over the budget, still within the {pct}% margin.', { pct: Math.round((BAND.high - 1) * 100) })}</p>
     </details>
   </div>`;
@@ -1099,7 +1099,7 @@ function adjustNotice() {
   const b = avg7(addDays(tod, -7));
   if (!a || !b || a.n < 3 || b.n < 3) return '';
   if (a.kg - targetAt(tod, s) > 0.7 && b.kg - targetAt(addDays(tod, -7), s) > 0.7) {
-    return `<div class="notice"><p>${t('Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below {kcal} kcal.', { kcal: n0(Math.max(KCAL_FLOOR, s.kcalRest - 100)) })}</p><button type="button" class="btn" data-act="settings" data-sec="targets">${t('Open goals')}</button></div>`;
+    return `<div class="notice"><p>${t('Your average has been more than 0.7 kg behind schedule for two weeks. Cut 100 kcal a day or add 2,000 steps. Do not go below {kcal} kcal.', { kcal: n0(Math.max(kcalMinDay(), s.kcalRest - 100)) })}</p><button type="button" class="btn" data-act="settings" data-sec="targets">${t('Open goals')}</button></div>`;
   }
   return '';
 }
@@ -1336,7 +1336,7 @@ export function renderPlan() {
     ${group(t('The week’s extras'), list(RULES.weekly))}
     ${group(t('Off for the whole period'), list(RULES.off))}
     ${group(t('Training and movement'), list(RULES.training))}
-    ${group(t('Process'), list(RULES.process))}
+    ${group(t('Process'), list(processRules(kcalMinDay())))}
   </section>`;
 }
 
@@ -1433,6 +1433,7 @@ export function renderSettings() {
       <label for="set-endkg">${t('Goal weight')}<input id="set-endkg" type="text" inputmode="decimal" value="${n1(s.targetKg)}"></label>
       <label for="set-rest">${t('Rest-day kcal')}<input id="set-rest" type="text" inputmode="numeric" value="${esc(s.kcalRest)}"></label>
       <label for="set-train">${t('Workout-day kcal')}<input id="set-train" type="text" inputmode="numeric" value="${esc(s.kcalTrain)}"></label>
+      <label for="set-minday">${t('Minimum kcal')}<input id="set-minday" type="text" inputmode="numeric" value="${esc(kcalMinDay())}"></label>
       <label for="set-prot">${t('Protein (g)')}<input id="set-prot" type="text" inputmode="numeric" value="${esc(s.protein)}"></label>
     </div>
     <div class="actions"><button type="button" class="btn btn-primary" data-act="save-targets">${t('Save goals')}</button></div>`;

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {
   S, BAND, proteinFloor, proteinLevel, weekResult, dayStatus, dayReasons, dayNotes, dayGoals, dayVerdict, latestWeight, avg7, kilosDown, projection, openSlots, suggest,
   fmtKg, freshSettings, freshCheck, today, SCHEMA_VERSION, VERDICT, verdictText, chartWindow,
-  isPerfect, streak, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter,
+  isPerfect, streak, suppTaken, weekStart, parseCount, drinkTally, planSteps, plannedBy, budgetVerdict, budgetMeter, kcalMinDay, reviewSig, reviewState,
 } from '../js/core.js';
-import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS, KCAL_MIN_DAY } from '../js/plan.js';
+import { addDays, diffDays, hhmm, planDigest, planFoods, FOODS, MEALS, DEFAULTS, KCAL_MIN_DAY } from '../js/plan.js';
 
 const T = today();
 const day = (off) => addDays(T, off);
@@ -50,12 +50,13 @@ test('calorie bands decide the verdict level', () => {
   assert.ok(BAND.high < BAND.near);
 });
 
-test('a day counts from the 1,400 minimum up to 110% of its budget, on rest and workout days', () => {
+test('a day counts from the minimum (default 1,500, a setting) up to 110% of its budget, on rest and workout days', () => {
   reset();
   const at = (kcal, train) => { S.entries = []; S.days[day(-1)] = train ? { day: day(-1), train: true } : undefined; meal(day(-1), kcal, 135); return dayStatus(day(-1)); };
-  assert.equal(KCAL_MIN_DAY, 1400);
-  assert.equal(at(1399), 'under');
-  assert.equal(at(1400), 'on');
+  assert.equal(KCAL_MIN_DAY, 1500);
+  assert.equal(DEFAULTS.kcalMinDay, KCAL_MIN_DAY);
+  assert.equal(at(1499), 'under');
+  assert.equal(at(1500), 'on');
   assert.equal(at(1550), 'on');
   assert.equal(at(1550 * 1.10), 'on');
   assert.equal(at(1550 * 1.10 + 1), 'over');
@@ -66,14 +67,26 @@ test('a day counts from the 1,400 minimum up to 110% of its budget, on rest and 
   delete S.days[day(-1)];
 });
 
+test('changing the minimum re-judges days already logged, and a saved setting without it uses the default', () => {
+  reset(); meal(day(-1), 1300, 135);
+  assert.equal(dayStatus(day(-1)), 'under');
+  S.settings.kcalMinDay = 1200;
+  assert.equal(dayStatus(day(-1)), 'on');
+  assert.deepEqual(dayReasons(day(-1)), []);
+  S.settings.kcalMinDay = 1400;
+  assert.deepEqual(dayReasons(day(-1)), ['100 kcal under the 1,400 minimum']);
+  delete S.settings.kcalMinDay;
+  assert.equal(kcalMinDay(), 1500);
+});
+
 test('a little over the budget still counts, with a note; under the minimum names the minimum', () => {
   reset(); meal(day(-1), 1600, 135);
   assert.equal(dayStatus(day(-1)), 'on');
   assert.deepEqual(dayReasons(day(-1)), []);
   assert.deepEqual(dayNotes(day(-1)), ['50 kcal above the budget, within the 10% margin']);
-  S.entries = []; meal(day(-1), 1300, 135);
+  S.entries = []; meal(day(-1), 1400, 135);
   assert.equal(dayStatus(day(-1)), 'under');
-  assert.deepEqual(dayReasons(day(-1)), ['100 kcal under the 1,400 minimum']);
+  assert.deepEqual(dayReasons(day(-1)), ['100 kcal under the 1,500 minimum']);
 });
 
 test('protein levels: target, minimum, nearly, short; they never change the day', () => {
@@ -302,7 +315,7 @@ test('the budget verdict on a past day says how it ended, without praising an un
   const at = (eaten) => budgetVerdict({ target, eaten, planned: null });
   assert.deepEqual(at(0), { level: '', tone: 'calm', text: 'Nothing logged' });
   assert.equal(at(target * 0.5).tone, 'calm'); assert.match(at(target * 0.5).text, /^Ended .+ under$/);
-  assert.equal(at(target * 0.95).tone, 'good');
+  assert.equal(at(target * 0.98).tone, 'good');
   assert.equal(at(target + 10).text, 'Ended on budget');
   assert.equal(at(target - 10).text, 'Ended on budget');
 });
@@ -364,4 +377,13 @@ test('a day that is still open does not break or inflate the run; the reasons an
   assert.equal(dayStatus(day(-1)), 'under');
   S.entries = []; meal(T, 1750, 135); // 113% today: judged, not open
   assert.equal(dayStatus(T), 'over');
+});
+
+test('a review goes stale when the minimum changes', () => {
+  reset(); meal(day(-1), 1450, 135);
+  S.days[day(-1)] = { day: day(-1), review: { sig: reviewSig(day(-1)), live: false } };
+  assert.equal(reviewState(day(-1)), 'fresh');
+  S.settings.kcalMinDay = 1400;
+  assert.equal(reviewState(day(-1)), 'stale');
+  delete S.days[day(-1)];
 });
