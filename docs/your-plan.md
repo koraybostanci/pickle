@@ -4,7 +4,8 @@ The repository ships with one example plan: about 1,550 kcal on rest days and 1,
 workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
 - **Goals** (dates, weights, calories, protein) are changed in the app under Settings → Goals.
-  Daily calories below `KCAL_FLOOR` (1,500) are refused, as the plan's rules say. The goals for
+  Daily calories below the minimum (`KCAL_MIN_DAY`, 1,500 by default, set there as Minimum kcal) are refused, and a
+  day under it does not count as on plan. The goals for
   steps, water and fibre come from `DEFAULTS` in `js/plan.js` and apply only before the app is first
   opened on a device.
 - **Meals and rules** live in `js/plan.js`:
@@ -18,7 +19,7 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
 
   The model receives a short digest of the plan with every request, so it follows your changes
   to meals and foods without further setup. Two things are not generated from the file: the numbers
-  in `RULES` come from `DEFAULTS`, `KCAL_FLOOR` and `SMALL_TREAT_KCAL`, not from what you saved in
+  in `RULES` come from `DEFAULTS` and `SMALL_TREAT_KCAL`, not from what you saved in
   Settings → Goals, so keep them in step; and the meal slots are also named in `SLOT_NAME`,
   `slotByTime`, the prompt in `js/ai.js` and the notes on the Plan tab in `js/views.js`, so
   changing the slots means editing those too.

@@ -1,9 +1,9 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { t, tn, T, td, foldKey, parseNum, inEnglish } from './i18n.js';
 import { PARSE_TR } from './parse-tr.js';
-import { MEALS, MEAL_BY_ID, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, KCAL_MIN_DAY } from './plan.js';
+import { MEALS, MEAL_BY_ID, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL } from './plan.js';
 
-export const APP_VERSION = '44'; // bump together with VERSION in sw.js
+export const APP_VERSION = '45'; // bump together with VERSION in sw.js
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -86,8 +86,10 @@ export function dayTotals(day) {
 export const dayTarget = (day) => ((S.days[day] && S.days[day].train) ? S.settings.kcalTrain : S.settings.kcalRest);
 
 // Where a day's calories sit against its target: up to `high` still counts as on plan (the part above the budget is shown),
-// above `near` is clearly over; `partial` is the share below which too little is logged to judge a day. The lower limit is KCAL_MIN_DAY.
+// above `near` is clearly over; `partial` is the share below which too little is logged to judge a day. The lower limit is kcalMinDay().
 export const BAND = { partial: 0.6, high: 1.10, near: 1.15 };
+// The calories a day has to reach to count, and the lowest budget that can be set; settings saved before it existed use the default
+export const kcalMinDay = () => S.settings.kcalMinDay > 0 ? S.settings.kcalMinDay : DEFAULTS.kcalMinDay;
 // The protein a day has to reach: the minimum, but never more than the target itself
 export const proteinFloor = () => Math.min(S.settings.proteinMin || S.settings.protein, S.settings.protein);
 
@@ -97,10 +99,10 @@ export function dayStatus(day) {
   const t = dayTotals(day);
   if (!t.n) return 'none';
   const target = dayTarget(day);
-  const on = t.kcal >= KCAL_MIN_DAY && t.kcal <= target * BAND.high; // the calories decide the day; protein and the rest are notes
+  const on = t.kcal >= kcalMinDay() && t.kcal <= target * BAND.high; // the calories decide the day; protein and the rest are notes
   if (day === today() && !on && t.kcal <= target * BAND.high) return 'open';
   if (on) return 'on';
-  if (t.kcal < KCAL_MIN_DAY) return 'under';
+  if (t.kcal < kcalMinDay()) return 'under';
   return t.kcal <= target * BAND.near ? 'over' : 'far';
 }
 // What kept a day from being on plan: only the calories, in a few words; empty for a day that was
@@ -109,7 +111,7 @@ export function dayReasons(day) {
   if (!tot.n) return [];
   const target = dayTarget(day);
   if (tot.kcal > target * BAND.high) return [t('{kcal} kcal above the budget', { kcal: fmtInt(tot.kcal - target) })];
-  if (tot.kcal < KCAL_MIN_DAY) return [t('{kcal} kcal under the {min} minimum', { kcal: fmtInt(KCAL_MIN_DAY - tot.kcal), min: fmtInt(KCAL_MIN_DAY) })];
+  if (tot.kcal < kcalMinDay()) return [t('{kcal} kcal under the {min} minimum', { kcal: fmtInt(kcalMinDay() - tot.kcal), min: fmtInt(kcalMinDay()) })];
   return [];
 }
 // How well protein went: 'target' = the target reached, 'min' = the minimum reached, 'near' = within 80% of the minimum,
@@ -141,7 +143,7 @@ export function dayGoals(day) {
   const s = S.settings;
   return [
     { id: 'weigh', name: t('Weigh-in'), done: !!dd.kg },
-    { id: 'kcal', name: t('Calories'), done: tot.n > 0 && tot.kcal >= KCAL_MIN_DAY && tot.kcal <= target * BAND.high },
+    { id: 'kcal', name: t('Calories'), done: tot.n > 0 && tot.kcal >= kcalMinDay() && tot.kcal <= target * BAND.high },
     { id: 'protein', name: t('Protein'), done: tot.p >= proteinFloor() },
     { id: 'steps', name: t('Steps'), done: (dd.steps || 0) >= s.steps },
     { id: 'water', name: t('Water'), done: (dd.water || 0) >= s.water },
@@ -392,7 +394,7 @@ export function dayVerdict(day) {
   else if (delta > target * (BAND.high - 1)) level = 'over';
   else if (live) level = 'open';
   else if (t.kcal < target * BAND.partial) level = 'thin';
-  else if (t.kcal < KCAL_MIN_DAY) level = 'under';
+  else if (t.kcal < kcalMinDay()) level = 'under';
   else level = 'on';
   const rate = planRate();
   return { level, live, target, kcal: t.kcal, delta, kg: delta / KCAL_PER_KG, share: rate.kcal > 0 ? delta / rate.kcal : 0, proteinGap, off };
@@ -449,7 +451,7 @@ export function budgetVerdict({ target, eaten: kcal, planned }) {
   if (past) {
     if (!eaten) return { level, tone: 'calm', text: t('Nothing logged') };
     const text = Math.abs(rem) <= 25 ? t('Ended on budget') : rem > 0 ? t('Ended {n} under', { n: n(rem) }) : t('Ended {n} above', { n: n(rem) });
-    return { level, tone: eaten < KCAL_MIN_DAY ? 'calm' : 'good', text };
+    return { level, tone: eaten < kcalMinDay() ? 'calm' : 'good', text };
   }
   if (rem <= 0) return planned >= target - 1 ? { level, tone: 'good', text: t('Budget used') } : { level, tone: 'warn', text: t('Budget used early') }; // within the slack still counts as on target, once the plan has spent it too
   if (!planned) return { level, tone: 'calm', text: '' };
@@ -465,8 +467,8 @@ export function budgetMeter({ target, eaten, planned }) {
   return { eat: eaten / D, cap: target / D, plan: planned > 0 && planned < target - 1 ? planned / D : null };
 }
 
-// A review belongs to the log it was written for: it goes stale when the day's meals change, or when it was written before the day ended
-export const reviewSig = (day) => `${dayTarget(day)}|${mealsOf(day).map((e) => `${e.id}:${Math.round(eff(e).kcal)}`).sort().join(',')}`;
+// A review belongs to the log it was written for: it goes stale when the day's meals or the minimum change, or when it was written before the day ended
+export const reviewSig = (day) => `${dayTarget(day)}|${kcalMinDay()}|${mealsOf(day).map((e) => `${e.id}:${Math.round(eff(e).kcal)}`).sort().join(',')}`;
 export function reviewState(day) {
   const r = S.days[day] && S.days[day].review;
   if (!r) return 'none';
