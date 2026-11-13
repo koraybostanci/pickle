@@ -18,9 +18,9 @@ node --test
 ```
 
 They cover the calculations (`js/core.js`), the checks on backup files (`js/backup.js`), the model
-layer against a mocked `fetch` (`js/ai.js`) the SQL export, which is loaded into Node's built-in
-SQLite and queried as in the section above, and the first-run setup and boot decision (`js/onboarding.js`,
-`js/boot.js`). The IndexedDB code is covered only by the browser smoke test below. The screens are
+layer against a mocked `fetch` (`js/ai.js`), the SQL export, which is loaded into Node's built-in
+SQLite and queried as in [Export to SQLite](privacy-and-data.md#export-to-sqlite), the first-run setup and boot decision
+(`js/onboarding.js`, `js/boot.js`), and the service worker's file list and version (`sw.js`). The IndexedDB code is covered only by the browser smoke test below. The screens are
 rendered in Node from a fixed state (`test/screens.mjs`) for the English snapshot
 (`test/fixtures/en-snapshot.json`, regenerate it with `UPDATE_SNAPSHOT=1 node --test` after an
 intended English change) and for the language checks.
@@ -95,7 +95,7 @@ new name never touches the data.
 
 Bump `VERSION` in `sw.js` (for version 41, `'weightplan-v41'`) and `APP_VERSION` in `js/core.js` (`'41'`) together, then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
-that does not exist makes the install fail. Installed
+that does not exist makes the install fail (`node --test` checks both, and that the two versions match). Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
 if something is half-typed or being analysed, show a Reload button. Stored data is kept. The running
 version is shown under Settings → "Version and updates".
@@ -122,6 +122,7 @@ version is shown under Settings → "Version and updates".
 - `js/i18n.js`: the language: `t`, `tn`, `T`, number and date formats, the language switch
 - `js/tr.js`: the Turkish text, keyed by the English; `js/parse-tr.js`: the Turkish words the typed-entry parser accepts
 - `js/briefs.js`: what is sent to the model, always in English
+- `js/text.js`: the text filters on the way out of the device: `sq` squeezes outside text to one plain line, `sanitizeOut` redacts e-mail addresses, links, phone numbers and street addresses from what you typed
 - `js/standalone.js`: the install screen shown in a browser tab (its two languages are inline)
 - `tools/`: dependency-free Chromium helpers: `browser-lib.mjs`, `browser-smoke.mjs` (the smoke test) and `screenshots.mjs` (the images in `docs/`). Not under `test/`, so `node --test` skips them
 - `test/`: `node --test` tests (`badges`, `badge-art`, `unlock` and `avatar` cover the badge system; `plans` covers stored plans, the meal editor and the food form); `extract.mjs` finds the strings, `screens.mjs` renders the screens
