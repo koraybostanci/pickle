@@ -974,7 +974,6 @@ export default {
   'At least {kcal} kcal': 'En az {kcal} kcal',
   'At least the minimum ({kcal})': 'En az en düşük değer ({kcal})',
   'At least a rest day ({kcal})': 'En az bir dinlenme günü ({kcal})',
-  'More than 50 g': '50 g’dan fazla',
   'This cannot be undone.': 'Bu geri alınamaz.',
   'Type {word} to continue.': 'Devam etmek için {word} yaz.',
   'Factory reset done. Your API key is kept': 'Fabrika ayarlarına dönüldü. API anahtarın korundu',

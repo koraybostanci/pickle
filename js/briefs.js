@@ -229,15 +229,15 @@ function progressBriefText() {
       'Plan numbers may have changed during the period; a change in the calories marks a change in the plan, not the person — judge adherence change over the weeks.');
     // The weekly rows are built once: the trimming below re-slices and rebuilds the text several times without re-reading the week.
     const weekLines = weeks.map(weekRow);
+    const WEEKS_HEAD = `Weeks, oldest first (budgets are today's):`;
+    const STRIP_HEAD = 'Weigh-ins since the start (day, kg, trend weight, schedule line):';
     const build = (from, strip) => {
-      return [...lines, ...(from < weekLines.length ? [`Weeks, oldest first (budgets are today's):`, ...weekLines.slice(from)] : []),
-        'Weigh-ins since the start (day, kg, trend weight, schedule line):', ...(strip.length ? strip : ['none']), cur, ...comp, adjust, ...tail].join('\n');
+      return [...lines, ...(from < weekLines.length ? [WEEKS_HEAD, ...weekLines.slice(from)] : []),
+        STRIP_HEAD, ...(strip.length ? strip : ['none']), cur, ...comp, adjust, ...tail].join('\n');
     };
     // The trimming only needs to know how long each try would be, so it adds up the lengths of the parts (each part and the newline
     // after it, less the last newline) and builds the text once, at the end. build(from, strip) is the text, sizeOf its length.
     const cost = (arr) => arr.reduce((x, l) => x + l.length + 1, 0);
-    const WEEKS_HEAD = `Weeks, oldest first (budgets are today's):`;
-    const STRIP_HEAD = 'Weigh-ins since the start (day, kg, trend weight, schedule line):';
     const fixed = cost(lines) + STRIP_HEAD.length + 1 + cost([cur, ...comp, adjust, ...tail]);
     const weekFrom = new Array(weekLines.length + 1).fill(0); // the weekly rows from `from` on, with their heading
     for (let i = weekLines.length - 1; i >= 0; i--) weekFrom[i] = weekFrom[i + 1] + weekLines[i].length + 1;

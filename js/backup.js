@@ -5,7 +5,8 @@ import { T, parseNum } from './i18n.js';
 import { SLOT_NAME, PLAN_SLOTS } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict, cleanProgressReview } from './ai.js';
 import { CATALOG, BY_ID, PARTS, DEFAULT_AV, merge, unlocked, freshBadges } from './badges.js';
-import { SCHEMA_VERSION, APP_ID, COUNT_MAX, SUPP_MAX, TK_KINDS, tkValid, clone } from './core.js';
+import { SCHEMA_VERSION, APP_ID, COUNT_MAX, WATER_MAX, SUPP_MAX, TK_KINDS, tkValid, clone } from './core.js';
+import { sq } from './text.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[\w-]{1,40}$/;
@@ -108,7 +109,7 @@ export function cleanEntry(e) {
 
 export function cleanDay(d) {
   if (!d || typeof d !== 'object' || !isDay(d.day)) return null;
-  const out = { day: d.day, kg: orNull(d.kg, 400), steps: orNull(d.steps, 200000), water: pos(d.water, 20000), train: d.train === true,
+  const out = { day: d.day, kg: orNull(d.kg, 400), steps: orNull(d.steps, 200000), water: pos(d.water, WATER_MAX), train: d.train === true,
     coffee: isNum(d.coffee) ? Math.round(pos(d.coffee, COUNT_MAX)) : null };
   if (Array.isArray(d.taken)) out.taken = [...new Set(d.taken.filter(isId))].slice(0, SUPP_MAX);
   if (d.review && typeof d.review === 'object') {
@@ -196,13 +197,11 @@ export const PLAN_CAPS = { grams: 5000, kcal: 1000, per100: 100, ingredients: 12
 const PLAN_ID = /^P-[\w-]{1,38}$/;
 const FOOD_KEY = /^[A-Za-z][\w-]{0,39}$/;
 const isFoodKey = (k) => ownSafe(k) && FOOD_KEY.test(k);
-// The squeeze of a free-text field: control characters to spaces, whitespace runs collapsed, trimmed, at most max
-// characters. cleanFood's name and ing handling and cleanIng in js/app.js all come through here (js/ai.js has its
-// own uncapped sq for the digest text, which must stay byte-stable).
+// The squeeze of a free-text field: sq from js/text.js (control characters to spaces, whitespace runs collapsed, trimmed),
+// at most max characters. cleanFood's ing handling and cleanIng in js/app.js come through here; the uncapped fields use sq itself.
 export function squeeze(v, max) {
-  return typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  return sq(v).slice(0, max);
 }
-const clean1 = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim() : '');
 
 // One user plan, checked for both a save and a restore. Returns { plan, changed }: plan is null when nothing usable is left
 // (no user plan id), and changed says that something was dropped, cut or clamped to get it. A save takes only an unchanged plan,
@@ -211,7 +210,7 @@ export function cleanPlan(raw) {
   if (!plain(raw) || typeof raw.id !== 'string' || !PLAN_ID.test(raw.id)) return { plan: null, changed: true };
   let changed = false;
   const text = (v, max) => {
-    const x = clean1(v);
+    const x = sq(v);
     if (x.length > max) changed = true;
     return x.slice(0, max);
   };
@@ -255,7 +254,7 @@ export function cleanPlan(raw) {
 // allowed), grams rounded to 0.1 (as stored, so an untouched 100.5 stays) so that cleanPlan passes a valid save unchanged. bad marks what is typed and wrong
 // (an empty field is not marked); valid needs a name, at least one ingredient, and every row's grams from 1 to 5,000.
 export function readMeal(meal) {
-  const name = clean1(meal.name);
+  const name = sq(meal.name);
   const rows = Array.isArray(meal.ingredients) ? meal.ingredients : [];
   const bad = { name: name.length > PLAN_CAPS.name, rows: [] };
   const ingredients = [];
@@ -263,7 +262,7 @@ export function readMeal(meal) {
     const typed = String(g ?? '').trim();
     const grams = Math.round((typeof g === 'number' ? g : parseNum(typed)) * 10) / 10;
     const ok = grams >= 1 && grams <= PLAN_CAPS.grams;
-    const m = clean1(measure);
+    const m = sq(measure);
     bad.rows.push({ g: !!typed && !ok, m: m.length > PLAN_CAPS.measure });
     if (ok) ingredients.push(m ? [food, grams, m] : [food, grams]);
   }
@@ -275,7 +274,7 @@ export function readMeal(meal) {
 // comma allowed), kcal rounded to whole numbers and the rest to 0.1, so that cleanPlan passes the food unchanged. bad marks what
 // is typed and wrong (an empty field is not marked); valid needs a name and all five values in range (kcal 0–1,000, the rest 0–100).
 export function readFood(form) {
-  const name = clean1(form.name);
+  const name = sq(form.name);
   const bad = { name: name.length > PLAN_CAPS.name, v: [] };
   const v = [];
   for (let i = 0; i < 5; i++) {
@@ -386,7 +385,7 @@ export const FOODS_MAX = 100;
 // the photo is really there is the site's business, as with a meal's plan ref. Never throws, whatever it is given.
 export function cleanFood(f) {
   if (!plain(f) || !isId(f.id)) return null;
-  const name = clean1(f.name).slice(0, PLAN_CAPS.name);
+  const name = sq(f.name).slice(0, PLAN_CAPS.name);
   if (!name || !Array.isArray(f.v) || f.v.length !== 5 || !f.v.every(isNum)) return null;
   const out = { id: f.id, name, v: f.v.map((x, i) => Math.max(0, Math.min(i === 0 ? PLAN_CAPS.kcal : PLAN_CAPS.per100, x))) };
   const ing = squeeze(f.ing, 400);

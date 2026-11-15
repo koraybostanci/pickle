@@ -1846,6 +1846,24 @@ export function onboardError(field, code) {
   return field === 'targetDate' ? t('Pick a valid date') : t('Check this value'); // i18n-ok: field names
 }
 
+// The message under a Settings → Goals field for a validateGoals error ({ field, code }); value is what validateGoals read.
+// Settings keeps its own wording where it has one, and shares setup's (onboardError) for the rest.
+export const GOAL_FIELD_IDS = { startDate: 'set-start', targetDate: 'set-end', startKg: 'set-startkg', targetKg: 'set-endkg', kcalMinDay: 'set-minday', kcalRest: 'set-rest', kcalTrain: 'set-train', protein: 'set-prot' }; // i18n-ok: element ids
+export function goalError(field, code, value = {}) {
+  if (code === 'required') {
+    const own = { startDate: () => t('Pick a start date'), targetDate: () => t('Pick an end date'), startKg: () => t('Enter your start weight'), targetKg: () => t('Enter your goal weight') }[field];
+    if (own) return own();
+  }
+  if (code === 'not_after_start') return t('The end must be after the start');
+  if (code === 'not_below_start') return t('The goal weight must be below the start weight');
+  if (code === 'below_floor' && field === 'kcalMinDay') return t('At least {kcal} kcal', { kcal: fmtInt(KCAL_FLOOR) }); // i18n-ok: field name
+  if (code === 'invalid' && (field === 'startDate' || field === 'targetDate')) return onboardError('targetDate', 'invalid'); // i18n-ok: field names
+  if (code === 'below_min_day') return t('At least the minimum ({kcal})', { kcal: fmtInt(value.kcalMinDay ?? KCAL_FLOOR) });
+  if (code === 'below_rest') return t('At least a rest day ({kcal})', { kcal: fmtInt(value.kcalRest ?? KCAL_FLOOR) });
+  if (code === 'range') return field === 'startKg' ? onboardError('weight', 'range') : field === 'targetKg' ? onboardError('targetKg', 'range') : field === 'protein' ? onboardError('protein', 'range') : onboardError('kcalRest', 'range'); // i18n-ok: field names
+  return onboardError(field === 'startKg' ? 'weight' : field, code); // i18n-ok: field name
+}
+
 // The setup screen: one form. What was typed lives in S.onboard ({ name, age, gender, weight, targetKg, targetDate, kcalRest, kcalTrain, protein, plan: '' | 'blank' | 'default', errors: [{ field, code }] }), so drawing it again keeps it.
 // The banner over the main screens while the settings upgrade made at startup is not on this device yet
 export function renderSaveWarning() {

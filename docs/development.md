@@ -93,9 +93,9 @@ new name never touches the data.
 
 ## Releasing an update
 
-Bump `VERSION` in `sw.js` (for version 41, `'weightplan-v41'`) and `APP_VERSION` in `js/core.js` (`'41'`) together, then
+Bump the number in `js/version.js` (the only place it is written; `sw.js` and `js/core.js` both read it), then
 deploy. List a file you add in `SHELL` in `sw.js` so the first launch works offline; a listed file
-that does not exist makes the install fail (`node --test` checks both, and that the two versions match). Installed
+that does not exist makes the install fail (`node --test` checks both, and that the version is written only in `js/version.js`). Installed
 copies find the new version when the app opens or comes to the front, and reload on their own, or,
 if something is half-typed or being analysed, show a Reload button. Stored data is kept. The running
 version is shown under Settings → "Version and updates".

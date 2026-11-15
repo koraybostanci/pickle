@@ -818,10 +818,14 @@ export async function probeVision(cfg) {
   return { ok: r.text.replace(/\D/g, '').includes(n), usage: r.usage };
 }
 
-// Fetches the model list from an OpenAI-compatible endpoint; returns [] on any failure.
+// Fetches the model list from an OpenAI-compatible endpoint; returns [] on any failure, and on no answer within LIST_TIMEOUT_MS.
+const LIST_TIMEOUT_MS = 15000;
 export async function listModels(cfg) {
   try {
-    const res = await fetch(cfg.base.replace(/\/+$/, '') + '/models', { headers: { authorization: `Bearer ${cfg.key}` } });
+    const res = await fetch(cfg.base.replace(/\/+$/, '') + '/models', {
+      headers: { authorization: `Bearer ${cfg.key}` },
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(LIST_TIMEOUT_MS) : undefined,
+    });
     if (!res.ok) return [];
     const j = await res.json();
     return (j.data || []).map((m) => m.id).filter(Boolean);

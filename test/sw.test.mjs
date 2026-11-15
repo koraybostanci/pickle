@@ -1,5 +1,5 @@
 // The service worker's SHELL against the files on disk: a file the app loads but SHELL lacks is missing on an offline
-// launch, a listed file that does not exist makes the install fail, and the two version numbers move together.
+// launch, a listed file that does not exist makes the install fail, and the release number is written in one place.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -24,8 +24,10 @@ test('every file in SHELL exists, and none is listed twice', () => {
   assert.equal(new Set(SHELL).size, SHELL.length);
 });
 
-test('VERSION in sw.js and APP_VERSION in js/core.js carry the same number', () => {
-  const sw = SW.match(/const VERSION = 'weightplan-v(\d+)'/)[1];
-  const app = read('js/core.js').match(/export const APP_VERSION = '(\d+)'/)[1];
-  assert.equal(sw, app);
+test('the release number is written once, in js/version.js, and sw.js and js/core.js both read it', () => {
+  assert.match(read('js/version.js'), /^globalThis\.WEIGHTPLAN_VERSION = '\d+';/m);
+  assert.match(SW, /^importScripts\('js\/version\.js'\);$/m);
+  assert.match(SW, /const VERSION = `weightplan-v\$\{self\.WEIGHTPLAN_VERSION\}`;/);
+  assert.doesNotMatch(SW, /weightplan-v\d/); // no number of its own
+  assert.match(read('js/core.js'), /export const APP_VERSION = globalThis\.WEIGHTPLAN_VERSION;/);
 });
