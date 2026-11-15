@@ -1,8 +1,8 @@
 // Text on its way out of the device, and the squeeze every outside text passes. Pure: no DOM, no network, no model module, so the briefs
 // and the tests import it on their own.
 
-// Text that came from outside (the pantry's records, a model reply): the squeeze of cleanFood in js/backup.js and
-// cleanIng in js/app.js, mirrored here — one plain line, no control characters, so no text can forge a line's shape
+// Text that came from outside (the pantry's records, a model reply), and every free-text field js/backup.js cleans
+// (squeeze, cleanPlan, cleanFood): one plain line, no control characters, so no text can forge a line's shape
 export const sq = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim() : '');
 
 // Free text the person wrote (a note, a title, a food or ingredient name) leaves the device only after sanitizeOut: an e-mail, a link,

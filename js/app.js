@@ -7,15 +7,15 @@ import * as picture from './picture.js';
 import { readMeta } from './exif.js';
 import { analyze, review, coach, check, progressReview, foodValues, cleanItems, reconcileConf, pantryMatch, ITEM_CAPS_ANALYSIS, ITEM_CAPS_WRITE, CHECK_EDGE, shrink, costUSD, probeVision, listModels, AI_ERRORS, AI_ERROR_LABEL, WAITING, errorDetail, STRONG_MODEL, PRESETS, ZEN_FREE } from './ai.js';
 import { reviewBrief, coachBrief, checkBrief, progressBrief, hasProgressData } from './briefs.js';
-import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanPlans, plansRecord, PLAN_CAPS, activePlan, loadedPlans, sweepPlanPhotos, readMeal, readFood, readProgress, savedPlan, cleanBadges, restoreBadges, b64FromBuf, cleanFoods, restoreFoods, sweepFoodPhotos, FOODS_MAX, squeeze } from './backup.js';
+import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanPlans, plansRecord, PLAN_CAPS, activePlan, loadedPlans, sweepPlanPhotos, readMeal, readFood, readProgress, savedPlan, cleanBadges, restoreBadges, b64FromBuf, cleanFoods, restoreFoods, sweepFoodPhotos, FOODS_MAX, squeeze, MACRO_CAPS } from './backup.js';
 import { buildPlan, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, DEFAULTS } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, mealById, aiCfg, hasKey, today, eff, macroEdits, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, currentWeight, latestWeight, CHECK_MAX, checkReady, COUNT_MAX, getProgressGen, bumpProgressGen, resetProgressGen, progressSig, progressRatingHint, progressGate, progressState, parseLocal, titleFor, titleOf, startDraft, dropDraft, draftChanged, foodFormChanged, startFood, doneFood, dropFood, releasePhotos,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, mealById, aiCfg, hasKey, today, eff, portionItems, macroEdits, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, currentWeight, latestWeight, CHECK_MAX, checkReady, COUNT_MAX, WATER_MAX, getProgressGen, bumpProgressGen, resetProgressGen, progressSig, progressRatingHint, progressGate, progressState, parseLocal, titleFor, titleOf, startDraft, dropDraft, draftChanged, foodFormChanged, startFood, doneFood, dropFood, releasePhotos,
 } from './core.js';
 import seedPlan from './default-plan.js';
 import { bootDecision, commitSetup, newSetupJournal, setupHadPlans } from './boot.js';
-import { validateProfile, validateOnboarding, settingsFromOnboarding, blankPlan, newClientId, parseNumberInput, goalPaceError, GOAL_KEYS, PROTEIN_MIN_RATIO } from './onboarding.js';
-import { onboardError, renderOnboarding, onboardFocusId, ONBOARD_IDS, renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderMealEditor, mealEditorTotal, renderFoodForm, renderPantrySheet, renderPantryEditor, renderBadgeSheet, renderAvatarSheet, badgeContext, unlockToast, renderFrameSheet, attachChart, renderSaveWarning } from './views.js';
+import { validateProfile, validateOnboarding, validateGoals, settingsFromOnboarding, blankPlan, newClientId, parseNumberInput, goalPaceError, GOAL_KEYS, PROTEIN_MIN_RATIO } from './onboarding.js';
+import { onboardError, goalError, GOAL_FIELD_IDS, renderOnboarding, onboardFocusId, ONBOARD_IDS, renderToday, renderLog, renderCheck, renderProgress, renderPlan, renderSettings, renderEntrySheet, renderNumSheet, renderSlotSheet, renderPlanSheet, renderMealEditor, mealEditorTotal, renderFoodForm, renderPantrySheet, renderPantryEditor, renderBadgeSheet, renderAvatarSheet, badgeContext, unlockToast, renderFrameSheet, attachChart, renderSaveWarning } from './views.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -219,7 +219,7 @@ async function submitText(text) {
     if (local.type === 'steps') return setSteps(local.steps);
     if (local.type === 'water') {
       const cur = (S.days[today()] && S.days[today()].water) || 0;
-      await saveDay(today(), { water: cur + local.ml });
+      await saveDay(today(), { water: Math.min(WATER_MAX, cur + local.ml) });
       render();
       return toast(t('{ml} ml of water added', { ml: local.ml }));
     }
@@ -356,6 +356,7 @@ function modelFailure(err, what = 'review') {
 
 async function runReview(day, auto) {
   try {
+    if (!dayVerdict(day)) return; // the day's meals went while this waited in the queue: there is nothing to brief
     const sig = reviewSig(day);
     const live = day === today();
     const { data, usage, model } = await review({ cfg: aiCfg(), brief: reviewBrief(day) });
@@ -365,9 +366,10 @@ async function runReview(day, auto) {
     S.reviewErr.delete(day);
   } catch (err) {
     if (!auto) S.reviewErr.set(day, modelFailure(err)); // an automatic review that fails just leaves the button
+  } finally {
+    S.reviewing.delete(day);
+    render();
   }
-  S.reviewing.delete(day);
-  render();
 }
 function queueReview(day, auto = false) {
   if (S.reviewing.has(day) || !dayVerdict(day)) return;
@@ -380,6 +382,7 @@ function queueReview(day, auto = false) {
 // ——— The quick note on the day so far, written by the model ———
 async function runCoach(day) {
   try {
+    if (!dayTotals(day).n) return; // the day's meals went while this waited in the queue: there is nothing to brief
     const sig = reviewSig(day);
     const { data, usage, model } = await coach({ cfg: aiCfg(), brief: coachBrief(day) });
     await addUsage(model, usage);
@@ -388,9 +391,10 @@ async function runCoach(day) {
     S.coachErr.delete(day);
   } catch (err) {
     S.coachErr.set(day, modelFailure(err, 'note'));
+  } finally {
+    S.coaching.delete(day);
+    render();
   }
-  S.coaching.delete(day);
-  render();
 }
 function queueCoach(day) {
   if (S.coaching.has(day) || !dayTotals(day).n) return;
@@ -771,8 +775,8 @@ async function analyzeEntry(id, opts = {}) {
         Object.assign(e, {
           planId: '', title: String(data.title || e.text || 'Meal').slice(0, 80), items, // i18n-ok: the stored title stays English
           // The item list is what explains the total, so the total is their sum whenever items carry the number
-          kcal: Math.round(cap(sumKcal || data.kcal, 6000)), p: cap(cap(data.p, 500) || sumMacros('p'), 500), edited: false,
-          c: cap(cap(data.c, 800) || sumMacros('c'), 800), f: cap(cap(data.f, 500) || sumMacros('f'), 500), fib: cap(cap(data.fib, 150) || sumMacros('fib'), 150),
+          kcal: Math.round(cap(sumKcal || data.kcal, MACRO_CAPS.kcal)), p: cap(cap(data.p, MACRO_CAPS.p) || sumMacros('p'), MACRO_CAPS.p), edited: false,
+          c: cap(cap(data.c, MACRO_CAPS.c) || sumMacros('c'), MACRO_CAPS.c), f: cap(cap(data.f, MACRO_CAPS.f) || sumMacros('f'), MACRO_CAPS.f), fib: cap(cap(data.fib, MACRO_CAPS.fib) || sumMacros('fib'), MACRO_CAPS.fib),
           tier: ['plan', 'flex', 'off'].includes(data.tier) ? data.tier : 'plan',
         });
         // A matched product was really used in this estimate: bump its lastUsed and write the pantry once here,
@@ -1464,7 +1468,7 @@ const ACT = {
   'week-prev': () => { S.viewDay = addDays(S.viewDay, -7); render(); },
   'week-next': () => { const d = addDays(S.viewDay, 7); S.viewDay = d > today() ? today() : d; render(); },
   'day-today': () => { S.viewDay = today(); render(); },
-  'log-plan': (el) => { if (S.sheet && S.sheet.type === 'slot') closeSheet(); return logMeal(mealById(el.dataset.id), 'plan'); },
+  'log-plan': (el) => { const m = mealById(el.dataset.id); if (!m) return; if (S.sheet && S.sheet.type === 'slot') closeSheet(); return logMeal(m, 'plan'); }, // a meal deleted under an old button: nothing to log
   'slot': (el) => openSheet(renderSlotSheet(el.dataset.slot, S.viewDay), { type: 'slot', slot: el.dataset.slot }),
   'slot-camera': () => { closeSheet(); photoTarget = null; $('#f-cam').click(); },
   'compose': () => { closeSheet(); const inp = $('#composer-input'); inp.focus(); },
@@ -1737,7 +1741,7 @@ const ACT = {
     d.note = '';
     openPantryEditor('#pf-ai');
   },
-  'log-plan-today': (el) => { closeSheet(); return logMeal(mealById(el.dataset.id), 'plan', today()); },
+  'log-plan-today': (el) => { const m = mealById(el.dataset.id); closeSheet(); if (m) return logMeal(m, 'plan', today()); },
   'hint': (el) => {
     const inp = $('#composer-input');
     inp.value = el.dataset.fill;
@@ -1748,7 +1752,7 @@ const ACT = {
   'water': async (el) => {
     const day = S.viewDay;
     const cur = (S.days[day] && S.days[day].water) || 0;
-    const next = Math.max(0, cur + Number(el.dataset.v));
+    const next = Math.max(0, Math.min(WATER_MAX, cur + Number(el.dataset.v)));
     await saveDay(day, { water: next });
     render();
     if (next > cur) toast(t('A glass of water added'), { label: t('Undo'), fn: async () => { await saveDay(day, { water: cur }); render(); } });
@@ -1775,7 +1779,7 @@ const ACT = {
     const list = S.settings.supplements || [];
     const edit = list.find((x) => x.id === S.suppEdit);
     if (!edit && list.length >= SUPP_MAX) return toast(t('At most {n} supplements', { n: SUPP_MAX }));
-    if (list.some((x) => x.id !== S.suppEdit && x.name.toLowerCase() === name.toLowerCase())) return toast(t('Already in the list'));
+    if (list.some((x) => x.id !== S.suppEdit && foldKey(x.name) === foldKey(name))) return toast(t('Already in the list'));
     S.settings.supplements = edit ? list.map((x) => (x.id === edit.id ? { ...x, name, dose } : x)) : [...list, { id: db.uid(), name, dose }];
     S.suppEdit = '';
     await saveSettings();
@@ -1819,7 +1823,8 @@ const ACT = {
     const favorites = S.settings.favorites || [];
     if (favorites.some((f) => f.name === e.title)) return toast(t('Already in favourites'));
     const v = eff(e);
-    favorites.push({ id: db.uid(), name: e.title, slot: 'any', kcal: Math.round(v.kcal), p: v.p, c: v.c, f: v.f, fib: v.fib, tier: e.tier, flags: e.flags || [], items: e.items || [] });
+    // The totals are taken at the entry's portion, and so are the items, so they add up to them
+    favorites.push({ id: db.uid(), name: e.title, slot: 'any', kcal: Math.round(v.kcal), p: v.p, c: v.c, f: v.f, fib: v.fib, tier: e.tier, flags: e.flags || [], items: portionItems(e) });
     S.settings.favorites = favorites;
     await saveSettings();
     render();
@@ -1954,31 +1959,18 @@ const ACT = {
     render();
   },
   'save-targets': async () => {
-    const num = (id) => parseFloat($(id).value.replace(',', '.'));
-    const patch = {
-      startDate: $('#set-start').value, targetDate: $('#set-end').value,
-      startKg: num('#set-startkg'), targetKg: num('#set-endkg'),
-      kcalRest: Math.round(num('#set-rest')), kcalTrain: Math.round(num('#set-train')), kcalMinDay: Math.round(num('#set-minday')), protein: Math.round(num('#set-prot')),
-    };
+    // The same checks as setup and a restore (validateGoals), so a goal saved here always survives a backup.
     // Each broken rule is written under its own field, in place: the sheet is not rebuilt, so nothing typed is lost
+    const r = validateGoals(Object.fromEntries(Object.entries(GOAL_FIELD_IDS).map(([k, id]) => [k, $(`#${id}`).value])));
     const bad = {};
-    if (!patch.startDate) bad['set-start'] = t('Pick a start date');
-    if (!patch.targetDate) bad['set-end'] = t('Pick an end date');
-    else if (patch.startDate && patch.targetDate <= patch.startDate) bad['set-end'] = t('The end must be after the start');
-    if (!(patch.startKg > 0)) bad['set-startkg'] = t('Enter your start weight');
-    if (!(patch.targetKg > 0)) bad['set-endkg'] = t('Enter your goal weight');
-    else if (!(patch.startKg > patch.targetKg)) bad['set-endkg'] = t('The goal weight must be below the start weight');
-    if (!(patch.kcalMinDay >= 500)) bad['set-minday'] = t('At least {kcal} kcal', { kcal: fmtInt(500) });
-    if (!(patch.kcalRest >= patch.kcalMinDay)) bad['set-rest'] = t('At least the minimum ({kcal})', { kcal: fmtInt(patch.kcalMinDay || 500) });
-    if (!(patch.kcalTrain >= patch.kcalRest)) bad['set-train'] = t('At least a rest day ({kcal})', { kcal: fmtInt(patch.kcalRest || 500) });
-    if (!(patch.protein > 50)) bad['set-prot'] = t('More than 50 g');
-    for (const id of ['set-start', 'set-end', 'set-startkg', 'set-endkg', 'set-minday', 'set-rest', 'set-train', 'set-prot']) {
+    for (const e of r.errors) if (!bad[e.field]) bad[e.field] = goalError(e.field, e.code, r.value);
+    for (const [k, id] of Object.entries(GOAL_FIELD_IDS)) {
       const err = $(`#err-${id}`);
-      if (err) err.textContent = bad[id] || '';
-      mark($(`#${id}`), !!bad[id]);
+      if (err) err.textContent = bad[k] || '';
+      mark($(`#${id}`), !!bad[k]);
     }
-    const first = Object.keys(bad)[0];
-    if (first) { $(`#${first}`).focus(); return; }
+    if (!r.ok) { $(`#${GOAL_FIELD_IDS[r.errors[0].field]}`).focus(); return; }
+    const patch = r.value;
     const st = S.settings;
     const now = today(); // a stored goal already past the pace limit does not block other edits
     if (goalPaceError(st, patch, currentWeight(now, patch.startKg), now, !!latestWeight(now))) { $('#err-set-end').textContent = t('That is faster than a steady pace: pick a later date or a closer goal weight'); mark($('#set-end'), true); $('#set-end').focus(); return; } // i18n-ok: element ids
@@ -2011,7 +2003,7 @@ const ACT = {
   },
   'progress-review': () => {
     if (!hasKey()) return toast(t('Add an API key in Settings to get a review of your progress'));
-    if (!navigator.onLine) return toast(td(AI_ERRORS.offline));
+    if (navigator.onLine === false) return toast(td(AI_ERRORS.offline));
     if (!hasProgressData()) return toast(t('Log something first and the review has more to go on'));
     queueProgressReview();
   },
@@ -2071,6 +2063,7 @@ const ACT = {
     delete S.settings.wins; // the next kilo or perfect day is celebrated again
     await saveSettings();
     S.entries = []; S.days = {}; S.checks = []; S.check.openId = null;
+    S.reviewErr.clear(); S.coachErr.clear(); S.reviewOpen.clear(); autoTried.clear(); // nothing is left of the days they were about
     bumpProgressGen(); S.progressReview = null; S.progressErr.clear(); S.progressReviewing.clear(); // a progress review still on its way is dropped when it lands
     closeSheet();
     render();
@@ -2098,6 +2091,7 @@ const ACT = {
     S.saveWarning = false;
     await saveSettings(); // at once: a reload from here on comes back to setup, not to an empty app
     seedInMemory(); // the plans start again from the seed; the record is written when setup is finished
+    // Again after the awaits above: a badge turn or a tap that finished while the stores were cleared may have written to memory
     clearTimeout(announceTimer);
     S.entries = []; S.days = {}; S.checks = []; S.foods = []; S.badges = null; S.badgeIntro = 0; S.check = freshCheck();
     S.viewDay = today(); S.calPick = null; S.openSetting = ''; S.suppEdit = ''; S.profileDraft = null; S.keyDraft = null; S.resetStep = '';

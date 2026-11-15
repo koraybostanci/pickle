@@ -180,10 +180,16 @@ export function buildSql({ settings: s, entries, days, badges = {}, foods = [], 
   // The trend weight, worked out by the same function as the app's screens; a day shows it when a weigh-in lies in the 7 days up to it
   const weighIns = dayRows.filter((d) => Number.isFinite(+d.kg) && +d.kg > 0).map((d) => ({ day: d.day, kg: +d.kg }));
   const trendRows = trendSeriesOf(weighIns, s);
+  // One pass: dayRows and trendRows are both oldest first, and trendOn is asked for the days in that order
+  let at = 0;
+  let trend = null; // the trend after the last reading that counted, up to the day asked
+  let seen = ''; // the day of the latest reading up to it, set aside or not
   const trendOn = (day) => {
-    const upto = trendRows.filter((r) => r.day <= day);
-    const last = upto.findLast((r) => !r.skipped);
-    return last && upto.some((r) => r.day >= addDays(day, -6)) ? last.trend : null;
+    for (; at < trendRows.length && trendRows[at].day <= day; at++) {
+      seen = trendRows[at].day;
+      if (!trendRows[at].skipped) trend = trendRows[at].trend;
+    }
+    return trend !== null && seen >= addDays(day, -6) ? trend : null;
   };
   for (const d of dayRows) {
     const targetKg = d.day >= s.startDate ? targetAt(d.day, s) : null;

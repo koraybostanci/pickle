@@ -173,6 +173,29 @@ test('the arrival date follows the fitted line (a steady 0.1 kg a day)', () => {
   assert.equal(projection().eta, day(37)); // 83.7 kg today, 3.7 kg to go
 });
 
+test('a mistyped weigh-in that the trend sets aside does not tilt the weekly rate', () => {
+  reset(); S.settings.targetKg = 80;
+  for (let i = 13; i >= 0; i--) S.days[day(-i)] = { day: day(-i), kg: Math.round((85 - 0.1 * (13 - i)) * 100) / 100 };
+  S.days[day(-3)] = { day: day(-3), kg: 58.4 }; // 84.0 typed as 58.4
+  const pr = projection();
+  assert.ok(Math.abs(pr.perWeek - -0.7) < 1e-9, `perWeek ${pr.perWeek}`); // 0.1 kg a day, as without the typo
+  assert.equal(pr.eta, day(37));
+});
+
+test('a weigh-in dated after today is not part of the weekly rate', () => {
+  reset(); S.settings.targetKg = 80;
+  for (let i = 13; i >= 0; i--) S.days[day(-i)] = { day: day(-i), kg: Math.round((85 - 0.1 * (13 - i)) * 100) / 100 };
+  S.days[day(5)] = { day: day(5), kg: 90 };
+  assert.ok(Math.abs(projection().perWeek - -0.7) < 1e-9);
+});
+
+test('the weekly rate counts the last 14 days: a weigh-in 14 days ago is outside', () => {
+  reset(); S.settings.targetKg = 80;
+  for (let i = 13; i >= 0; i--) S.days[day(-i)] = { day: day(-i), kg: Math.round((85 - 0.1 * (13 - i)) * 100) / 100 };
+  S.days[day(-14)] = { day: day(-14), kg: 87 }; // would steepen the line if it counted
+  assert.ok(Math.abs(projection().perWeek - -0.7) < 1e-9);
+});
+
 test('too few weigh-ins: no projection', () => {
   reset(); S.days[day(0)] = { day: day(0), kg: 85 };
   assert.equal(projection(), null);

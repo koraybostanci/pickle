@@ -1,9 +1,10 @@
 // State, and the calculations on it. No DOM and no storage, so the maths loads on its own (in node, for tests).
 import { t, tn, T, td, foldKey, parseNum, inEnglish } from './i18n.js';
 import { PARSE_TR } from './parse-tr.js';
+import './version.js'; // sets the release number, written only there
 import { buildPlan, SLOTS, FLEX, DEFAULTS, LOCALE, has, dayKey, parseDay, addDays, diffDays, SMALL_TREAT_KCAL, planDigest, targetAt } from './plan.js';
 
-export const APP_VERSION = '63'; // bump together with VERSION in sw.js
+export const APP_VERSION = globalThis.WEIGHTPLAN_VERSION; // from js/version.js, which sw.js reads too
 export const SCHEMA_VERSION = 2; // version of the stored data and of the backup file
 // The app's internal id. It names the database, the caches, the backup files' marker and the SQL export's tables, and
 // never follows the app's name (Pickle), so a rename touches only what people see and never the data.
@@ -58,6 +59,11 @@ export const S = {
   plan: buildPlan({ id: 'default', name: '', foods: {}, meals: [] }), // the active plan, built (js/app.js sets it on load)
   onboard: null, // the setup form while it is shown: what was typed, the choice of plan and the errors of the last try (js/views.js renderOnboarding); null otherwise
   draft: null, // the meal being edited: { plan: a copy of the active stored plan, meal, food?, foodForm? }; nothing is stored until it is saved
+  foodDraft: null, // the pantry product being edited (js/app.js startPantry); nothing is stored until it is saved
+  profileDraft: null, // the profile fields typed in Settings but not saved yet
+  keyDraft: null, // a provider picked in Settings but not saved yet: { provider }
+  resetStep: '', // the confirm step shown under Reset in Settings: '', 'clear' or 'all'
+  resetKeep: undefined, // whether "Keep my API key" was ticked when the factory reset step opened; unset means ticked
 };
 let progressGen = 0; // moves when the log is wiped, so a progress review that lands after it is dropped
 export const getProgressGen = () => progressGen;
@@ -148,6 +154,17 @@ export const today = () => dayKey(new Date());
 export const eff = (e) => {
   const m = e.mult || 1;
   return { kcal: (e.kcal || 0) * m, p: (e.p || 0) * m, c: (e.c || 0) * m, f: (e.f || 0) * m, fib: (e.fib || 0) * m };
+};
+
+// An entry's items at its portion (e.mult), as copies: grams and every macro an item carries, unrounded so they add up to eff(e); an absent macro stays absent.
+// What a favourite stores, so its items add up to the totals it takes from eff(e).
+export const portionItems = (e) => {
+  const m = e.mult || 1;
+  return (Array.isArray(e.items) ? e.items : []).map((i) => {
+    const x = { ...i };
+    for (const k of ['g', 'kcal', 'p', 'c', 'f', 'fib']) if (typeof x[k] === 'number') x[k] *= m;
+    return x;
+  });
 };
 
 // Thresholds for the entry-sheet rest row: a column shows its rest only when the display-rounded absolute residual
@@ -416,8 +433,10 @@ export function weightSeries() {
 }
 
 // Slope over the last 14 days (kg/day) and the projected arrival at the target
+// The readings are those the trend counts: one it sets aside as a typo (a 58 for 85) would tilt the line badly, and a day after today is not yet
 export function projection() {
-  const w = weightSeries().filter((d) => diffDays(d.day, today()) <= 14);
+  const tod = today();
+  const w = (trendIndex || trendSeriesOf(weightSeries(), S.settings)).filter((p) => !p.skipped && p.day <= tod && diffDays(p.day, tod) < 14); // the last 14 days: today and the 13 before
   if (w.length < 4 || diffDays(w[0].day, w[w.length - 1].day) < 6) return null;
   const xs = w.map((d) => diffDays(w[0].day, d.day));
   const ys = w.map((d) => d.kg);
@@ -428,12 +447,12 @@ export function projection() {
   xs.forEach((x, i) => { num += (x - mx) * (ys[i] - my); den += (x - mx) ** 2; });
   const slope = den ? num / den : 0;
   // Where the fitted line stands today; the 7-day average lags it by about three days on a steady loss
-  const now = my + slope * (diffDays(w[0].day, today()) - mx);
+  const now = my + slope * (diffDays(w[0].day, tod) - mx);
   const out = { slope, perWeek: slope * 7, now }; // now: where the fitted line stands today
   if (slope < -0.005) {
     const daysLeft = Math.ceil((now - S.settings.targetKg) / -slope - 1e-6); // the 1e-6 keeps float noise from adding a day
-    out.eta = daysLeft > 0 && daysLeft < 730 ? addDays(today(), daysLeft) : null;
-    if (daysLeft <= 0) out.eta = today();
+    out.eta = daysLeft > 0 && daysLeft < 730 ? addDays(tod, daysLeft) : null;
+    if (daysLeft <= 0) out.eta = tod;
   }
   return out;
 }
@@ -472,6 +491,7 @@ export function weekFlex(day) {
 
 // Coffee is counted, with no goal; a typed beer is logged as the Beer 0.5 l extra
 export const COUNT_MAX = 30; // a day's coffee tally is never above this, typed, tapped or restored
+export const WATER_MAX = 20000; // ml: a day's water is never above this, typed, tapped or restored
 // English and Turkish words together (the Turkish are in js/parse-tr.js), so typing works in either language
 const COFFEE = ['coffee', ...PARSE_TR.coffee];
 const BEER = ['beer', ...PARSE_TR.beer];
@@ -716,7 +736,7 @@ export const RATING_FLAT = 0.15;
 export function progressRatingHint() {
   const s = S.settings;
   const t = today();
-  const w = weightSeries().filter((d) => diffDays(d.day, t) <= 14);
+  const w = weightSeries().filter((d) => d.day <= t && diffDays(d.day, t) < 14); // the last 14 days, as projection() counts them
   const a = trendWeight(t);
   if (w.length < RATING_MIN_WEIGHINS || diffDays(w[0].day, w[w.length - 1].day) < RATING_MIN_SPAN || !a || a.n < 2) return 'too-early'; // one fluke reading is not a trend
   if (a.kg <= s.targetKg) {

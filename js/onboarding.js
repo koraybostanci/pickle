@@ -97,36 +97,13 @@ export function validateProfile(input) {
   return { ok: errors.length === 0, errors, value };
 }
 
-// input: { weight, targetKg, targetDate, kcalRest, kcalTrain, protein, name?, age?, gender? }, today: 'YYYY-MM-DD'
-// Gives { ok, errors: [{ field, code }], value }; value holds the cleaned fields when ok
-export function validateOnboarding(input, today) {
-  input = input && typeof input === 'object' ? input : {};
-  const errors = [];
-  const bad = (field, code) => errors.push({ field, code });
-  const value = {};
-  const [lo, hi] = RANGES.startKg;
-  const weight = read(input.weight);
-  if (weight === null) bad('weight', 'invalid');
-  else if (!Number.isFinite(weight)) bad('weight', 'required');
-  else if (weight < lo || weight > hi) bad('weight', 'range');
-  else value.weight = weight;
-  const [tlo, thi] = RANGES.targetKg;
-  const targetKg = read(input.targetKg);
-  if (targetKg === null) bad('targetKg', 'invalid');
-  else if (!Number.isFinite(targetKg)) bad('targetKg', 'required');
-  else if (targetKg < tlo || targetKg > thi) bad('targetKg', 'range');
-  else if (value.weight !== undefined && !(targetKg < weight)) bad('targetKg', 'not_below_weight');
-  else value.targetKg = targetKg;
-  const td = typeof input.targetDate === 'string' ? input.targetDate.trim() : '';
-  if (!td) bad('targetDate', 'required');
-  else if (!DAY_RE.test(td) || !realDay(td) || !(typeof today === 'string' && DAY_RE.test(today) && realDay(today))) bad('targetDate', 'invalid');
-  else if (!(td > today)) bad('targetDate', 'not_after_today');
-  else if (value.weight !== undefined && value.targetKg !== undefined && tooFast(value.weight, value.targetKg, today, td)) bad('targetDate', 'too_fast');
-  else value.targetDate = td;
+// The day budgets and protein, checked the same way in setup and in Settings: reports through bad(field, code), writes value.
+// A rest day may not go below restFloor (setup: KCAL_FLOOR; Settings: the minimum kcal), reported as restCode.
+function readBudget(input, bad, value, restFloor, restCode) {
   const kcalRest = rnd(read(input.kcalRest, true));
   if (kcalRest === null) bad('kcalRest', 'invalid');
   else if (!Number.isFinite(kcalRest)) bad('kcalRest', 'required');
-  else if (kcalRest < KCAL_FLOOR) bad('kcalRest', 'below_floor');
+  else if (kcalRest < restFloor) bad('kcalRest', restCode);
   else if (kcalRest > RANGES.kcalRest[1]) bad('kcalRest', 'range');
   else value.kcalRest = kcalRest;
   const kcalTrain = rnd(read(input.kcalTrain, true));
@@ -142,7 +119,74 @@ export function validateOnboarding(input, today) {
   else if (protein < PROTEIN_MIN) bad('protein', 'below_min');
   else if (protein > RANGES.protein[1]) bad('protein', 'range');
   else value.protein = protein;
+}
 
+// A weight typed into a goal field, within RANGES[key]: reports through bad(field, code), gives the number or undefined
+function readWeight(raw, field, key, bad) {
+  const kg = read(raw);
+  if (kg === null) bad(field, 'invalid');
+  else if (!Number.isFinite(kg)) bad(field, 'required');
+  else if (kg < RANGES[key][0] || kg > RANGES[key][1]) bad(field, 'range');
+  else return kg;
+  return undefined;
+}
+
+// The goals saved from Settings: { startDate, targetDate, startKg, targetKg, kcalMinDay, kcalRest, kcalTrain, protein } as typed.
+// The same limits as setup and a restore (cleanSettings), so a goal saved here survives a backup. The pace is checked apart
+// (goalPaceError), from the current weight. Gives { ok, errors: [{ field, code }], value }.
+export function validateGoals(input) {
+  input = input && typeof input === 'object' ? input : {};
+  const errors = [];
+  const bad = (field, code) => errors.push({ field, code });
+  const value = {};
+  const day = (v) => (typeof v === 'string' ? v.trim() : '');
+  const sd = day(input.startDate);
+  if (!sd) bad('startDate', 'required');
+  else if (!DAY_RE.test(sd) || !realDay(sd)) bad('startDate', 'invalid');
+  else value.startDate = sd;
+  const ed = day(input.targetDate);
+  if (!ed) bad('targetDate', 'required');
+  else if (!DAY_RE.test(ed) || !realDay(ed)) bad('targetDate', 'invalid');
+  else if (value.startDate && !(ed > value.startDate)) bad('targetDate', 'not_after_start');
+  else value.targetDate = ed;
+  const startKg = readWeight(input.startKg, 'startKg', 'startKg', bad);
+  if (startKg !== undefined) value.startKg = startKg;
+  const targetKg = readWeight(input.targetKg, 'targetKg', 'targetKg', bad);
+  if (targetKg !== undefined) {
+    if (startKg !== undefined && !(targetKg < startKg)) bad('targetKg', 'not_below_start');
+    else value.targetKg = targetKg;
+  }
+  const kcalMinDay = rnd(read(input.kcalMinDay, true));
+  if (kcalMinDay === null) bad('kcalMinDay', 'invalid');
+  else if (!Number.isFinite(kcalMinDay)) bad('kcalMinDay', 'required');
+  else if (kcalMinDay < KCAL_FLOOR) bad('kcalMinDay', 'below_floor');
+  else if (kcalMinDay > RANGES.kcalMinDay[1]) bad('kcalMinDay', 'range');
+  else value.kcalMinDay = kcalMinDay;
+  readBudget(input, bad, value, value.kcalMinDay ?? KCAL_FLOOR, 'below_min_day');
+  return { ok: errors.length === 0, errors, value };
+}
+
+// input: { weight, targetKg, targetDate, kcalRest, kcalTrain, protein, name?, age?, gender? }, today: 'YYYY-MM-DD'
+// Gives { ok, errors: [{ field, code }], value }; value holds the cleaned fields when ok
+export function validateOnboarding(input, today) {
+  input = input && typeof input === 'object' ? input : {};
+  const errors = [];
+  const bad = (field, code) => errors.push({ field, code });
+  const value = {};
+  const weight = readWeight(input.weight, 'weight', 'startKg', bad);
+  if (weight !== undefined) value.weight = weight;
+  const targetKg = readWeight(input.targetKg, 'targetKg', 'targetKg', bad);
+  if (targetKg !== undefined) {
+    if (weight !== undefined && !(targetKg < weight)) bad('targetKg', 'not_below_weight');
+    else value.targetKg = targetKg;
+  }
+  const td = typeof input.targetDate === 'string' ? input.targetDate.trim() : '';
+  if (!td) bad('targetDate', 'required');
+  else if (!DAY_RE.test(td) || !realDay(td) || !(typeof today === 'string' && DAY_RE.test(today) && realDay(today))) bad('targetDate', 'invalid');
+  else if (!(td > today)) bad('targetDate', 'not_after_today');
+  else if (value.weight !== undefined && value.targetKg !== undefined && tooFast(value.weight, value.targetKg, today, td)) bad('targetDate', 'too_fast');
+  else value.targetDate = td;
+  readBudget(input, bad, value, KCAL_FLOOR, 'below_floor');
   readProfile(input, bad, value);
   return { ok: errors.length === 0, errors, value };
 }
