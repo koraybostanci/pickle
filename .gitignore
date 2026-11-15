@@ -1,0 +1,13 @@
+# Local secrets and overrides
+.env
+.env.*
+*.local
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
