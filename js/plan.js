@@ -80,8 +80,10 @@ export const DEFAULTS = {
   fiber: 30,
   steps: 8000,
   water: 2500,
-  model: 'claude-haiku-4-5-20251001',
+  model: 'claude-haiku-5-5',
 };
+// Claude models taken off the Settings list, and the one a stored choice moves to at the next start (js/boot.js)
+export const RETIRED_MODELS = { 'claude-haiku-4-5-20251001': 'claude-haiku-5-5' };
 
 // Numbers that the rules text, the checks and the screens must agree on
 export const SMALL_TREAT_KCAL = 250; // a flex entry up to this size (or any alcohol) is a "small" treat, not the weekly flexible dinner
@@ -92,7 +94,14 @@ export const processRules = (kcalMinDay, targetKg) => [
   t('Weigh in every morning under the same conditions. Read the trend, not a single day.'),
   t('If the trend sits more than 0.7 kg above the line two weeks in a row: cut 100 kcal or add 2,000 steps.'),
   t('Do not go below {kcal} kcal.', { kcal: num(kcalMinDay) }),
-  t('On reaching {kg} kg, raise calories to maintenance gradually over 2 to 3 weeks.', { kg: targetKg }),
+  t('On reaching {kg} kg, raise calories to maintenance gradually over 2 to 3 weeks.', { kg: num(targetKg) }),
+];
+
+// The training rules, with the workout-day budget as set (the Plan tab passes the saved one; RULES.training uses the default)
+export const trainingRules = (kcalTrain) => [
+  t('Three workouts a week: spinning, or kettlebell (swing, halo) plus core.'),
+  t('At least two fixed kettlebell days. Resistance training is what protects muscle in a deficit.'),
+  t('Workout days are {kcal} kcal: add a banana before and 150 g of skyr after.', { kcal: num(kcalTrain) }),
 ];
 
 // Each group is built when it is read, so the text and the numbers follow the language (and a prompt can ask for them in English)
@@ -125,11 +134,7 @@ export const RULES = {
     ];
   },
   get training() {
-    return [
-      t('Three workouts a week: spinning, or kettlebell (swing, halo) plus core.'),
-      t('At least two fixed kettlebell days. Resistance training is what protects muscle in a deficit.'),
-      t('Workout days are {kcal} kcal: add a banana before and 150 g of skyr after.', { kcal: num(DEFAULTS.kcalTrain) }),
-    ];
+    return trainingRules(DEFAULTS.kcalTrain);
   },
   get process() {
     return processRules(DEFAULTS.kcalMinDay, DEFAULTS.targetKg);

@@ -151,3 +151,12 @@ test('the trend column is NULL for a log with no weigh-ins, and survives junk we
   assert.deepEqual(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_days WHERE weight_trend_kg IS NOT NULL')[0].n, 0);
   assert.equal(rows(db, 'SELECT COUNT(*) AS n FROM weightplan_days')[0].n, 4);
 });
+
+test('the settings carry the minimum kcal and the protein minimum as the app applies them', () => {
+  const value = (s, key) => { const db = new DatabaseSync(':memory:'); db.exec(buildSql({ settings: s, entries, days, appVersion: 'test' }).sql); return rows(db, `SELECT value FROM weightplan_settings WHERE key = '${key}'`)[0].value; };
+  assert.equal(value({ ...settings, kcalMinDay: 1400, proteinMin: 120 }, 'kcal_min_day'), '1400');
+  assert.equal(value({ ...settings, kcalMinDay: 1400, proteinMin: 120 }, 'protein_min_g'), '120');
+  assert.equal(value(settings, 'kcal_min_day'), '1500'); // unset: the default, as the screens use
+  assert.equal(value(settings, 'protein_min_g'), '135'); // unset: the target itself
+  assert.equal(value({ ...settings, proteinMin: 160 }, 'protein_min_g'), '135'); // never above the target
+});

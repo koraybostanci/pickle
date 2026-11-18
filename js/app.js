@@ -10,7 +10,7 @@ import { reviewBrief, coachBrief, checkBrief, progressBrief, hasProgressData } f
 import { backupProblem, cleanEntry, cleanDay, cleanCheck, cleanPhoto, cleanSettings, cleanPlans, plansRecord, PLAN_CAPS, activePlan, loadedPlans, sweepPlanPhotos, readMeal, readFood, readProgress, savedPlan, cleanBadges, restoreBadges, b64FromBuf, cleanFoods, restoreFoods, sweepFoodPhotos, FOODS_MAX, squeeze, MACRO_CAPS } from './backup.js';
 import { buildPlan, SLOTS, SLOT_NAME, FLEX, slotByTime, dayKey, parseDay, addDays, has, DEFAULTS } from './plan.js';
 import {
-  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, mealById, aiCfg, hasKey, today, eff, portionItems, macroEdits, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, currentWeight, latestWeight, CHECK_MAX, checkReady, COUNT_MAX, WATER_MAX, getProgressGen, bumpProgressGen, resetProgressGen, progressSig, progressRatingHint, progressGate, progressState, parseLocal, titleFor, titleOf, startDraft, dropDraft, draftChanged, foodFormChanged, startFood, doneFood, dropFood, releasePhotos,
+  APP_VERSION, SCHEMA_VERSION, APP_ID, freshSettings, freshCheck, S, mealById, aiCfg, hasKey, today, eff, portionItems, macroEdits, dayTotals, isPerfect, suppTaken, SUPP_MAX, kilosDown, dayVerdict, verdictText, reviewSig, fmtInt, fmtKg, currentWeight, latestWeight, CHECK_MAX, checkReady, COUNT_MAX, WATER_MAX, WEIGH_MIN, WEIGH_MAX, getProgressGen, bumpProgressGen, resetProgressGen, progressSig, progressRatingHint, progressGate, progressState, parseLocal, titleFor, titleOf, startDraft, dropDraft, draftChanged, foodFormChanged, startFood, doneFood, dropFood, releasePhotos,
 } from './core.js';
 import seedPlan from './default-plan.js';
 import { bootDecision, commitSetup, newSetupJournal, setupHadPlans } from './boot.js';
@@ -740,7 +740,7 @@ async function analyzeEntry(id, opts = {}) {
     e.err = '';
     // What comes back from the model is kept within sane bounds: a slipped decimal must not wreck a day
     const cap = (v, max) => Math.min(max, Math.max(0, +v || 0));
-    if (data.kind === 'weight' && data.kg >= 50 && data.kg <= 160) {
+    if (data.kind === 'weight' && data.kg >= WEIGH_MIN && data.kg <= WEIGH_MAX) {
       const kg = Math.round(data.kg * 10) / 10;
       Object.assign(e, { kind: 'weight', status: 'ok', kg, ...titleFor('weight', { kg }) });
       await saveDay(e.day, { kg });
@@ -853,7 +853,7 @@ async function deliverFile(name, content, type) {
 }
 
 async function exportBackup(withPhotos) {
-  const { apiKey, oaKey, ...settingsNoKeys } = S.settings;
+  const { apiKey, oaKey, clientId, ...settingsNoKeys } = S.settings; // the keys and the install id never leave the device
   // The user plan travels with the backup; Default is the app's own and never does
   const plans = { active: S.plans.active, list: S.plans.list.filter((p) => p.id !== 'default') };
   const data = { app: APP_ID, v: SCHEMA_VERSION, at: new Date().toISOString(), settings: settingsNoKeys, entries: S.entries, days: Object.values(S.days), checks: S.checks, badges: S.badges, plans, progress: S.progressReview, foods: S.foods };
@@ -1239,7 +1239,7 @@ function renderFavorites() {
     b.className = 'chip';
     b.dataset.act = 'log-favorite';
     b.dataset.id = f.id;
-    b.append(f.name + ' ');
+    b.append(td(f.name) + ' ');
     const sp = document.createElement('span');
     sp.textContent = String(Math.round(f.kcal));
     b.append(sp);
@@ -2207,7 +2207,7 @@ document.addEventListener('submit', (ev) => {
   const day = f.dataset.day;
   if (f.dataset.kind === 'kg') {
     const kg = parseFloat(raw.replace(',', '.'));
-    if (!(kg >= 50 && kg <= 160)) { err.textContent = t('Enter a value between 50 and 160 kg. Example: 85.4'); err.hidden = false; return; }
+    if (!(kg >= WEIGH_MIN && kg <= WEIGH_MAX)) { err.textContent = t('Enter a value between {min} and {max} kg. Example: {example}', { min: WEIGH_MIN, max: WEIGH_MAX, example: fmtKg(85.4) }); err.hidden = false; return; }
     closeSheet();
     guard(() => setWeight(Math.round(kg * 10) / 10, day, false));
   } else {

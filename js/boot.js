@@ -1,5 +1,6 @@
 // The start-up decision, with no DOM and no storage: setup still to do, or an install to bring up to date.
 import { needsOnboarding, upgradeSettings, settingsFromOnboarding, blankPlan, GOAL_KEYS } from './onboarding.js';
+import { RETIRED_MODELS } from './plan.js';
 
 // What a start should do with the stored settings. `live` is the current S.settings (keeps a language chosen on the
 // setup screen), `fresh` is freshSettings(), `usage` the merged usage totals (always wins over a stored copy) and
@@ -13,9 +14,10 @@ export function bootDecision({ stored, hasData, live, fresh, usage, fallbackId }
   }
   // An install from before setup existed, or one set up: goals that are missing take the defaults, and it gets its id once
   const settings = { ...fresh, ...upgradeSettings(stored, fallbackId), usage };
+  if (Object.hasOwn(RETIRED_MODELS, settings.model)) settings.model = RETIRED_MODELS[settings.model]; // a model taken off the list moves to its successor
   const leftover = !!stored && 'setupRestorePlans' in stored; // the restore marker does not outlive setup
   delete settings.setupRestorePlans;
-  const needsSave = !stored || leftover || stored.clientId !== settings.clientId || stored.onboarded !== true || GOAL_KEYS.some((k) => stored[k] !== settings[k]);
+  const needsSave = !stored || leftover || stored.clientId !== settings.clientId || stored.onboarded !== true || stored.model !== settings.model || GOAL_KEYS.some((k) => stored[k] !== settings[k]);
   return { setup: false, settings, needsSave };
 }
 

@@ -79,7 +79,7 @@ leaves everything else in that database alone.
 | `weightplan_meals` | logged meal | `id`, `day`, `logged_at`, `slot`, `title`, `source`, `plan_id`, `tier`, `status`, `portion`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g`, `confidence`, `note`, `photos`, `flags` |
 | `weightplan_meal_items` | ingredient of a meal | `meal_id`, `position`, `name`, `grams`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g` |
 | `weightplan_foods` | Pantry product | `id`, `name`, `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fibre_g` (per 100 g), `ingredients`, `last_used`, `has_photo` |
-| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily goals, and the export's own version and time) |
+| `weightplan_settings` | setting | `key`, `value` (dates, weights, daily goals with the minimum kcal and minimum protein, and the export's own version and time) |
 | `weightplan_daily` (view) | day | the day's values, the trend weight, the plain 7-day weight average, and the meal totals with the day's `beers` |
 
 `weight_trend_kg` is the trend weight the app shows (see [Make it your plan](your-plan.md)), worked out when the file is made; it is empty on a day with no weigh-in in the 7 days up to it. `weight_avg7_kg` stays as the plain mean of the weigh-ins in those 7 days.

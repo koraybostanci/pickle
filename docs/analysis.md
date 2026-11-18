@@ -6,7 +6,7 @@ Optional. In Settings → "Photo and text analysis", choose a provider and enter
   Go) and OpenRouter, or any `https://` base address and model you type in. "Save and test" checks
   both text and photo input; "find a model that reads photos" tries the provider's models one by one.
 - **Claude:** an Anthropic API key from https://platform.claude.com, which needs prepaid credit.
-  Haiku 4.5 is the default; Sonnet 5.5 can be chosen in Settings and is used by "Analyse again with
+  Haiku 5.5 is the default (a choice of Haiku 4.5 saved earlier moves to it); Sonnet 5.5 can be chosen in Settings and is used by "Analyse again with
   Sonnet". Settings shows the calls made and, for Claude, their estimated cost.
 
 If the provider is busy, the app retries twice and, where a preset lists other models (only Gemini

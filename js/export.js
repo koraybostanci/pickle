@@ -3,7 +3,7 @@
 // (-bail stops at the first error, so a failed load is rolled back instead of leaving half the tables.)
 // Loading the file again replaces the weightplan_* tables and views and touches nothing else (weightplan: the app's
 // internal id, APP_ID in core.js, which stays when the app is renamed, so queries keep working).
-import { targetAt, dayKey, addDays } from './plan.js';
+import { targetAt, dayKey, addDays, DEFAULTS } from './plan.js';
 import { trendSeriesOf } from './core.js';
 
 // The export's own version, for whoever loads the .sql file. It moves when the tables change (the backup file's
@@ -168,6 +168,9 @@ export function buildSql({ settings: s, entries, days, badges = {}, foods = [], 
     ['start_date', s.startDate], ['target_date', s.targetDate], ['start_weight_kg', s.startKg], ['target_weight_kg', s.targetKg],
     ['kcal_rest_day', s.kcalRest], ['kcal_workout_day', s.kcalTrain], ['protein_g', s.protein], ['fibre_g', s.fiber],
     ['steps', s.steps], ['water_ml', s.water],
+    // The floors as the app applies them (kcalMinDay and proteinFloor in js/core.js): an unset minimum is the default, and the protein minimum is never above the target
+    ['kcal_min_day', s.kcalMinDay > 0 ? s.kcalMinDay : DEFAULTS.kcalMinDay],
+    ['protein_min_g', s.protein > 0 ? Math.min(s.proteinMin || s.protein, s.protein) : s.proteinMin],
   ];
   for (const [k, v] of settings) out.push(`INSERT INTO weightplan_settings (key, value) VALUES (${text(k)}, ${text(v)});`);
   out.push('');
