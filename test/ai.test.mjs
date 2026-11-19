@@ -11,7 +11,7 @@ import { buildPlan, planDigest, planFoods, RULES } from '../js/plan.js';
 import seedPlan from '../js/default-plan.js';
 
 const sonnet = { provider: 'anthropic', key: 'sk-ant-secretsecret', model: 'claude-sonnet-5-5' };
-const haiku = { ...sonnet, model: 'claude-haiku-4-5-20251001' };
+const haiku = { ...sonnet, model: 'claude-haiku-5-5' };
 const gemini = { provider: 'openai', key: 'k', model: 'm', base: 'https://x.test/v1/' };
 const meal = JSON.stringify({ kind: 'meal', title: 'x', slot: 'lunch', plan: '', items: [], kcal: 1, p: 1, c: 1, f: 1, fib: 1, tier: 'plan', flags: [], conf: 1, q: '', kg: 0, steps: 0 });
 const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
@@ -23,12 +23,14 @@ beforeEach(() => { calls = []; });
 
 const ask = (cfg) => analyze({ cfg, text: 'apple', when: new Date() });
 
-test('Sonnet 5.5 is told not to think into its small token budget; Haiku is not (it would reject the field)', async () => {
+test('Sonnet 5.5 and Haiku 5.5 are told not to think into the small token budget, each the way it accepts', async () => {
   mockFetch(() => reply(200, claudeBody(meal)));
   await ask(sonnet);
   await ask(haiku);
+  await ask({ ...sonnet, model: 'claude-haiku-4-5-20251001' });
   assert.deepEqual(calls[0].body.thinking, { type: 'between_tools' });
-  assert.equal('thinking' in calls[1].body, false);
+  assert.deepEqual(calls[1].body.thinking, { type: 'disabled' });
+  assert.equal('thinking' in calls[2].body, false); // an older model gets no thinking field
   assert.ok(calls[0].body.output_config.format.schema);
 });
 

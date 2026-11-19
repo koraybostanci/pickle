@@ -492,6 +492,9 @@ export function weekFlex(day) {
 // Coffee is counted, with no goal; a typed beer is logged as the Beer 0.5 l extra
 export const COUNT_MAX = 30; // a day's coffee tally is never above this, typed, tapped or restored
 export const WATER_MAX = 20000; // ml: a day's water is never above this, typed, tapped or restored
+// kg: a weigh-in is taken between these, typed, entered or read by the model; the same range as the weights setup and Goals accept (RANGES in js/backup.js)
+export const WEIGH_MIN = 30;
+export const WEIGH_MAX = 300;
 // English and Turkish words together (the Turkish are in js/parse-tr.js), so typing works in either language
 const COFFEE = ['coffee', ...PARSE_TR.coffee];
 const BEER = ['beer', ...PARSE_TR.beer];
@@ -522,7 +525,7 @@ export function parseLocal(text) {
   let m = WEIGHT_RE.exec(t);
   if (m) {
     const kg = parseNum(m[1]);
-    if (kg >= 50 && kg <= 160) return { type: 'weight', kg: Math.round(kg * 10) / 10 };
+    if (kg >= WEIGH_MIN && kg <= WEIGH_MAX) return { type: 'weight', kg: Math.round(kg * 10) / 10 };
   }
   m = STEPS_RE.exec(t);
   if (m) return { type: 'steps', steps: parseInt(m[1].replace(/[.,\s]/g, ''), 10) }; // a dot or a comma inside is a thousands mark here, in both languages

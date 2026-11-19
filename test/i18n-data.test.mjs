@@ -209,7 +209,9 @@ test('typed entries: English as before', () => {
   assert.deepEqual(parseLocal('82.5'), { type: 'weight', kg: 82.5 });
   assert.deepEqual(parseLocal('weight 82,5 kg'), { type: 'weight', kg: 82.5 });
   assert.deepEqual(parseLocal('kg 82'), { type: 'weight', kg: 82 });
-  assert.equal(parseLocal('30'), null);
+  assert.equal(parseLocal('25'), null);
+  assert.deepEqual(parseLocal('172.4'), { type: 'weight', kg: 172.4 }); // the range setup accepts, 30 to 300 kg
+  assert.equal(parseLocal('301'), null);
   assert.deepEqual(parseLocal('8,200 steps'), { type: 'steps', steps: 8200 });
   assert.deepEqual(parseLocal('8200 step'), { type: 'steps', steps: 8200 });
   assert.deepEqual(parseLocal('water 2'), { type: 'water', ml: 500 });

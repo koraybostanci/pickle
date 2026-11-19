@@ -5,7 +5,7 @@ import { T, parseNum } from './i18n.js';
 import { SLOT_NAME, PLAN_SLOTS } from './plan.js';
 import { cleanReview, cleanCoach, cleanVerdict, cleanProgressReview } from './ai.js';
 import { CATALOG, BY_ID, PARTS, DEFAULT_AV, merge, unlocked, freshBadges } from './badges.js';
-import { SCHEMA_VERSION, APP_ID, COUNT_MAX, WATER_MAX, SUPP_MAX, TK_KINDS, tkValid, clone } from './core.js';
+import { SCHEMA_VERSION, APP_ID, COUNT_MAX, WATER_MAX, SUPP_MAX, TK_KINDS, tkValid, clone, WEIGH_MIN, WEIGH_MAX } from './core.js';
 import { sq } from './text.js';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -160,7 +160,7 @@ function cleanFavorite(f) {
 // What the app talks to (provider, address, model, keys) and its running totals stay as they are on this device,
 // so a backup can never point the stored key at another server.
 export const GENDERS = ['female', 'male', 'other', 'none'];
-export const RANGES = { startKg: [30, 300], targetKg: [30, 300], kcalRest: [500, 6000], kcalTrain: [500, 6000], kcalMinDay: [500, 6000], protein: [20, 400], proteinMin: [20, 400], fiber: [0, 200], steps: [0, 100000], water: [0, 10000] };
+export const RANGES = { startKg: [WEIGH_MIN, WEIGH_MAX], targetKg: [WEIGH_MIN, WEIGH_MAX], kcalRest: [500, 6000], kcalTrain: [500, 6000], kcalMinDay: [500, 6000], protein: [20, 400], proteinMin: [20, 400], fiber: [0, 200], steps: [0, 100000], water: [0, 10000] };
 export function cleanSettings(s) {
   s = s && typeof s === 'object' ? s : {};
   const out = {};

@@ -12,7 +12,7 @@ import { MODELS, PRESETS, ZEN_FREE } from './ai.js';
 import { BY_ID, GROUP_NAME, FINISH_NAME, PART_NAME, SLOT_TITLE, cachedContext, cellOf, collection, stepRows, unlockSummary, wornAv, avatarChoices } from './badges.js';
 import { badgeSvg, avatarSvg } from './badge-art.js';
 import { dateFmt, td, t, tn, T, lc, getLang, foldKey } from './i18n.js';
-import { SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, processRules, parseDay, addDays, diffDays, targetAt, dayKey, hhmm, buildPlan } from './plan.js';
+import { SLOTS, SLOT_NAME, FLEX, RULES, LOCALE, processRules, trainingRules, parseDay, addDays, diffDays, targetAt, dayKey, hhmm, buildPlan } from './plan.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const n0 = fmtInt;
@@ -75,7 +75,7 @@ function progressSummary() {
     const change = s.startKg - a.kg;
     const moved = t('{kg} kg {dir}', { kg: n1(Math.abs(change)), dir: change < -0.05 ? t('up') : t('down') });
     if (a.kg <= s.targetKg) {
-      head = t('You reached {kg} kg', { kg: s.targetKg });
+      head = t('You reached {kg} kg', { kg: kgLabel(s.targetKg) });
       line = t('{moved} since {date}.', { moved, date: dShort.format(parseDay(s.startDate)) });
       tag = t('Goal reached');
     } else {
@@ -1461,7 +1461,7 @@ export function renderPlan() {
     ${group(t('Every day'), list(RULES.daily))}
     ${group(t('The week’s extras'), list(RULES.weekly))}
     ${group(t('Off for the whole period'), list(RULES.off))}
-    ${group(t('Training and movement'), list(RULES.training))}
+    ${group(t('Training and movement'), list(trainingRules(S.settings.kcalTrain)))}
     ${group(t('Process'), list(processRules(kcalMinDay(), S.settings.targetKg)))}
   </section>`;
 }
@@ -1730,7 +1730,7 @@ export function renderSettings() {
     </details>`;
 
   const favoritesBody = favorites.length
-    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(f.name)}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">${t('Remove')}</button></li>`).join('')}</ul>`
+    ? `<ul class="items">${favorites.map((f) => `<li><span>${esc(td(f.name))}, ${n0(f.kcal)} kcal</span><button type="button" class="link" data-act="favorite-remove" data-id="${esc(f.id)}">${t('Remove')}</button></li>`).join('')}</ul>`
     : `<p class="note">${t('Open an entry and tap “Add to favourites”. It then logs with one tap from the Log tab.')}</p>`;
 
   const foods = S.foods || [];
@@ -1762,7 +1762,7 @@ export function renderSettings() {
       <h3>${t('Clear my log')}</h3>
       <p class="note">${t('Starts your tracking over; the app stays set up as it is.')}</p>
       <dl class="reset-diff">
-        <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews and Check verdicts.')}</dd></div>
+        <div><dt class="is-gone">${t('Deletes')}</dt><dd>${t('Meals and their photos, weigh-ins, steps, water, coffee, supplements taken, workout days, day reviews, the progress review and Check verdicts.')}</dd></div>
         <div><dt class="is-kept">${t('Keeps')}</dt><dd>${t('Every setting: goals and dates, favourites, your plans (My plan and Default), the plan’s pictures, your pantry foods with their photos, your API key and provider, and the badges you have earned.')}</dd></div>
       </dl>
       ${S.resetStep === 'clear'

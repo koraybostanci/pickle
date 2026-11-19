@@ -36,6 +36,15 @@ test('an already-upgraded install needs no save', () => {
   assert.equal(d.settings.clientId, 'abc');
 });
 
+test('a stored Haiku 4.5 choice moves to Haiku 5.5 and is saved once; other choices stay', () => {
+  const old = decide({ stored: { ...fresh, ...goals, onboarded: true, clientId: 'abc', model: 'claude-haiku-4-5-20251001' }, hasData: true });
+  assert.equal(old.settings.model, 'claude-haiku-5-5');
+  assert.equal(old.needsSave, true);
+  const sonnet = decide({ stored: { ...fresh, ...goals, onboarded: true, clientId: 'abc', model: 'claude-sonnet-5-5' }, hasData: true });
+  assert.equal(sonnet.settings.model, 'claude-sonnet-5-5');
+  assert.equal(sonnet.needsSave, false);
+});
+
 test('with no crypto (empty id) a stored install needs no save, and a first start saves once', () => {
   const stored = { ...fresh, ...goals, onboarded: true, clientId: '' };
   const d = decide({ stored, hasData: true, fallbackId: '' });

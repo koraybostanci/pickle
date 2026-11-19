@@ -51,8 +51,9 @@ workout days, 135 g of protein, lunch at 12:00, two snacks, dinner at 18:00.
   - `RULES`: the text shown on the Plan tab.
   - `DEFAULTS`: the numbers the text in `RULES` is worked out from, and the steps, water and fibre goals. A new install does not start with them: its goals are entered at first start.
 
-  The numbers in `RULES` come from `DEFAULTS` and `SMALL_TREAT_KCAL`, not from what you saved in
-  Settings → Goals, so keep them in step. The meal slots are also named in `SLOT_NAME`,
+  On the Plan tab the workout-day budget, the minimum and the goal weight in the rules are the ones saved in
+  Settings → Goals (`trainingRules` and `processRules`); the other numbers in `RULES` come from `DEFAULTS` and
+  `SMALL_TREAT_KCAL`, so keep them in step. The meal slots are also named in `SLOT_NAME`,
   `slotByTime`, the prompt in `js/ai.js` and the notes on the Plan tab in `js/views.js`, so
   changing the slots means editing those too.
 

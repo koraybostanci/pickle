@@ -8,7 +8,7 @@ import { MACRO_CAPS, ITEM_MACRO_CAPS } from './backup.js';
 import { decode } from './picture.js';
 
 export const MODELS = {
-  'claude-haiku-4-5-20251001': { name: 'Haiku 4.5 (fast, cheap)', inp: 1, out: 5 },
+  'claude-haiku-5-5': { name: 'Haiku 5.5 (fast, cheap)', inp: 0.1, out: 0.5 }, // the rate for prompts up to 100K tokens, which every request here is
   'claude-sonnet-5-5': { name: 'Sonnet 5.5 (more careful)', inp: 2, out: 10 },
 };
 export const STRONG_MODEL = 'claude-sonnet-5-5';
@@ -375,8 +375,10 @@ export async function callModel(cfg, { system, shape = '', text, blobs = [], sch
   const content = imgs.map((d) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }));
   content.push({ type: 'text', text: safe });
   const body = { model: cfg.model, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] };
-  // Sonnet 5.5 thinks before it answers unless told not to, and that thinking would eat the small token budget
+  // Sonnet 5.5 and Haiku 5.5 think before they answer unless told not to, and that thinking would eat the small token budget.
+  // Each has its own way to say no: Sonnet 5.5 rejects 'disabled', Haiku 5.5 rejects 'between_tools' (and takes 'disabled' at its default effort)
   if (cfg.model === STRONG_MODEL) body.thinking = { type: 'between_tools' };
+  else if (cfg.model === 'claude-haiku-5-5') body.thinking = { type: 'disabled' };
   if (schema) body.output_config = { format: { type: 'json_schema', schema } };
   const headers = { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
   const url = 'https://api.anthropic.com/v1/messages';
